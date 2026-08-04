@@ -9,25 +9,19 @@ if (canvas && "IntersectionObserver" in window) {
   initScene(canvas);
 }
 
-const heroChars = document.querySelectorAll(".hero-word span");
 const heroLines = document.querySelectorAll(
   ".hero-eyebrow, .hero-sub, .hero-by"
 );
 
+let heroIntroPlayed = false;
 function playHeroIntro() {
-  heroChars.forEach((el, i) => {
-    setTimeout(() => {
-      el.style.transition = "opacity 0.9s cubic-bezier(.16,.8,.24,1), transform 0.9s cubic-bezier(.16,.8,.24,1), filter 0.9s ease";
-      el.style.opacity = "1";
-      el.style.transform = "translateY(0)";
-      el.style.filter = "blur(0)";
-    }, i * 90);
-  });
+  if (heroIntroPlayed) return;
+  heroIntroPlayed = true;
   heroLines.forEach((el, i) => {
-    setTimeout(() => el.classList.add("is-visible"), 280 + i * 140);
+    setTimeout(() => el.classList.add("is-visible"), i * 140);
   });
   const cue = document.getElementById("scrollCue");
-  if (cue) setTimeout(() => (cue.style.opacity = "1"), 1200);
+  if (cue) setTimeout(() => (cue.style.opacity = "1"), 1000);
 }
 
 if (reduceMotion) {

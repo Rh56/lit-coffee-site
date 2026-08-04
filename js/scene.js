@@ -1,28 +1,78 @@
 /* ==========================================================================
    Lit — hero signature scene
-   A mug of coffee, turning slowly over a small flame, steam rising.
-   Warm and inviting rather than industrial — the "lit" pun, literally.
+   Coffee pours in a spiral stream, fills a mug wrapped with the "lit"
+   wordmark, then the mug turns slowly over a small flame, steam rising.
    ========================================================================== */
 import * as THREE from "three";
 
 const COLORS = {
   cream: 0xf1e7d6,
+  ink: 0x3a271b,
   coffee: 0x4a2c18,
   coffeeShine: 0x7a4426,
   ember: 0xd9541f,
   gold: 0xe8a23d,
   flameHot: 0xffd166,
   glow: 0xffb347,
+  kettle: 0x241c16,
+  kettleTrim: 0x8b98a0,
 };
 
 const STEAM_COUNT = 140;
 const FLAME_COUNT = 90;
+const STREAM_COUNT = 130;
 const CUP_Y = 0.15;
 const FLAME_Y = -1.85;
 const RIG_SCALE = 0.72;
+const COFFEE_EMPTY_Y = -0.66;
+const COFFEE_FULL_Y = 0.62;
+const SPOUT_TIP = new THREE.Vector3(0.1, 2.05, 0.08);
+const RIM_CENTER = new THREE.Vector3(0, 0.86, 0);
 
 function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
+}
+
+// piecewise-linear interpolation across [t, value] keyframes, clamped at ends
+function keyframe(t, stops) {
+  if (t <= stops[0][0]) return stops[0][1];
+  if (t >= stops[stops.length - 1][0]) return stops[stops.length - 1][1];
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [t0, v0] = stops[i];
+    const [t1, v1] = stops[i + 1];
+    if (t >= t0 && t <= t1) return v0 + (v1 - v0) * ((t - t0) / (t1 - t0));
+  }
+  return stops[stops.length - 1][1];
+}
+
+function paintCupTexture(canvas, fontFamily) {
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#f1e7d6";
+  ctx.fillRect(0, 0, w, h);
+
+  const fontSize = 168;
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `italic 600 ${fontSize}px ${fontFamily}`;
+  const cy = h * 0.46;
+
+  [w * 0.25, w * 0.75].forEach((cx) => {
+    const lw = ctx.measureText("l").width;
+    const iw = ctx.measureText("i").width;
+    const tw = ctx.measureText("t").width;
+    let x = cx - (lw + iw + tw) / 2;
+    const y = cy + fontSize * 0.32;
+    ctx.fillStyle = "#3a271b";
+    ctx.fillText("l", x, y);
+    x += lw;
+    ctx.fillStyle = "#d9541f";
+    ctx.fillText("i", x, y);
+    x += iw;
+    ctx.fillStyle = "#3a271b";
+    ctx.fillText("t", x, y);
+  });
 }
 
 export function initScene(canvas) {
@@ -73,34 +123,51 @@ export function initScene(canvas) {
   rig.scale.setScalar(RIG_SCALE);
   scene.add(rig);
 
-  // ---- mug ------------------------------------------------------------------
+  // ---- mug, wrapped with the "lit" wordmark on both sides ------------------
   const mug = new THREE.Group();
   mug.position.y = CUP_Y;
   rig.add(mug);
 
-  const bodyGeo = new THREE.CylinderGeometry(0.95, 0.78, 1.35, 40, 1, true);
+  const cupCanvas = document.createElement("canvas");
+  cupCanvas.width = 1024;
+  cupCanvas.height = 512;
+  paintCupTexture(cupCanvas, "Georgia, serif");
+  const cupTexture = new THREE.CanvasTexture(cupCanvas);
+  cupTexture.colorSpace = THREE.SRGBColorSpace;
+
+  if (document.fonts && document.fonts.load) {
+    document.fonts
+      .load(`italic 600 168px Fraunces`)
+      .then(() => document.fonts.ready)
+      .then(() => {
+        paintCupTexture(cupCanvas, '"Fraunces", Georgia, serif');
+        cupTexture.needsUpdate = true;
+      })
+      .catch(() => {});
+  }
+
+  const bodyGeo = new THREE.CylinderGeometry(0.95, 0.78, 1.35, 48, 1, true);
   const bodyMat = new THREE.MeshStandardMaterial({
-    color: COLORS.cream,
-    roughness: 0.38,
-    metalness: 0.04,
+    map: cupTexture,
+    roughness: 0.4,
+    metalness: 0.03,
     side: THREE.DoubleSide,
   });
   const body = new THREE.Mesh(bodyGeo, bodyMat);
   mug.add(body);
 
-  const baseGeo = new THREE.CircleGeometry(0.78, 40);
-  const base = new THREE.Mesh(baseGeo, bodyMat);
+  const trimMat = new THREE.MeshStandardMaterial({ color: COLORS.cream, roughness: 0.38, metalness: 0.04 });
+
+  const base = new THREE.Mesh(new THREE.CircleGeometry(0.78, 40), trimMat);
   base.rotation.x = Math.PI / 2;
   base.position.y = -0.675;
   mug.add(base);
 
-  const rimGeo = new THREE.TorusGeometry(0.95, 0.045, 12, 40);
-  const rim = new THREE.Mesh(rimGeo, bodyMat);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.045, 12, 40), trimMat);
   rim.rotation.x = Math.PI / 2;
   rim.position.y = 0.675;
   mug.add(rim);
 
-  const coffeeGeo = new THREE.CircleGeometry(0.88, 40);
   const coffeeMat = new THREE.MeshStandardMaterial({
     color: COLORS.coffee,
     roughness: 0.22,
@@ -108,16 +175,105 @@ export function initScene(canvas) {
     emissive: new THREE.Color(COLORS.coffeeShine),
     emissiveIntensity: 0.12,
   });
-  const coffee = new THREE.Mesh(coffeeGeo, coffeeMat);
+  const coffee = new THREE.Mesh(new THREE.CircleGeometry(0.88, 40), coffeeMat);
   coffee.rotation.x = -Math.PI / 2;
-  coffee.position.y = 0.62;
+  coffee.position.y = COFFEE_EMPTY_Y;
   mug.add(coffee);
 
-  const handleGeo = new THREE.TorusGeometry(0.42, 0.11, 14, 32, Math.PI * 1.5);
-  const handle = new THREE.Mesh(handleGeo, bodyMat);
+  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.11, 14, 32, Math.PI * 1.5), trimMat);
   handle.position.set(0.95, 0, 0);
   handle.rotation.set(0, Math.PI / 2, Math.PI * 0.75);
   mug.add(handle);
+
+  // ---- kettle: pours, then fades once the cup is full -----------------------
+  const kettle = new THREE.Group();
+  kettle.position.set(0.05, 2.2, -0.05);
+  rig.add(kettle);
+
+  const kettleBodyMat = new THREE.MeshStandardMaterial({ color: COLORS.kettle, roughness: 0.45, metalness: 0.15, transparent: true });
+  const kettleTrimMat = new THREE.MeshStandardMaterial({ color: COLORS.kettleTrim, roughness: 0.35, metalness: 0.4, transparent: true });
+
+  const kettleBody = new THREE.Mesh(new THREE.SphereGeometry(0.3, 20, 16), kettleBodyMat);
+  kettleBody.scale.set(1, 0.85, 0.85);
+  kettle.add(kettleBody);
+
+  const kettleSpout = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.075, 0.4, 10), kettleTrimMat);
+  kettleSpout.position.set(0.28, -0.1, 0.15);
+  kettleSpout.rotation.set(0, 0, -Math.PI * 0.32);
+  kettle.add(kettleSpout);
+
+  const kettleLid = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), kettleTrimMat);
+  kettleLid.position.set(-0.05, 0.24, 0);
+  kettle.add(kettleLid);
+
+  const kettleMats = [kettleBodyMat, kettleTrimMat];
+
+  // ---- spiral pour stream ----------------------------------------------------
+  const streamGeo = new THREE.BufferGeometry();
+  const stPhase = new Float32Array(STREAM_COUNT);
+  const stSpeed = new Float32Array(STREAM_COUNT);
+  const stSeed = new Float32Array(STREAM_COUNT);
+  for (let i = 0; i < STREAM_COUNT; i++) {
+    stPhase[i] = i / STREAM_COUNT;
+    stSpeed[i] = THREE.MathUtils.randFloat(0.5, 0.7);
+    stSeed[i] = Math.random();
+  }
+  streamGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(STREAM_COUNT * 3), 3));
+  streamGeo.setAttribute("aPhase", new THREE.BufferAttribute(stPhase, 1));
+  streamGeo.setAttribute("aSpeed", new THREE.BufferAttribute(stSpeed, 1));
+  streamGeo.setAttribute("aSeed", new THREE.BufferAttribute(stSeed, 1));
+
+  const streamMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uIntensity: { value: 0 },
+      uFrom: { value: SPOUT_TIP.clone() },
+      uTo: { value: RIM_CENTER.clone() },
+      uHot: { value: new THREE.Color(COLORS.gold) },
+      uCool: { value: new THREE.Color(COLORS.ember) },
+    },
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    vertexShader: `
+      uniform float uTime;
+      uniform vec3 uFrom;
+      uniform vec3 uTo;
+      attribute float aPhase;
+      attribute float aSpeed;
+      attribute float aSeed;
+      varying float vProgress;
+      void main(){
+        float progress = fract(aPhase + uTime * aSpeed);
+        vProgress = progress;
+        vec3 pathPos = mix(uFrom, uTo, progress);
+        float radius = mix(0.16, 0.015, progress);
+        float angle = aSeed * 6.2831 + uTime * 2.4 + progress * 10.0;
+        pathPos.x += cos(angle) * radius;
+        pathPos.z += sin(angle) * radius;
+        vec4 mv = modelViewMatrix * vec4(pathPos, 1.0);
+        float size = mix(7.0, 2.5, progress);
+        gl_PointSize = size * (10.0 / -mv.z);
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uHot;
+      uniform vec3 uCool;
+      uniform float uIntensity;
+      varying float vProgress;
+      void main(){
+        vec2 uv = gl_PointCoord - 0.5;
+        float d = length(uv);
+        float alpha = smoothstep(0.5, 0.0, d);
+        alpha *= smoothstep(0.0, 0.08, vProgress) * smoothstep(1.0, 0.9, vProgress);
+        vec3 color = mix(uHot, uCool, vProgress);
+        gl_FragColor = vec4(color, alpha * uIntensity);
+      }
+    `,
+  });
+  const stream = new THREE.Points(streamGeo, streamMat);
+  rig.add(stream);
 
   // ---- flame beneath the mug --------------------------------------------
   const flameGeo = new THREE.BufferGeometry();
@@ -306,18 +462,53 @@ export function initScene(canvas) {
   }, { threshold: 0.01 });
   io.observe(canvas);
 
+  // ---- pour choreography (fractions of intro progress) -----------------------
+  const KETTLE_TILT = [
+    [0, -0.15],
+    [0.15, -1.0],
+    [0.55, -1.0],
+    [0.72, -0.15],
+  ];
+  const KETTLE_OPACITY = [
+    [0, 1],
+    [0.78, 1],
+    [0.94, 0],
+  ];
+  const STREAM_INTENSITY = [
+    [0, 0],
+    [0.14, 1],
+    [0.55, 1],
+    [0.68, 0],
+  ];
+  const FILL_FRACTION = [
+    [0.16, 0],
+    [0.64, 1],
+  ];
+  const IGNITE = [
+    [0, 0.15],
+    [0.3, 1],
+  ];
+
   // ---- animation loop -----------------------------------------------------
   const clock = new THREE.Clock();
   let introT = 0;
   let raf = null;
   let ignited = false;
 
+  function setKettleOpacity(v) {
+    kettleMats.forEach((m) => (m.opacity = v));
+    kettle.visible = v > 0.01;
+  }
+
   function renderStatic() {
     rig.rotation.y = 0.4;
     flameMat.uniforms.uIntensity.value = 1;
     steamMat.uniforms.uIntensity.value = 1;
     glowMat.uniforms.uIntensity.value = 1;
+    streamMat.uniforms.uIntensity.value = 0;
     flameLight.intensity = 1.8;
+    coffee.position.y = COFFEE_FULL_Y;
+    setKettleOpacity(0);
     renderer.render(scene, camera);
   }
 
@@ -329,16 +520,23 @@ export function initScene(canvas) {
     const t = clock.elapsedTime;
 
     if (introT < 1) {
-      introT = Math.min(1, introT + dt / 1.5);
-      const e = easeOutCubic(introT);
+      introT = Math.min(1, introT + dt / 2.6);
+      const e = easeOutCubic(Math.min(1, introT / 0.6));
       camera.position.lerpVectors(startPos, restPos, e);
-      camera.lookAt(0, 0.2, 0);
+      camera.lookAt(0, -0.15, 0);
 
-      const ignite = Math.min(1, introT / 0.7);
+      const ignite = keyframe(introT, IGNITE);
       flameMat.uniforms.uIntensity.value = ignite;
-      steamMat.uniforms.uIntensity.value = ignite;
       glowMat.uniforms.uIntensity.value = ignite;
       flameLight.intensity = ignite * 1.8;
+
+      kettle.rotation.z = keyframe(introT, KETTLE_TILT);
+      setKettleOpacity(keyframe(introT, KETTLE_OPACITY));
+      streamMat.uniforms.uIntensity.value = keyframe(introT, STREAM_INTENSITY);
+
+      const fill = keyframe(introT, FILL_FRACTION);
+      coffee.position.y = THREE.MathUtils.lerp(COFFEE_EMPTY_Y, COFFEE_FULL_Y, fill);
+      steamMat.uniforms.uIntensity.value = fill;
 
       if (!ignited && ignite > 0.02) {
         ignited = true;
@@ -349,13 +547,14 @@ export function initScene(canvas) {
       mouse.y += (target.y - mouse.y) * 0.04;
       camera.position.x = restPos.x + mouse.x * 0.35;
       camera.position.y = restPos.y - mouse.y * 0.2;
-      camera.lookAt(0, 0.2, 0);
+      camera.lookAt(0, -0.15, 0);
       flameLight.intensity = 1.6 + Math.sin(t * 9.0) * 0.15 + Math.sin(t * 23.0) * 0.08;
     }
 
     rig.rotation.y = t * 0.16;
     flameMat.uniforms.uTime.value = t;
     steamMat.uniforms.uTime.value = t;
+    streamMat.uniforms.uTime.value = t;
 
     renderer.render(scene, camera);
   }

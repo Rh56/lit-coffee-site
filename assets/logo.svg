@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-label="Lit — Coffee Roastery and Bakeshop">
+  <!--
+    PLACEHOLDER. Replace this file with the real Lit logo artwork,
+    keeping the same path (assets/logo.svg). The layout below mirrors
+    the real mark: lowercase "lit", flame over the i, tagline beneath.
+  -->
+  <g fill="currentColor">
+    <!-- flame over the i -->
+    <path d="M320 20c4 14-11 19-11 34a13 13 0 0 0 26 0c0-5-2-7-5-9 7 2 16 11 16 25a26 26 0 1 1-52 0c0-17 11-22 13-35 1-6 2-11 13-15z"/>
+    <!-- wordmark -->
+    <text x="320" y="250" text-anchor="middle"
+          font-family="'Bricolage Grotesque','Archivo Black',system-ui,sans-serif"
+          font-weight="800" font-size="200" letter-spacing="-8">lit</text>
+    <!-- tagline -->
+    <text x="320" y="330" text-anchor="middle"
+          font-family="'DM Mono',ui-monospace,monospace"
+          font-size="30" letter-spacing="7">COFFEE ROASTERY</text>
+    <text x="320" y="372" text-anchor="middle"
+          font-family="'DM Mono',ui-monospace,monospace"
+          font-size="30" letter-spacing="7">&amp; BAKESHOP</text>
+  </g>
+</svg>

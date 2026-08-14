@@ -175,7 +175,85 @@ is too generous," not as a forecast. Paper trading against the live book is the
 right next step precisely because it is the test the backtest cannot fake: it
 will reveal whether those quotes are actually there when you reach for them.
 
-## 6. Where to go next, in order of expected value
+## 6. The "early flip" variant: cheap underdogs, early in the interval
+
+Tested separately in `flip_strategy.py`: enter only below 50¢ — so every
+position sits on the side the market expects to lose — concentrated near 20¢ and
+early in the window, where a small move in spot flips the outcome and the cheap
+side pays 4–5×. Kalshi's fee schedule genuinely favours this: the quadratic fee
+is proportional to `p(1−p)`, so a 20¢ contract is charged ~1.1¢ against ~1.8¢ at
+the money.
+
+On the naive backtest it is the **best configuration found**, by a wide margin
+per contract:
+
+| entry band | timing | trades | per contract | flip rate | Sharpe | max DD |
+|---|---|---|---|---|---|---|
+| **0.10–0.30** | **tau ≥ 12 (first 3 min)** | 218 | **+8.05¢** | 33.9% | 5.96 | −12.2% |
+| 0.15–0.50 | tau ≥ 12 | 1,112 | +3.53¢ | 40.6% | 5.76 | −18.4% |
+| 0.15–0.50 | any time | 2,861 | +2.60¢ | 35.8% | **7.38** | −32.0% |
+| no price cap | any time | 5,064 | +1.84¢ | 53.6% | 6.59 | −42.1% |
+
+The convexity works exactly as intended — average win **$367** against average
+loss **$128** — and the flip rate beats its breakeven in every entry bucket:
+
+| entry price | implied flip needed | actual flip | per contract |
+|---|---|---|---|
+| 0.15–0.20 | 18.7% | 25.0% | +5.2¢ |
+| 0.20–0.25 | 22.9% | 33.3% | +9.2¢ |
+| 0.25–0.30 | 27.8% | 37.4% | +8.2¢ |
+
+**But three things argue against believing it.**
+
+*The structural premise does not hold.* Checking **every** cheap quote in the
+data rather than only the ones the bot chose — no model, no selection — the
+underdog does **not** flip more often than its price implies. It flips slightly
+*less*:
+
+| band | timing | n | implied | actual | edge |
+|---|---|---|---|---|---|
+| 0.15–0.20 | tau ≥ 12 | 721 | 17.6% | 18.2% | +0.5pp |
+| 0.20–0.25 | tau ≥ 12 | 1,180 | 22.6% | 23.1% | +0.4pp |
+| 0.20–0.25 | any time | 5,962 | 22.5% | 21.0% | −1.5pp |
+| 0.10–0.15 | any time | 5,708 | 12.5% | 11.2% | −1.3pp |
+
+So there is no free asymmetry sitting in the 20¢ band waiting to be harvested —
+Kalshi prices it correctly, slightly in its own favour. The entire +9.3pp flip
+edge in the traded subset comes from *model selection*, which means it inherits
+the latency problem rather than escaping it.
+
+*The sample is thin.* 218 trades over two months, and the τ=13 bucket alone (77
+trades) supplies $7,061 of the $8,771. That is not a base to size on.
+
+*It fails the latency test harder than the baseline.* Same standard as §4:
+
+| fill delay | per contract | flip rate |
+|---|---|---|
+| 0 min | **+8.05¢** | 33.9% |
+| 1 min | **−1.37¢** | 23.6% |
+| 2 min | −3.09¢ | 20.9% |
+
+The baseline strategy decayed to +0.34¢ at one minute; this one goes negative.
+Cheap entries are more sensitive to staleness, not less, because a 20¢ quote that
+has not caught up to spot is further from fair value in relative terms.
+
+**Practical read.** The instinct is sound and the mechanics are right — cheap
+entries keep more of any edge because the fee is smaller, and the convexity is
+real. But conditional on the edge being a race, concentrating into the cheap
+early band raises the stakes on winning that race rather than sidestepping it. If
+you want to paper trade this variant, the larger-sample cell is the defensible
+one — `--min-price 0.15 --max-price 0.50` with no timing restriction, 2,861
+trades at +2.6¢ and the best Sharpe in the grid — and it is wired into the paper
+trader:
+
+```bash
+python paper_trader.py --model models/live_model.pkl \
+    --min-price 0.15 --max-price 0.50          # the robust cell
+python paper_trader.py --model models/live_model.pkl \
+    --min-price 0.10 --max-price 0.30 --min-tau 12   # the aggressive cell
+```
+
+## 7. Where to go next, in order of expected value
 
 1. **Measure real fill rates in paper trading.** Log every intended fill and
    whether the quote survived to the next poll. That single statistic converts

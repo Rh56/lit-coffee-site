@@ -39,6 +39,9 @@ class BacktestConfig:
     compound: bool = True
     one_trade_per_window: bool = True
     max_price: float = 0.97         # never pay more than this per contract
+    min_price: float = 0.0          # floor on entry cost; set with max_price to
+                                    # trade a band (e.g. 0.15-0.50 buys only the
+                                    # underdog side and needs a flip to win)
 
 
 @dataclass
@@ -131,7 +134,7 @@ def run_backtest(dec: pd.DataFrame, config: BacktestConfig,
         else:
             side, cost, edge, fee_unit = "no", no_cost, no_edge, no_fee
 
-        if edge < config.min_edge or cost > config.max_price:
+        if edge < config.min_edge or not (config.min_price <= cost <= config.max_price):
             continue
 
         base = bankroll if config.compound else config.bankroll

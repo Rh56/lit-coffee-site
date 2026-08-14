@@ -129,8 +129,15 @@ The model is worth keeping; the taker-side P&L is not yet believable. Paper
 trading against the live book is the test that settles it.
 
 Checks that did pass: candle timestamps are end-labelled (no future quotes),
-shuffled probabilities lose 5.4¢ per contract as they should, and the edge
+shuffled probabilities lose 2.3¢ per contract as they should, and the edge
 survives doubled fees and a 2¢ wider spread.
+
+An "early flip" variant — buy only below 50¢, near the 20¢ band, in the first
+minutes of each interval — is the best configuration on the naive backtest
+(+8.0¢ per contract against +1.8¢ for the baseline, with average wins 2.9× average
+losses). It is also the most latency-fragile: one minute of delay turns it
+negative. Section 6 of RESULTS.md has the controls, including the check showing
+cheap underdogs are *not* structurally underpriced on Kalshi.
 
 ---
 
@@ -144,6 +151,7 @@ pricing.py             market model calibrated on real quotes, edge after fees
 backtest.py            event-driven engine, sizing, metrics, breakdowns
 run_backtest.py        full pipeline: data -> features -> models -> P&L
 diagnostics.py         adversarial checks: staleness, latency, shuffle, cost stress
+flip_strategy.py       the cheap-underdog / early-entry variant and its controls
 train.py               fit and persist the production model
 paper_trader.py        live paper trading loop (no credentials, no orders)
 data/fetch_btc.py      Coinbase 1m OHLCV (resumable)

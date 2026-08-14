@@ -1,0 +1,354 @@
+{
+  "grid": [
+    {
+      "band": "cheap 0.10-0.30",
+      "timing": "very early (tau>=12)",
+      "trades": 218,
+      "pnl": 8771.0,
+      "per_contract": 0.0805,
+      "win_rate": 0.3394,
+      "avg_price": 0.246,
+      "sharpe": 5.96,
+      "max_dd": -0.122
+    },
+    {
+      "band": "cheap 0.10-0.30",
+      "timing": "early (tau>=10)",
+      "trades": 407,
+      "pnl": 9143.0,
+      "per_contract": 0.0449,
+      "win_rate": 0.2973,
+      "avg_price": 0.24,
+      "sharpe": 4.56,
+      "max_dd": -0.161
+    },
+    {
+      "band": "cheap 0.10-0.30",
+      "timing": "first half (tau>=8)",
+      "trades": 684,
+      "pnl": 5974.0,
+      "per_contract": 0.0175,
+      "win_rate": 0.2617,
+      "avg_price": 0.232,
+      "sharpe": 2.58,
+      "max_dd": -0.172
+    },
+    {
+      "band": "cheap 0.10-0.30",
+      "timing": "any time (tau>=1)",
+      "trades": 1927,
+      "pnl": 21760.0,
+      "per_contract": 0.0226,
+      "win_rate": 0.2465,
+      "avg_price": 0.212,
+      "sharpe": 5.82,
+      "max_dd": -0.294
+    },
+    {
+      "band": "target 0.15-0.35",
+      "timing": "very early (tau>=12)",
+      "trades": 350,
+      "pnl": 5515.0,
+      "per_contract": 0.0315,
+      "win_rate": 0.3314,
+      "avg_price": 0.286,
+      "sharpe": 3.19,
+      "max_dd": -0.149
+    },
+    {
+      "band": "target 0.15-0.35",
+      "timing": "early (tau>=10)",
+      "trades": 587,
+      "pnl": 6533.0,
+      "per_contract": 0.0223,
+      "win_rate": 0.3152,
+      "avg_price": 0.279,
+      "sharpe": 2.68,
+      "max_dd": -0.23
+    },
+    {
+      "band": "target 0.15-0.35",
+      "timing": "first half (tau>=8)",
+      "trades": 876,
+      "pnl": 3089.0,
+      "per_contract": 0.0071,
+      "win_rate": 0.2922,
+      "avg_price": 0.271,
+      "sharpe": 1.03,
+      "max_dd": -0.249
+    },
+    {
+      "band": "target 0.15-0.35",
+      "timing": "any time (tau>=1)",
+      "trades": 1979,
+      "pnl": 23437.0,
+      "per_contract": 0.0237,
+      "win_rate": 0.2931,
+      "avg_price": 0.256,
+      "sharpe": 5.69,
+      "max_dd": -0.301
+    },
+    {
+      "band": "underdog 0.15-0.50",
+      "timing": "very early (tau>=12)",
+      "trades": 1112,
+      "pnl": 19346.0,
+      "per_contract": 0.0353,
+      "win_rate": 0.4586,
+      "avg_price": 0.406,
+      "sharpe": 5.76,
+      "max_dd": -0.184
+    },
+    {
+      "band": "underdog 0.15-0.50",
+      "timing": "early (tau>=10)",
+      "trades": 1474,
+      "pnl": 22862.0,
+      "per_contract": 0.0313,
+      "win_rate": 0.4471,
+      "avg_price": 0.399,
+      "sharpe": 5.33,
+      "max_dd": -0.193
+    },
+    {
+      "band": "underdog 0.15-0.50",
+      "timing": "first half (tau>=8)",
+      "trades": 1831,
+      "pnl": 19705.0,
+      "per_contract": 0.0217,
+      "win_rate": 0.4271,
+      "avg_price": 0.388,
+      "sharpe": 4.64,
+      "max_dd": -0.223
+    },
+    {
+      "band": "underdog 0.15-0.50",
+      "timing": "any time (tau>=1)",
+      "trades": 2861,
+      "pnl": 36722.0,
+      "per_contract": 0.026,
+      "win_rate": 0.3999,
+      "avg_price": 0.358,
+      "sharpe": 7.38,
+      "max_dd": -0.32
+    },
+    {
+      "band": "all under 0.50",
+      "timing": "very early (tau>=12)",
+      "trades": 1118,
+      "pnl": 19138.0,
+      "per_contract": 0.0347,
+      "win_rate": 0.4562,
+      "avg_price": 0.404,
+      "sharpe": 5.69,
+      "max_dd": -0.177
+    },
+    {
+      "band": "all under 0.50",
+      "timing": "early (tau>=10)",
+      "trades": 1486,
+      "pnl": 22319.0,
+      "per_contract": 0.0303,
+      "win_rate": 0.4435,
+      "avg_price": 0.396,
+      "sharpe": 5.21,
+      "max_dd": -0.193
+    },
+    {
+      "band": "all under 0.50",
+      "timing": "first half (tau>=8)",
+      "trades": 1869,
+      "pnl": 21419.0,
+      "per_contract": 0.0231,
+      "win_rate": 0.4222,
+      "avg_price": 0.383,
+      "sharpe": 5.04,
+      "max_dd": -0.219
+    },
+    {
+      "band": "all under 0.50",
+      "timing": "any time (tau>=1)",
+      "trades": 3305,
+      "pnl": 33914.0,
+      "per_contract": 0.0207,
+      "win_rate": 0.3516,
+      "avg_price": 0.317,
+      "sharpe": 6.55,
+      "max_dd": -0.33
+    },
+    {
+      "band": "baseline (no cap)",
+      "timing": "very early (tau>=12)",
+      "trades": 2952,
+      "pnl": 28720.0,
+      "per_contract": 0.0212,
+      "win_rate": 0.6003,
+      "avg_price": 0.564,
+      "sharpe": 5.53,
+      "max_dd": -0.365
+    },
+    {
+      "band": "baseline (no cap)",
+      "timing": "early (tau>=10)",
+      "trades": 3806,
+      "pnl": 30635.0,
+      "per_contract": 0.0172,
+      "win_rate": 0.6072,
+      "avg_price": 0.575,
+      "sharpe": 5.22,
+      "max_dd": -0.375
+    },
+    {
+      "band": "baseline (no cap)",
+      "timing": "first half (tau>=8)",
+      "trades": 4294,
+      "pnl": 33077.0,
+      "per_contract": 0.0164,
+      "win_rate": 0.6027,
+      "avg_price": 0.571,
+      "sharpe": 5.2,
+      "max_dd": -0.432
+    },
+    {
+      "band": "baseline (no cap)",
+      "timing": "any time (tau>=1)",
+      "trades": 5064,
+      "pnl": 44267.0,
+      "per_contract": 0.0184,
+      "win_rate": 0.5693,
+      "avg_price": 0.536,
+      "sharpe": 6.59,
+      "max_dd": -0.421
+    }
+  ],
+  "best_config": {
+    "band": "cheap 0.10-0.30",
+    "timing": "very early (tau>=12)",
+    "min_price": 0.1,
+    "max_price": 0.3,
+    "min_tau": 12
+  },
+  "flip_stats": {
+    "n": 218,
+    "mean_entry_price": 0.2461009174311927,
+    "breakeven_flip_rate": 0.2461009174311927,
+    "actual_flip_rate": 0.3394495412844037,
+    "flip_rate_edge": 0.093348623853211,
+    "mean_model_prob": 0.31938330792055497,
+    "avg_win": 367.1591891891892,
+    "avg_loss": -127.76986111111111,
+    "per_contract": 0.08046715596330274
+  },
+  "best_summary": {
+    "n_trades": 218,
+    "start_bankroll": 10000.0,
+    "final_bankroll": 18770.92000000002,
+    "total_pnl": 8770.919999999998,
+    "return_on_bankroll": 0.8770919999999999,
+    "annualised_return": 45.100306825267474,
+    "turnover": 26825.0,
+    "roi_on_turnover": 0.326968126747437,
+    "win_rate": 0.3394495412844037,
+    "avg_win": 367.1591891891892,
+    "avg_loss": -127.76986111111111,
+    "profit_factor": 1.4767099700742328,
+    "avg_edge": 0.05364936296642651,
+    "realised_edge_per_contract": 0.08046715596330274,
+    "total_fees": 1404.08,
+    "max_drawdown": -0.12173961516436858,
+    "max_drawdown_dollars": -1441.380000000001,
+    "sharpe_daily_ann": 5.955210195732659,
+    "sortino_daily_ann": 13.198779613180593,
+    "trades_per_day": 3.6333333333333333,
+    "days_covered": 60,
+    "pnl_ci95": [
+      2359.3394999999996,
+      15216.145499999988
+    ],
+    "p_pnl_positive": 0.997,
+    "yes_share": 0.5963302752293578,
+    "avg_price": 0.2461009174311927,
+    "avg_contracts": 500.0,
+    "final_daily_equity": 18770.92
+  },
+  "by_entry": [
+    {
+      "entry_bucket": "(0.0, 0.15]",
+      "trades": 4.0,
+      "implied_flip": 0.1375,
+      "actual_flip": 0.25,
+      "pnl": 208.39000000000001,
+      "per_contract": 0.10419500000000001
+    },
+    {
+      "entry_bucket": "(0.15, 0.2]",
+      "trades": 36.0,
+      "implied_flip": 0.18722222222222223,
+      "actual_flip": 0.25,
+      "pnl": 938.34,
+      "per_contract": 0.05213
+    },
+    {
+      "entry_bucket": "(0.2, 0.25]",
+      "trades": 63.0,
+      "implied_flip": 0.22857142857142856,
+      "actual_flip": 0.3333333333333333,
+      "pnl": 2911.46,
+      "per_contract": 0.09242730158730159
+    },
+    {
+      "entry_bucket": "(0.25, 0.3]",
+      "trades": 115.0,
+      "implied_flip": 0.2779130434782609,
+      "actual_flip": 0.3739130434782609,
+      "pnl": 4712.7300000000005,
+      "per_contract": 0.08196052173913045
+    }
+  ],
+  "by_tau": [
+    {
+      "tau_min": 12,
+      "trades": 82.0,
+      "pnl": 625.2500000000002,
+      "actual_flip": 0.2682926829268293,
+      "per_contract": 0.015250000000000005
+    },
+    {
+      "tau_min": 13,
+      "trades": 77.0,
+      "pnl": 7060.71,
+      "actual_flip": 0.44155844155844154,
+      "per_contract": 0.18339506493506494
+    },
+    {
+      "tau_min": 14,
+      "trades": 59.0,
+      "pnl": 1084.9600000000005,
+      "actual_flip": 0.3050847457627119,
+      "per_contract": 0.03677830508474578
+    }
+  ],
+  "execution_delay": [
+    {
+      "delay_min": 0,
+      "trades": 218,
+      "pnl": 8770.92,
+      "per_contract": 0.08047,
+      "win_rate": 0.3394
+    },
+    {
+      "delay_min": 1,
+      "trades": 1604,
+      "pnl": -8160.58,
+      "per_contract": -0.01373,
+      "win_rate": 0.2357
+    },
+    {
+      "delay_min": 2,
+      "trades": 1452,
+      "pnl": -9767.73,
+      "per_contract": -0.03093,
+      "win_rate": 0.2094
+    }
+  ]
+}

@@ -265,6 +265,14 @@ def main() -> None:
     ap.add_argument("--bankroll", type=float, default=10_000.0)
     ap.add_argument("--min-edge", type=float, default=0.03)
     ap.add_argument("--kelly", type=float, default=0.25)
+    ap.add_argument("--min-price", type=float, default=0.0,
+                    help="floor on entry cost; with --max-price trades a band, "
+                         "e.g. --min-price 0.10 --max-price 0.30 buys only cheap "
+                         "underdogs that need a flip to pay")
+    ap.add_argument("--max-price", type=float, default=0.97)
+    ap.add_argument("--min-tau", type=int, default=1,
+                    help="minutes left required to enter; 12 = only the first "
+                         "three minutes of the interval")
     ap.add_argument("--poll", type=float, default=20.0)
     ap.add_argument("--max-iterations", type=int, default=0, help="0 = run forever")
     ap.add_argument("--dry-run", action="store_true",
@@ -279,7 +287,8 @@ def main() -> None:
     print(f"holdout: {bundle['holdout_scores']}")
 
     cfg = BacktestConfig(bankroll=args.bankroll, min_edge=args.min_edge,
-                         kelly_fraction=args.kelly)
+                         kelly_fraction=args.kelly, min_price=args.min_price,
+                         max_price=args.max_price, min_tau=args.min_tau)
     port = PaperPortfolio(args.state, args.bankroll)
     live = LiveFeatures(args.cache)
     session = requests.Session()
@@ -290,7 +299,9 @@ def main() -> None:
 
     print(f"\nPAPER TRADING {SERIES} -- no credentials, no live orders")
     print(f"bankroll ${port.state['bankroll']:,.2f}  min_edge ${cfg.min_edge:.3f}  "
-          f"kelly {cfg.kelly_fraction}\n")
+          f"kelly {cfg.kelly_fraction}")
+    print(f"entry band ${cfg.min_price:.2f}-${cfg.max_price:.2f}  "
+          f"min minutes left {cfg.min_tau}\n")
 
     it = 0
     while _running:
@@ -339,7 +350,8 @@ def main() -> None:
 
             if port.has_position(ticker) or edge < cfg.min_edge \
                     or not (cfg.min_prob <= p <= cfg.max_prob) \
-                    or cost > cfg.max_price or tau < cfg.min_tau:
+                    or not (cfg.min_price <= cost <= cfg.max_price) \
+                    or tau < cfg.min_tau:
                 time.sleep(args.poll)
                 continue
 

@@ -108,9 +108,29 @@ share of bankroll. Resting-order (maker) fills are *not* assumed anywhere.
 
 ## Results
 
-Generated numbers live in `results/` — `report.json`, per-trade CSVs, monthly
-and hourly breakdowns, the reliability table, and a parameter sweep. See
-`RESULTS.md` for the written summary of the run.
+Full write-up in **[RESULTS.md](RESULTS.md)**; raw outputs in `results/`.
+
+The short version. The forecasting model is good: walk-forward Brier skill 0.41
+with a calibration error of 0.0035, marginally sharper than Kalshi's own mid
+quote (Brier 0.1427 vs 0.1438). The naive backtest against real quotes then
+returns +183% in 24 days at a Sharpe of 7 — which is a bug report, not a result,
+and `diagnostics.py` explains why.
+
+Making the bot trade on *staler* quotes makes it *more* profitable (+1.9¢ per
+contract at 0 minutes, +18.5¢ at 5 minutes). That is the signature of a latency
+edge: the profit comes from spot having moved while the order book has not
+repriced. Delay the fill by one minute and ~75% of the edge is gone; by two
+minutes it is negative. The backtest also assumes the displayed quote is always
+available at size — but a stale quote is exactly the one a market maker cancels
+first, so the fills the bot most wants are the ones least likely to exist.
+
+Realistic expectation for a non-colocated participant: at or below break-even.
+The model is worth keeping; the taker-side P&L is not yet believable. Paper
+trading against the live book is the test that settles it.
+
+Checks that did pass: candle timestamps are end-labelled (no future quotes),
+shuffled probabilities lose 5.4¢ per contract as they should, and the edge
+survives doubled fees and a 2¢ wider spread.
 
 ---
 
@@ -123,6 +143,7 @@ model.py               analytic / learned / ensemble models, walk-forward driver
 pricing.py             market model calibrated on real quotes, edge after fees
 backtest.py            event-driven engine, sizing, metrics, breakdowns
 run_backtest.py        full pipeline: data -> features -> models -> P&L
+diagnostics.py         adversarial checks: staleness, latency, shuffle, cost stress
 train.py               fit and persist the production model
 paper_trader.py        live paper trading loop (no credentials, no orders)
 data/fetch_btc.py      Coinbase 1m OHLCV (resumable)
@@ -145,7 +166,10 @@ python -m data.fetch_kalshi candles --days 70
 # 2. backtest (walk-forward, both regimes, parameter sweep)
 python run_backtest.py --cache cache --out results
 
-# 3. train the production model, then paper trade
+# 3. attack the result before believing it (reuses cached predictions)
+python diagnostics.py --cache cache --out results
+
+# 4. train the production model, then paper trade
 python train.py --cache cache --out models/live_model.pkl
 python paper_trader.py --model models/live_model.pkl --bankroll 10000
 ```

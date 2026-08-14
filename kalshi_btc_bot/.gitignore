@@ -5,3 +5,4 @@ __pycache__/
 *.parquet
 *.pkl
 results_validation*
+*.log

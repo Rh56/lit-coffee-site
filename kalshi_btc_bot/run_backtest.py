@@ -60,6 +60,10 @@ def _json_safe(obj):
         return None if np.isnan(obj) else float(obj)
     if isinstance(obj, (pd.Timestamp,)):
         return obj.isoformat()
+    if isinstance(obj, pd.Interval):
+        return str(obj)
+    if isinstance(obj, pd.Period):
+        return str(obj)
     if isinstance(obj, float) and np.isnan(obj):
         return None
     return obj
@@ -94,6 +98,8 @@ def main() -> None:
     ap.add_argument("--min-edge", type=float, default=0.03)
     ap.add_argument("--kelly", type=float, default=0.25)
     ap.add_argument("--bankroll", type=float, default=10_000.0)
+    ap.add_argument("--reuse-predictions", action="store_true",
+                    help="reuse cached walk-forward predictions instead of retraining")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     report: dict = {}
@@ -161,8 +167,14 @@ def main() -> None:
     print("WALK-FORWARD MODEL TRAINING")
     print("=" * 78)
     dec = dec.dropna(subset=["z_moneyness", "target"]).reset_index(drop=True)
-    pred = M.walk_forward_predict(dec, feats, train_days=120, calib_days=20,
-                                  step_days=15)
+    pred_cache = os.path.join(args.cache, "walk_forward_predictions.parquet")
+    if args.reuse_predictions and os.path.exists(pred_cache):
+        pred = pd.read_parquet(pred_cache)
+        print(f"  reusing cached walk-forward predictions ({len(pred):,} rows)")
+    else:
+        pred = M.walk_forward_predict(dec, feats, train_days=120, calib_days=20,
+                                      step_days=15)
+        pred.to_parquet(pred_cache, index=False)
     print(f"\n  out-of-sample rows: {len(pred):,}")
     print(f"  OOS range: {pred['ts'].min()} -> {pred['ts'].max()}")
 

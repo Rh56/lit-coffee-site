@@ -1,0 +1,488 @@
+{
+  "data": {
+    "btc_bars": 526210,
+    "eth_bars": 526206,
+    "fng_days": 3113,
+    "kalshi_markets": 6428,
+    "kalshi_candles": 86877,
+    "btc_start": "2025-08-13 22:57:00+00:00",
+    "btc_end": "2026-08-14 22:57:00+00:00"
+  },
+  "reconstruction": {
+    "method": "ohlc4",
+    "n": 6418,
+    "outcome_agreement": 0.9719538797133064,
+    "strike_err_bps_median": 1.0821586123784672,
+    "settle_err_bps_median": 1.0820802607948723,
+    "disagree_median_move_bps": 0.5099079768259769,
+    "agree_median_move_bps": 8.750749441612445,
+    "real_yes_rate": 0.496416329074478,
+    "recon_yes_rate": 0.4954814583982549,
+    "n_windows": 35078,
+    "yes_rate": 0.4993443183761902
+  },
+  "features": {
+    "n_features": 58,
+    "n_decision_rows": 491018,
+    "feature_names": [
+      "z_moneyness",
+      "log_dist",
+      "tau_min",
+      "sqrt_tau",
+      "minutes_elapsed",
+      "sigma_blend",
+      "sigma_ewma_ann",
+      "vol_ratio_15_240",
+      "vol_ratio_60_1440",
+      "vol_of_vol",
+      "path_frac_above",
+      "excursion_up",
+      "excursion_down",
+      "excursion_ratio",
+      "window_ret_so_far",
+      "cross_count",
+      "ret_3m",
+      "ret_5m",
+      "ret_15m",
+      "ret_30m",
+      "ret_60m",
+      "ret_240m",
+      "ret_1440m",
+      "ema_spread",
+      "macd_hist",
+      "rsi_14",
+      "rsi_60",
+      "bb_pos_15m",
+      "bb_pos_60m",
+      "bb_pos_240m",
+      "vwap_dev_15m",
+      "vwap_dev_60m",
+      "autocorr_60m",
+      "flow_imb_15m",
+      "flow_imb_60m",
+      "up_min_ratio_15m",
+      "up_min_ratio_60m",
+      "vol_z_60m",
+      "vol_z_1440m",
+      "range_z_60m",
+      "run_len",
+      "abs_ret_z",
+      "jump_count_60m",
+      "tod_sin",
+      "tod_cos",
+      "dow",
+      "is_weekend",
+      "eth_ret_1m",
+      "eth_ret_5m",
+      "eth_ret_15m",
+      "eth_ret_60m",
+      "btc_eth_div_5m",
+      "btc_eth_div_15m",
+      "btc_eth_corr_240m",
+      "fng",
+      "fng_chg_1d",
+      "fng_chg_7d",
+      "fng_z_30d"
+    ]
+  },
+  "model_scores": {
+    "ensemble": {
+      "n": 303227,
+      "brier": 0.14749911193085338,
+      "brier_skill": 0.4099979665322028,
+      "log_loss": 0.4430434993554355,
+      "accuracy": 0.7747792907623662,
+      "base_rate": 0.49846154860879804,
+      "ece": 0.0035375137939473397
+    },
+    "analytic": {
+      "n": 303227,
+      "brier": 0.14755592378211074,
+      "brier_skill": 0.40977071697572653,
+      "log_loss": 0.443282134069962,
+      "accuracy": 0.7756466277739119,
+      "base_rate": 0.49846154860879804,
+      "ece": 0.004967005612854328
+    },
+    "ensemble_real_window": {
+      "n": 81074,
+      "brier": 0.14433772415871912,
+      "brier_skill": 0.4225312933064904,
+      "log_loss": 0.434864279385548,
+      "accuracy": 0.7805708365197227,
+      "base_rate": 0.49285837629819673,
+      "ece": 0.004606706063564725
+    }
+  },
+  "real_quote_rows": 81074,
+  "market_efficiency": {
+    "n": 81074,
+    "market_brier": 0.14531108670782247,
+    "market_brier_skill": 0.4186370486407195,
+    "market_log_loss": 0.4365295917541735,
+    "mean_spread": 0.007876890248415029,
+    "mean_mid": 0.4931177257813849
+  },
+  "market_model": {
+    "vol_scale": 0.8200000000000003,
+    "nu": 8.0,
+    "spread_base": 0.011519383137224153,
+    "spread_tau_coef": 0.00048290200342114044,
+    "spread_edge_coef": -0.017687605129970516,
+    "spread_min": 0.01,
+    "spread_max": 0.010000000000000009,
+    "bias": 0.007462019928954178,
+    "calibration": {
+      "n": 78413,
+      "mid_rmse": 0.056225385042942486,
+      "spread_mean": 0.008109879739328939,
+      "spread_median": 0.010000000000000009,
+      "spread_pred_rmse": 0.005111227611711635,
+      "implied_vol_scale": 0.8200000000000003,
+      "nu": 8.0,
+      "logit_bias": 0.007462019928954178
+    }
+  },
+  "backtest_real": {
+    "n_trades": 5070,
+    "start_bankroll": 10000.0,
+    "final_bankroll": 54906.55600000017,
+    "total_pnl": 44906.55599999998,
+    "return_on_bankroll": 4.490655599999998,
+    "annualised_return": 26644.27668746823,
+    "turnover": 1278754.794,
+    "roi_on_turnover": 0.035117409694731504,
+    "win_rate": 0.5688362919132149,
+    "avg_win": 179.03866019417475,
+    "avg_loss": -215.66374199451053,
+    "profit_factor": 1.095253831794922,
+    "avg_edge": 0.052470584697419394,
+    "realised_edge_per_contract": 0.01855625940590622,
+    "total_fees": 35064.65,
+    "max_drawdown": -0.41839801301024016,
+    "max_drawdown_dollars": -8758.925999999963,
+    "sharpe_daily_ann": 6.608399661252434,
+    "sortino_daily_ann": 14.110919411896937,
+    "trades_per_day": 83.11475409836065,
+    "days_covered": 61,
+    "pnl_ci95": [
+      15232.330799999994,
+      74006.00874999996
+    ],
+    "p_pnl_positive": 0.998,
+    "yes_share": 0.46548323471400394,
+    "avg_price": 0.5357998027613412,
+    "avg_contracts": 477.3218934911243,
+    "final_daily_equity": 54906.55600000001
+  },
+  "backtest_real_config": {
+    "bankroll": 10000.0,
+    "min_edge": 0.03,
+    "kelly_fraction": 0.25,
+    "max_stake_frac": 0.02,
+    "max_contracts": 500,
+    "min_prob": 0.05,
+    "max_prob": 0.95,
+    "min_tau": 1,
+    "max_tau": 14,
+    "fee_multiplier": 0.07,
+    "liquidity_cap": null,
+    "compound": true,
+    "one_trade_per_window": true,
+    "max_price": 0.97
+  },
+  "baselines_real": {
+    "always_yes": {
+      "n": 5791,
+      "pnl_per_contract": -0.020392505612156775
+    },
+    "always_no": {
+      "n": 5791,
+      "pnl_per_contract": -0.01894422379554483
+    },
+    "random": {
+      "n": 5791,
+      "pnl_per_contract": -0.023358659989639048
+    }
+  },
+  "backtest_full_year": {
+    "n_trades": 13059,
+    "start_bankroll": 10000.0,
+    "final_bankroll": 116528.67999999398,
+    "total_pnl": 106528.67999999995,
+    "return_on_bankroll": 10.652867999999994,
+    "annualised_return": 52.70207049684411,
+    "turnover": 3229696.91,
+    "roi_on_turnover": 0.032984110574016665,
+    "win_rate": 0.576690405084616,
+    "avg_win": 173.63150444828042,
+    "avg_loss": -217.27391099855285,
+    "profit_factor": 1.0886933235937368,
+    "avg_edge": 0.04778581880074037,
+    "realised_edge_per_contract": 0.017570045612093504,
+    "total_fees": 88773.41,
+    "max_drawdown": -0.5459890611308988,
+    "max_drawdown_dollars": -9040.520000000615,
+    "sharpe_daily_ann": 5.271627591100666,
+    "sortino_daily_ann": 10.06712736654376,
+    "trades_per_day": 58.04,
+    "days_covered": 225,
+    "pnl_ci95": [
+      57588.71199999997,
+      155538.71599999993
+    ],
+    "p_pnl_positive": 1.0,
+    "yes_share": 0.5114480434949077,
+    "avg_price": 0.5445826632973428,
+    "avg_contracts": 464.28401868443217,
+    "final_daily_equity": 116528.67999999992
+  },
+  "backtest_full_year_config": {
+    "bankroll": 10000.0,
+    "min_edge": 0.03,
+    "kelly_fraction": 0.25,
+    "max_stake_frac": 0.02,
+    "max_contracts": 500,
+    "min_prob": 0.05,
+    "max_prob": 0.95,
+    "min_tau": 1,
+    "max_tau": 14,
+    "fee_multiplier": 0.07,
+    "liquidity_cap": null,
+    "compound": true,
+    "one_trade_per_window": true,
+    "max_price": 0.97
+  },
+  "monthly_pnl": [
+    {
+      "month": "2025-12",
+      "trades": 3,
+      "pnl": -76.07999999999998,
+      "win_rate": 0.6666666666666666,
+      "avg_edge": 0.03672610118154667
+    },
+    {
+      "month": "2026-01",
+      "trades": 1751,
+      "pnl": 4170.3899999999985,
+      "win_rate": 0.6727584237578527,
+      "avg_edge": 0.045429640111211395
+    },
+    {
+      "month": "2026-02",
+      "trades": 1435,
+      "pnl": 4464.36,
+      "win_rate": 0.5386759581881533,
+      "avg_edge": 0.04901171287019857
+    },
+    {
+      "month": "2026-03",
+      "trades": 1420,
+      "pnl": 19348.379999999994,
+      "win_rate": 0.5401408450704225,
+      "avg_edge": 0.04389539895931902
+    },
+    {
+      "month": "2026-04",
+      "trades": 1411,
+      "pnl": 17724.509999999995,
+      "win_rate": 0.5747696669029058,
+      "avg_edge": 0.0430998903405908
+    },
+    {
+      "month": "2026-05",
+      "trades": 1328,
+      "pnl": 8941.249999999995,
+      "win_rate": 0.5504518072289156,
+      "avg_edge": 0.042863643741677525
+    },
+    {
+      "month": "2026-06",
+      "trades": 2119,
+      "pnl": 16295.279999999999,
+      "win_rate": 0.5408211420481359,
+      "avg_edge": 0.050359018905050526
+    },
+    {
+      "month": "2026-07",
+      "trades": 2609,
+      "pnl": 31921.329999999994,
+      "win_rate": 0.5914143349942507,
+      "avg_edge": 0.05246728506604582
+    },
+    {
+      "month": "2026-08",
+      "trades": 983,
+      "pnl": 3739.259999999993,
+      "win_rate": 0.590030518819939,
+      "avg_edge": 0.05125074581178821
+    }
+  ],
+  "parameter_sweep": [
+    {
+      "min_edge": 0.02,
+      "kelly": 0.15,
+      "n_trades": 16623,
+      "total_pnl": 92491.19,
+      "return": 9.2491,
+      "sharpe": 4.205,
+      "max_dd": -0.5736,
+      "win_rate": 0.5687,
+      "p_positive": 0.9995
+    },
+    {
+      "min_edge": 0.02,
+      "kelly": 0.25,
+      "n_trades": 16623,
+      "total_pnl": 92665.81,
+      "return": 9.2666,
+      "sharpe": 4.154,
+      "max_dd": -0.6128,
+      "win_rate": 0.5687,
+      "p_positive": 0.9995
+    },
+    {
+      "min_edge": 0.02,
+      "kelly": 0.4,
+      "n_trades": 16623,
+      "total_pnl": 93351.26,
+      "return": 9.3351,
+      "sharpe": 4.178,
+      "max_dd": -0.6124,
+      "win_rate": 0.5687,
+      "p_positive": 0.9995
+    },
+    {
+      "min_edge": 0.03,
+      "kelly": 0.15,
+      "n_trades": 13059,
+      "total_pnl": 107924.73,
+      "return": 10.7925,
+      "sharpe": 5.345,
+      "max_dd": -0.509,
+      "win_rate": 0.5767,
+      "p_positive": 1.0
+    },
+    {
+      "min_edge": 0.03,
+      "kelly": 0.25,
+      "n_trades": 13059,
+      "total_pnl": 106528.68,
+      "return": 10.6529,
+      "sharpe": 5.272,
+      "max_dd": -0.546,
+      "win_rate": 0.5767,
+      "p_positive": 1.0
+    },
+    {
+      "min_edge": 0.03,
+      "kelly": 0.4,
+      "n_trades": 13059,
+      "total_pnl": 106495.42,
+      "return": 10.6495,
+      "sharpe": 5.271,
+      "max_dd": -0.5466,
+      "win_rate": 0.5767,
+      "p_positive": 1.0
+    },
+    {
+      "min_edge": 0.04,
+      "kelly": 0.15,
+      "n_trades": 9885,
+      "total_pnl": 105118.61,
+      "return": 10.5119,
+      "sharpe": 6.194,
+      "max_dd": -0.5488,
+      "win_rate": 0.5737,
+      "p_positive": 1.0
+    },
+    {
+      "min_edge": 0.04,
+      "kelly": 0.25,
+      "n_trades": 9885,
+      "total_pnl": 105028.68,
+      "return": 10.5029,
+      "sharpe": 6.175,
+      "max_dd": -0.575,
+      "win_rate": 0.5737,
+      "p_positive": 1.0
+    },
+    {
+      "min_edge": 0.04,
+      "kelly": 0.4,
+      "n_trades": 9885,
+      "total_pnl": 105028.68,
+      "return": 10.5029,
+      "sharpe": 6.175,
+      "max_dd": -0.575,
+      "win_rate": 0.5737,
+      "p_positive": 1.0
+    },
+    {
+      "min_edge": 0.05,
+      "kelly": 0.15,
+      "n_trades": 7267,
+      "total_pnl": 108885.88,
+      "return": 10.8886,
+      "sharpe": 6.983,
+      "max_dd": -0.3299,
+      "win_rate": 0.5625,
+      "p_positive": 1.0
+    },
+    {
+      "min_edge": 0.05,
+      "kelly": 0.25,
+      "n_trades": 7267,
+      "total_pnl": 108897.38,
+      "return": 10.8897,
+      "sharpe": 6.984,
+      "max_dd": -0.3299,
+      "win_rate": 0.5625,
+      "p_positive": 1.0
+    },
+    {
+      "min_edge": 0.05,
+      "kelly": 0.4,
+      "n_trades": 7267,
+      "total_pnl": 108897.38,
+      "return": 10.8897,
+      "sharpe": 6.984,
+      "max_dd": -0.3299,
+      "win_rate": 0.5625,
+      "p_positive": 1.0
+    },
+    {
+      "min_edge": 0.07,
+      "kelly": 0.15,
+      "n_trades": 3920,
+      "total_pnl": 82064.59,
+      "return": 8.2065,
+      "sharpe": 7.137,
+      "max_dd": -0.2853,
+      "win_rate": 0.5339,
+      "p_positive": 1.0
+    },
+    {
+      "min_edge": 0.07,
+      "kelly": 0.25,
+      "n_trades": 3920,
+      "total_pnl": 82064.59,
+      "return": 8.2065,
+      "sharpe": 7.137,
+      "max_dd": -0.2853,
+      "win_rate": 0.5339,
+      "p_positive": 1.0
+    },
+    {
+      "min_edge": 0.07,
+      "kelly": 0.4,
+      "n_trades": 3920,
+      "total_pnl": 82064.59,
+      "return": 8.2065,
+      "sharpe": 7.137,
+      "max_dd": -0.2853,
+      "win_rate": 0.5339,
+      "p_positive": 1.0
+    }
+  ]
+}

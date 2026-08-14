@@ -6,3 +6,4 @@ __pycache__/
 *.pkl
 results_validation*
 *.log
+results/paper_state.json

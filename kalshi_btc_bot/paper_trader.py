@@ -300,14 +300,20 @@ def main() -> None:
         try:
             settle_pending(session, port)
 
+            stamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
             market = get_open_market(session)
             if market is None:
+                print(f"[{stamp}] no open market in the series right now", flush=True)
                 time.sleep(args.poll)
                 continue
             ticker = market["ticker"]
 
             row = live.decision_row(market)
             if row is None or row.empty:
+                # Usually means the newest completed BTC bar does not yet line up
+                # with a decision minute inside this window (the boundary minute,
+                # or the exchange has not published the bar yet).
+                print(f"[{stamp}] {ticker}: waiting for an aligned 1m bar", flush=True)
                 time.sleep(args.poll)
                 continue
 
@@ -315,6 +321,7 @@ def main() -> None:
             ob = get_orderbook(session, ticker)
             yes_bid, yes_ask = top_of_book(ob)
             if yes_bid is None or yes_ask is None:
+                print(f"[{stamp}] {ticker}: order book empty on one side", flush=True)
                 time.sleep(args.poll)
                 continue
 
@@ -325,7 +332,6 @@ def main() -> None:
             side, cost, edge = (("yes", yes_cost, yes_edge) if yes_edge >= no_edge
                                 else ("no", no_cost, no_edge))
 
-            stamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
             print(f"[{stamp}] {ticker} tau={tau:2d}m  strike={market['floor_strike']:,.2f} "
                   f"px={row['price'].iloc[0]:,.2f}  p={p:.3f}  "
                   f"book={yes_bid:.2f}/{yes_ask:.2f}  best={side} edge=${edge:+.4f}",

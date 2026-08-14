@@ -1,6 +1,6 @@
 {
   "candle_alignment": {
-    "n_markets": 4000,
+    "n_markets": 5794,
     "median_first_candle_minutes_after_open": 1.0,
     "median_last_candle_minutes_after_close": 0.0,
     "share_first_candle_at_open_exactly": 0.0,
@@ -9,233 +9,233 @@
   "quote_lag_sweep": [
     {
       "lag_min": 0,
-      "rows": 55963,
-      "n_trades": 3464,
-      "pnl": 31247.63,
-      "per_contract": 0.01932,
-      "win_rate": 0.5667,
-      "sharpe": 6.238
+      "rows": 81074,
+      "n_trades": 5070,
+      "pnl": 44906.56,
+      "per_contract": 0.01856,
+      "win_rate": 0.5688,
+      "sharpe": 6.608
     },
     {
       "lag_min": 1,
-      "rows": 51958,
-      "n_trades": 3989,
-      "pnl": 197056.1,
-      "per_contract": 0.09901,
-      "win_rate": 0.6317,
-      "sharpe": 34.431
+      "rows": 75275,
+      "n_trades": 5780,
+      "pnl": 284542.45,
+      "per_contract": 0.0986,
+      "win_rate": 0.6289,
+      "sharpe": 36.948
     },
     {
       "lag_min": 2,
-      "rows": 47959,
-      "n_trades": 3970,
-      "pnl": 259953.8,
-      "per_contract": 0.13111,
-      "win_rate": 0.6559,
-      "sharpe": 45.268
+      "rows": 69482,
+      "n_trades": 5758,
+      "pnl": 368266.61,
+      "per_contract": 0.12802,
+      "win_rate": 0.653,
+      "sharpe": 48.368
     },
     {
       "lag_min": 5,
-      "rows": 35962,
-      "n_trades": 3730,
-      "pnl": 345419.5,
-      "per_contract": 0.18548,
-      "win_rate": 0.7126,
-      "sharpe": 59.759
+      "rows": 52103,
+      "n_trades": 5412,
+      "pnl": 515100.31,
+      "per_contract": 0.19055,
+      "win_rate": 0.7153,
+      "sharpe": 61.452
     }
   ],
   "execution_delay": [
     {
       "delay_min": 0,
-      "rows": 55963,
-      "n_trades": 3464,
-      "pnl": 31247.63,
-      "per_contract": 0.01932,
-      "win_rate": 0.5667
+      "rows": 81074,
+      "n_trades": 5070,
+      "pnl": 44906.56,
+      "per_contract": 0.01856,
+      "win_rate": 0.5688
     },
     {
       "delay_min": 1,
-      "rows": 51958,
-      "n_trades": 3981,
-      "pnl": 9974.57,
-      "per_contract": 0.00514,
-      "win_rate": 0.4401
+      "rows": 75275,
+      "n_trades": 5761,
+      "pnl": 9611.37,
+      "per_contract": 0.0034,
+      "win_rate": 0.4373
     },
     {
       "delay_min": 2,
-      "rows": 47959,
-      "n_trades": 3985,
-      "pnl": -9973.45,
-      "per_contract": -0.01681,
-      "win_rate": 0.3752
+      "rows": 69482,
+      "n_trades": 4408,
+      "pnl": -9999.9,
+      "per_contract": -0.01683,
+      "win_rate": 0.3498
     },
     {
       "delay_min": 3,
-      "rows": 43959,
-      "n_trades": 3991,
-      "pnl": -9920.96,
-      "per_contract": -0.01043,
-      "win_rate": 0.3518
+      "rows": 63688,
+      "n_trades": 5689,
+      "pnl": -9998.74,
+      "per_contract": -0.01046,
+      "win_rate": 0.2888
     }
   ],
   "excluding_first_minute": {
-    "n_trades": 3404,
-    "pnl": 28725.860999999997,
-    "per_contract": 0.017902361669839863
+    "n_trades": 4983,
+    "pnl": 42001.28099999999,
+    "per_contract": 0.017543771837674933
   },
   "shuffle_control": {
-    "n_trades": 3990,
-    "pnl": -9987.358000000002,
-    "per_contract": -0.05372117841332682
+    "n_trades": 4397,
+    "pnl": -9999.909000000003,
+    "per_contract": -0.02269915626468366
   },
   "cost_stress": [
     {
       "scenario": "baseline",
-      "n_trades": 3459,
-      "pnl": 30607.47,
-      "per_contract": 0.01911
+      "n_trades": 5063,
+      "pnl": 44272.29,
+      "per_contract": 0.01842
     },
     {
       "scenario": "2x fee",
-      "n_trades": 2966,
-      "pnl": 11705.25,
-      "per_contract": 0.0101
+      "n_trades": 4389,
+      "pnl": 21277.39,
+      "per_contract": 0.01138
     },
     {
       "scenario": "+1c spread",
-      "n_trades": 3253,
-      "pnl": 23483.52,
-      "per_contract": 0.01529
+      "n_trades": 4787,
+      "pnl": 36906.57,
+      "per_contract": 0.01603
     },
     {
       "scenario": "+2c spread",
-      "n_trades": 3084,
-      "pnl": 14033.28,
-      "per_contract": 0.01119
+      "n_trades": 4547,
+      "pnl": 23156.96,
+      "per_contract": 0.01166
     },
     {
       "scenario": "2x fee +1c",
-      "n_trades": 2692,
-      "pnl": 11881.93,
-      "per_contract": 0.01083
+      "n_trades": 4024,
+      "pnl": 18921.07,
+      "per_contract": 0.01073
     }
   ],
   "by_tau": [
     {
       "tau_min": 1,
-      "trades": 38.0,
-      "pnl": -171.8800000000001,
-      "per_contract": -0.009165955631399323
+      "trades": 61.0,
+      "pnl": -927.4600000000003,
+      "per_contract": -0.03065780774824806
     },
     {
       "tau_min": 2,
-      "trades": 55.0,
-      "pnl": 622.0000000000001,
-      "per_contract": 0.02286848781205192
+      "trades": 79.0,
+      "pnl": 327.62,
+      "per_contract": 0.008357866272098778
     },
     {
       "tau_min": 3,
-      "trades": 59.0,
-      "pnl": 138.3999999999998,
-      "per_contract": 0.004752747252747246
+      "trades": 79.0,
+      "pnl": 696.1799999999998,
+      "per_contract": 0.017796012269938648
     },
     {
       "tau_min": 4,
-      "trades": 70.0,
-      "pnl": 404.3900000000002,
-      "per_contract": 0.011829111332124267
+      "trades": 113.0,
+      "pnl": 434.83000000000027,
+      "per_contract": 0.00780860539453364
     },
     {
       "tau_min": 5,
-      "trades": 77.0,
-      "pnl": 1726.0099999999995,
-      "per_contract": 0.04533422635463451
+      "trades": 123.0,
+      "pnl": 1756.1799999999998,
+      "per_contract": 0.028755423837047465
     },
     {
       "tau_min": 6,
-      "trades": 102.0,
-      "pnl": 3197.020000000001,
-      "per_contract": 0.06556779261264589
+      "trades": 144.0,
+      "pnl": 6150.02,
+      "per_contract": 0.08816095414211787
     },
     {
       "tau_min": 7,
-      "trades": 125.0,
-      "pnl": 1065.2800000000002,
-      "per_contract": 0.01868682793341169
+      "trades": 177.0,
+      "pnl": 2513.9100000000008,
+      "per_contract": 0.03028551808883589
     },
     {
       "tau_min": 8,
-      "trades": 151.0,
-      "pnl": 1629.8140000000008,
-      "per_contract": 0.02341619493692711
+      "trades": 230.0,
+      "pnl": 3858.874,
+      "per_contract": 0.035369415776062764
     },
     {
       "tau_min": 9,
-      "trades": 171.0,
-      "pnl": -161.7500000000009,
-      "per_contract": -0.0020078451817922382
+      "trades": 258.0,
+      "pnl": -1382.0700000000004,
+      "per_contract": -0.011140425120305664
     },
     {
       "tau_min": 10,
-      "trades": 227.0,
-      "pnl": -1561.9600000000005,
-      "per_contract": -0.015147600760308784
+      "trades": 349.0,
+      "pnl": -592.0500000000006,
+      "per_contract": -0.00360750932267421
     },
     {
       "tau_min": 11,
-      "trades": 334.0,
-      "pnl": 4024.6000000000013,
-      "per_contract": 0.026691337882917845
+      "trades": 505.0,
+      "pnl": 2517.709999999999,
+      "per_contract": 0.010655485159744878
     },
     {
       "tau_min": 12,
-      "trades": 443.0,
-      "pnl": -3306.8580000000015,
-      "per_contract": -0.016454977010807913
+      "trades": 640.0,
+      "pnl": -4905.688000000002,
+      "per_contract": -0.01638156172361286
     },
     {
       "tau_min": 13,
-      "trades": 560.0,
-      "pnl": 1856.0499999999993,
-      "per_contract": 0.0071440393527428345
+      "trades": 841.0,
+      "pnl": 6318.499999999997,
+      "per_contract": 0.015784253966985084
     },
     {
       "tau_min": 14,
-      "trades": 1052.0,
-      "pnl": 21786.51,
-      "per_contract": 0.043651767789091515
+      "trades": 1471.0,
+      "pnl": 28139.999999999996,
+      "per_contract": 0.03971222046915176
     }
   ],
   "by_price": [
     {
       "price_bucket": "(0.0, 0.2]",
-      "trades": 304.0,
-      "pnl": -131.9299999999996,
-      "per_contract": -0.0008679605263157869
+      "trades": 424.0,
+      "pnl": -206.26999999999907,
+      "per_contract": -0.0009729716981132032
     },
     {
       "price_bucket": "(0.2, 0.4]",
-      "trades": 505.0,
-      "pnl": 10055.18,
-      "per_contract": 0.03998639969777106
+      "trades": 796.0,
+      "pnl": 12779.38,
+      "per_contract": 0.03219271220384669
     },
     {
       "price_bucket": "(0.4, 0.6]",
-      "trades": 1396.0,
-      "pnl": 20705.32999999999,
-      "per_contract": 0.031109823966728557
+      "trades": 1920.0,
+      "pnl": 15819.909999999985,
+      "per_contract": 0.017055476973896977
     },
     {
       "price_bucket": "(0.6, 0.8]",
-      "trades": 920.0,
-      "pnl": -1502.6599999999971,
-      "per_contract": -0.0037000667295385248
+      "trades": 1405.0,
+      "pnl": 13113.780000000006,
+      "per_contract": 0.020218063973038027
     },
     {
       "price_bucket": "(0.8, 1.0]",
-      "trades": 339.0,
-      "pnl": 2121.7059999999997,
-      "per_contract": 0.0149538073355699
+      "trades": 525.0,
+      "pnl": 3399.7559999999985,
+      "per_contract": 0.014474191515812054
     }
   ],
   "by_week": [
@@ -277,9 +277,21 @@
     },
     {
       "week": 30,
-      "trades": 19.0,
-      "pnl": 910.1599999999999,
-      "per_contract": 0.09580631578947367
+      "trades": 586.0,
+      "pnl": 5929.179999999999,
+      "per_contract": 0.020236109215017062
+    },
+    {
+      "week": 31,
+      "trades": 596.0,
+      "pnl": 8397.349999999997,
+      "per_contract": 0.028179026845637573
+    },
+    {
+      "week": 32,
+      "trades": 443.0,
+      "pnl": 242.56000000000108,
+      "per_contract": 0.0010950790067720138
     }
   ]
 }

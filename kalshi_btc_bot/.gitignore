@@ -1,0 +1,7 @@
+cache/
+models/
+__pycache__/
+*.pyc
+*.parquet
+*.pkl
+results_validation*

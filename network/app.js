@@ -460,7 +460,7 @@ function fit() {
   });
   // keep the drawing clear of the rail, the chat dock and any open dossier
   var wide = W > 880;
-  var L = wide ? 244 : 16, R = (selected && wide ? 400 : 16), T = 16, B = wide ? 132 : 150;
+  var L = wide ? 244 : 34, R = (selected && wide ? 400 : 34), T = 16, B = wide ? 132 : 150;
   var availW = Math.max(120, W - L - R), availH = Math.max(120, H - T - B);
   var k = Math.min(availW / (maxx - minx || 1), availH / (maxy - miny || 1));
   cam.k = Math.max(0.25, Math.min(1.4, k));

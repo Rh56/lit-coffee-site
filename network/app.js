@@ -12,7 +12,9 @@ var KEY = 'rootwork.v1';
 var DAY = 86400000;
 var COLD_DAYS = 90;
 
-var state = { me: { name: 'Me' }, people: [], circles: [], demo: false, seq: 1 };
+var state = { me: { name: 'Me' }, people: [], circles: [], tombstones: {}, meUpdated: 0, demo: false, seq: 1 };
+var DEFAULTS = function () { return { me: { name: 'Me' }, people: [], circles: [], tombstones: {}, meUpdated: 0, demo: false, seq: 1 }; };
+var applyingRemote = false;
 
 function uid() { return 'p' + (state.seq++) + Math.random().toString(36).slice(2, 6); }
 
@@ -23,7 +25,7 @@ function load() {
   try {
     var d = JSON.parse(raw);
     if (!d || !Array.isArray(d.people)) return false;
-    state = Object.assign({ me: { name: 'Me' }, people: [], circles: [], demo: false, seq: 1 }, d);
+    state = Object.assign(DEFAULTS(), d);
     state.people.forEach(normalizePerson);
     return true;
   } catch (e) { return false; }
@@ -34,7 +36,16 @@ function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(function () {
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* private mode */ }
+    if (!applyingRemote && window.RootworkSync) window.RootworkSync.markDirty();
   }, 220);
+}
+
+function touch(p) { p.updated = Date.now(); return p; }
+
+function forget(p) {
+  state.tombstones = state.tombstones || {};
+  state.tombstones[p.id] = Date.now();
+  state.people = state.people.filter(function (x) { return x.id !== p.id; });
 }
 
 function normalizePerson(p) {
@@ -605,34 +616,56 @@ function draw() {
 
   ctx.restore();
 
-  // labels are drawn in screen space so they never distort with zoom
+  // Labels sit in screen space so they never distort with zoom. They are laid
+  // out most-important-first and a label that would land on one already placed
+  // is dropped rather than overprinted — zoom in (or hover) to get it back.
   ctx.save();
   ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  nodes.forEach(function (n) {
-    if (cam.k < 0.45 && n.kind === 'person' && n !== focus) return;
+
+  var jobs = nodes.slice().sort(function (a, b) { return labelRank(a) - labelRank(b); });
+  var placed = [];
+  jobs.forEach(function (n) {
     var p = toScreen(n.x, n.y);
     if (p[0] < -80 || p[0] > W + 80 || p[1] < -40 || p[1] > H + 40) return;
     var dim = focus && !lit[n.id] ? Math.max(DIM, 0.3) : 1;
     var off = n.r * cam.k + 7;
+    var text = n.label, y = p[1] + off, h = 13;
+
     if (n.kind === 'circle') {
       ctx.font = '500 9.5px "JetBrains Mono", monospace';
       ctx.letterSpacing = '1.6px';
-      ctx.fillStyle = mix(C.muted, dim);
-      ctx.fillText(n.label.toUpperCase(), p[0], p[1] + off);
+      text = n.label.toUpperCase();
     } else if (n.kind === 'me') {
       ctx.font = '400 15px "Instrument Serif", Georgia, serif';
       ctx.letterSpacing = '0px';
-      ctx.fillStyle = C.ink;
-      ctx.fillText(n.label, p[0], p[1] + off + 2);
+      y += 2; h = 17;
     } else {
       ctx.font = (n === focus ? '500 ' : '400 ') + '11.5px Archivo, system-ui, sans-serif';
       ctx.letterSpacing = '0.2px';
-      ctx.fillStyle = mix(n.cold ? C.muted : C.ink, dim);
-      ctx.fillText(n.label, p[0], p[1] + off);
     }
+
+    var w = ctx.measureText(text).width + 8;
+    var box = [p[0] - w / 2, y - 2, w, h];
+    var forced = n === focus || n === selected || n.kind === 'me';
+    if (!forced && placed.some(function (q) {
+      return box[0] < q[0] + q[2] && box[0] + box[2] > q[0] && box[1] < q[1] + q[3] && box[1] + box[3] > q[1];
+    })) return;
+    placed.push(box);
+
+    ctx.fillStyle = n.kind === 'circle' ? mix(C.muted, dim)
+      : n.kind === 'me' ? C.ink
+      : mix(n.cold ? C.muted : C.ink, dim);
+    ctx.fillText(text, p[0], y);
   });
   ctx.letterSpacing = '0px';
   ctx.restore();
+
+  function labelRank(n) {
+    if (n === focus || n === selected) return -2;
+    if (n.kind === 'me') return -1;
+    if (n.kind === 'circle') return 0;
+    return 1 + 1 / (1 + (n.strength || 0));   // busiest people keep their names
+  }
 }
 
 var raf = null;
@@ -820,17 +853,17 @@ $('#dossier').addEventListener('click', function (e) {
   if (t.dataset.log) { $('#chat').value = 'Talked with ' + p.name + ' — '; $('#chat').focus(); return; }
   if (t.dataset.del) {
     if (!confirm('Delete ' + p.name + ' and their history?')) return;
-    state.people = state.people.filter(function (x) { return x.id !== p.id; });
+    forget(p);
     save(); closeDossier(); renderAll(); toast(p.name + ' removed');
     return;
   }
   if (t.dataset.dellog) {
     p.log = p.log.filter(function (x) { return x.id !== t.dataset.dellog; });
-    save(); openDossier(selected); renderAll();
+    touch(p); save(); openDossier(selected); renderAll();
   }
   if (t.dataset.delnote) {
     p.notes = p.notes.filter(function (x) { return x.id !== t.dataset.delnote; });
-    save(); openDossier(selected); renderAll();
+    touch(p); save(); openDossier(selected); renderAll();
   }
 });
 
@@ -885,7 +918,7 @@ function personForm(p) {
     if (g('note')) p.notes.unshift({ id: uid(), t: g('note'), at: Date.now() });
     if (isNew) state.people.push(p);
     circleIndex(p.circle);
-    save(); closeModal(); renderAll();
+    touch(p); save(); closeModal(); renderAll();
     if (byId[p.id]) openDossier(byId[p.id]);
     toast(isNew ? p.name + ' added' : 'Saved');
   });
@@ -978,7 +1011,7 @@ function importModal() {
       try {
         var d = JSON.parse(v);
         if (!Array.isArray(d.people)) throw 0;
-        state = Object.assign({ me: { name: 'Me' }, people: [], circles: [], demo: false, seq: 1 }, d);
+        state = Object.assign(DEFAULTS(), d);
         state.people.forEach(normalizePerson);
         save(); closeModal(); renderAll(); fit();
         toast('Restored ' + state.people.length + ' people');
@@ -1000,7 +1033,7 @@ function importModal() {
       if (rec.circle) p.circle = rec.circle;
       if (rec.tags) p.tags = rec.tags.split(/[,;]/).map(function (t) { return t.trim().replace(/^#/, ''); }).filter(Boolean);
       if (rec.notes) p.notes.unshift({ id: uid(), t: rec.notes, at: Date.now() });
-      circleIndex(p.circle);
+      circleIndex(p.circle); touch(p);
     });
     state.demo = false;
     save(); closeModal(); renderAll(); fit();
@@ -1083,8 +1116,10 @@ function helpModal() {
       '<p>You are the centre. Circles branch off you; people branch off circles. A dot grows with every touchpoint logged, and fades to an outline once ninety days pass without contact — those are the ones in “Going cold”. Drag a person to pin them where you like, double-click to let go. Scroll to zoom, drag the plate to pan.</p></section>' +
     '<section><h5>Commands</h5>' +
       '<div class="ex">/me Ben Fisher   — name the centre\n/import          — paste your spreadsheet\n/export          — copy it all back out\n/sample          — load or clear the sample map\n/help            — this</div></section>' +
+    '<section><h5>On your phone</h5>' +
+      '<p>Open the app’s address in Safari or Chrome and use <em>Add to Home Screen</em> — it installs with its own icon and opens fullscreen, working with no signal.</p></section>' +
     '<section><h5>Where the data lives</h5>' +
-      '<p>In this browser, and nowhere else — no account, no server. Clearing site data clears the map, so keep a JSON backup from Export if it matters.</p></section>' +
+      '<p>In this browser by default — no account, no server. Turn on <em>Sync</em> in the top bar and it also goes to a database you own, encrypted here with a passphrase only you hold, so the same map opens on every device you pair. Either way, keep a JSON backup from Export if it matters.</p></section>' +
     '</div>';
   modal('How to talk to it', 'Rootwork', body, '<button class="btn primary" data-close>Got it</button>');
 }
@@ -1178,6 +1213,7 @@ function confirmDraft() {
 }
 
 var chat = $('#chat');
+if (window.innerWidth < 880) chat.placeholder = 'Coffee with Ada yesterday — she has capacity in Q2';
 function autosize() { chat.style.height = 'auto'; chat.style.height = Math.min(130, chat.scrollHeight) + 'px'; }
 chat.addEventListener('input', autosize);
 
@@ -1193,7 +1229,7 @@ $('#chatform').addEventListener('submit', function (e) {
     if (cmd === 'import') return importModal();
     if (cmd === 'export') return exportModal();
     if (cmd === 'me') {
-      if (rest) { state.me.name = rest; save(); renderAll(); toast('You are ' + rest); }
+      if (rest) { state.me.name = rest; state.meUpdated = Date.now(); save(); renderAll(); toast('You are ' + rest); }
       else toast('Try: /me Ben Fisher');
       return;
     }
@@ -1419,7 +1455,8 @@ function sample() {
 
 function toggleSample() {
   if (state.demo) {
-    state = { me: state.me, people: [], circles: [], demo: false, seq: state.seq };
+    state.people.forEach(forget);
+    state.demo = false;
     save(); closeDossier(); renderAll(); fit(); toast('Sample cleared — the map is yours');
   } else {
     state.people = state.people.concat(sample());
@@ -1459,6 +1496,25 @@ document.addEventListener('keydown', function (e) {
 
 window.addEventListener('resize', resize);
 
+/* ---- the surface sync.js drives ---- */
+
+window.Rootwork = {
+  getState: function () { return state; },
+  setState: function (next) {
+    applyingRemote = true;
+    var keepSelected = selected && selected.ref ? selected.ref.id : null;
+    state = Object.assign(DEFAULTS(), next);
+    state.people.forEach(normalizePerson);
+    state.people.forEach(function (p) { circleIndex(p.circle || 'Unsorted'); });
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { }
+    renderAll();
+    if (keepSelected && byId[keepSelected]) openDossier(byId[keepSelected]);
+    syncSampleBtn();
+    applyingRemote = false;
+  },
+  modal: modal, closeModal: closeModal, toast: toast
+};
+
 /* ---- go ---- */
 
 (function init() {
@@ -1478,6 +1534,18 @@ window.addEventListener('resize', resize);
   for (var i = 0; i < 260; i++) tick();
   fit();
 
+  var pill = document.createElement('button');
+  pill.className = 'pill';
+  pill.id = 'sync-pill';
+  pill.type = 'button';
+  pill.dataset.tone = 'off';
+  pill.innerHTML = '<span class="dot"></span>Sync off';
+  pill.addEventListener('click', function () {
+    if (window.RootworkSync) window.RootworkSync.open();
+    else toast('Sync is not available in this build');
+  });
+  $('.tools').insertBefore(pill, $('#btn-add'));
+
   var hintBtn = document.createElement('button');
   hintBtn.className = 'btn';
   hintBtn.id = 'btn-sample';
@@ -1487,6 +1555,13 @@ window.addEventListener('resize', resize);
 
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { needsDraw = true; });
   loop();
+
+  if (window.RootworkSync) window.RootworkSync.attach(window.Rootwork);
+
+  // installable app, when served over http(s); harmless anywhere else
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    navigator.serviceWorker.register('sw.js').catch(function () { });
+  }
   setTimeout(function () { chat.focus(); }, 300);
 })();
 

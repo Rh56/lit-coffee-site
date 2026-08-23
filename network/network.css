@@ -177,7 +177,9 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 
 .stats{
   margin-left:auto;
-  display:flex; align-items:center; gap:16px;
+  display:flex; align-items:center; gap:15px;
+  padding-right:15px; margin-right:1px;
+  border-right:1px solid var(--rule);
   font-family:var(--mono); font-size:10.5px; letter-spacing:.1em;
   text-transform:uppercase; color:var(--muted);
   font-variant-numeric:tabular-nums;
@@ -186,6 +188,8 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .stats .cold b{ color:var(--warn); }
 
 .tools{ display:flex; align-items:center; gap:6px; }
+.topbar > .searchwrap + .stats{ margin-left:auto; }
+@media (max-width:1120px){ .stats{ border-right:none; padding-right:0; } }
 .btn{
   border:1px solid var(--rule);
   background:var(--panel-2);
@@ -265,12 +269,20 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 }
 .viewtools .btn{ background:color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter:blur(8px); }
 .stage.panel-open .viewtools{ right:386px; }        /* stay clear of the open card */
-@media (max-width:880px){ .stage.panel-open .viewtools{ right:14px; } }
+.stage.panel-open .dock{
+  transform:translateX(calc(-50% - 190px));
+  width:min(620px, calc(100% - 660px));       /* clear of both the rail and the card */
+}
+@media (max-width:880px){
+  .stage.panel-open .viewtools{ right:14px; }
+  .stage.panel-open .dock{ transform:translateX(-50%); }
+}
 
 /* ---------- chat bar ---------- */
 
 .dock{
   position:absolute; left:50%; bottom:18px; transform:translateX(-50%);
+  transition:transform .26s cubic-bezier(.22,.7,.28,1);
   width:min(720px, calc(100vw - 260px - 40px));
   z-index:5;
   display:flex; flex-direction:column; gap:8px;
@@ -846,3 +858,32 @@ kbd{
 .jump svg{ width:13px; height:13px; display:block; }
 dd:hover .jump, .jump:focus-visible{ opacity:1; }
 .jump:hover{ color:var(--accent); }
+
+/* ---------- card, second pass ----------
+   Four sections instead of seven headers: who they are, where they are filed,
+   what has happened, what you jotted down. Chip rows carry their label inline
+   so the eye runs down one column of headings, not two. */
+
+.chiprow{
+  display:grid; grid-template-columns:64px 1fr; gap:8px;
+  align-items:start; padding:5px 0;
+}
+.chiprow + .chiprow{ border-top:1px solid var(--rule-soft); }
+.rlabel{
+  font-family:var(--mono); font-size:9.5px; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--faint);
+  padding-top:6px;
+}
+.chiprow .chiplist{ min-width:0; }
+.chiprow .chipinput{ min-width:88px; }
+
+.d-kicker .due{ color:var(--warn); font-weight:500; }
+.blank{ margin:0; font-size:13px; color:var(--faint); }
+.btn.quiet{ background:none; border-color:transparent; color:var(--muted); }
+.btn.quiet:hover{ color:var(--accent); border-color:var(--rule); }
+.d-actions{
+  position:sticky; bottom:0; margin-top:20px;
+  padding:12px 0 4px;
+  background:linear-gradient(to bottom, transparent, var(--panel) 30%);
+}
+.d-sec + .d-sec{ margin-top:4px; }

@@ -24,6 +24,7 @@ var ws = null, wsAlive = false, wsTimer = null, wsRef = 0;
 var KDF_V2 = 600000, KDF_V1 = 200000;
 var pollTimer = null, pushTimer = null;
 var status = { state: 'off', at: 0, note: '' };
+var fails = 0;
 var pulling = false, pushing = false, adoptRemote = false;
 
 /* ------------------------------------------------------------- plumbing -- */
@@ -177,6 +178,14 @@ function merge(a, b) {
 /* ----------------------------------------------------------------- wire -- */
 
 function setStatus(s, note) {
+  // One failed request is a blip, not an error: the next poll usually fixes
+  // it. Only say something is wrong once it keeps happening.
+  if (s === 'bad') {
+    fails++;
+    if (fails < 3 && navigator.onLine) s = 'retry';
+  } else if (s === 'ok') {
+    fails = 0;
+  }
   status.state = s; status.note = note || '';
   if (s === 'ok') status.at = Date.now();
   paintStatus();
@@ -195,6 +204,7 @@ function pull() {
         app.setState(next);
         setStatus('ok');
       }, function () {
+        fails = 99;
         setStatus('bad', 'passphrase does not match this map');
       });
     })
@@ -237,7 +247,11 @@ function push(force) {
 
 function schedulePush(delay) {
   clearTimeout(pushTimer);
-  pushTimer = setTimeout(function () { push(); }, delay || 1400);
+  pushTimer = setTimeout(function () {
+    // a push merges and re-renders; never do that while a field is open
+    if (app && app.busy && app.busy()) return schedulePush(1200);
+    push();
+  }, delay || 1400);
 }
 
 /* Realtime is a nicety; the poll below is what guarantees it works. */
@@ -274,6 +288,7 @@ function startLoops() {
   clearInterval(pollTimer);
   pollTimer = setInterval(function () {
     if (document.hidden) return;
+    if (app && app.busy && app.busy()) return;      // mid-edit; try again shortly
     if (wsAlive && Date.now() - status.at < 20000) return;   // socket is doing the work
     pull();
   }, 5000);
@@ -293,6 +308,7 @@ function paintStatus() {
   if (!cfg) { label = 'Sync off'; tone = 'off'; }
   else if (status.state === 'ok') { label = 'Synced'; tone = 'ok'; }
   else if (status.state === 'offline') { label = 'Offline'; tone = 'warn'; }
+  else if (status.state === 'retry') { label = 'Retrying'; tone = 'warn'; }
   else if (status.state === 'bad') { label = 'Sync error'; tone = 'bad'; }
   else { label = 'Connecting'; tone = 'off'; }
   el.dataset.tone = tone;
@@ -493,6 +509,7 @@ function dialog() {
 /* ----------------------------------------------------------------- api --- */
 
 window.RootworkSync = {
+  merge: merge,
   _merge: merge,                              // exposed for tests
   attach: function (bridge) {
     app = bridge;

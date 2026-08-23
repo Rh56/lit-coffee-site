@@ -836,3 +836,13 @@ kbd{
   margin:7px 0 0; font-family:var(--mono); font-size:10px; letter-spacing:.06em;
   color:var(--faint);
 }
+
+.fields dd{ display:flex; align-items:baseline; gap:7px; }
+.fields dd .val{ flex:1 1 auto; min-width:0; }
+.jump{
+  flex:none; color:var(--faint); line-height:1; opacity:0;
+  transition:opacity .12s, color .12s;
+}
+.jump svg{ width:13px; height:13px; display:block; }
+dd:hover .jump, .jump:focus-visible{ opacity:1; }
+.jump:hover{ color:var(--accent); }

@@ -160,7 +160,8 @@ bridges the two.
 Who put you onto whom. **Drag one person onto another** to join them, or say
 *"Marcus introduced me to Rae Kim"*, *"got her info from Ada"*, *"met Lila
 through Priya"*; the Connections row on a card also takes names directly. They
-draw as a dashed line between the two. Stored directionally — the toast after a
+draw as a dashed arrow running from the person who made the introduction to
+the person you met. Stored directionally — the toast after a
 drag offers to flip it — and drawn mutually.
 
 Deleting a circle leaves a tombstone, so the deletion survives a sync from a
@@ -178,7 +179,13 @@ files both with the right levels.
 
 Every value on a person's card is edited in place — click it and type, including
 the name. Empty fields read *add*; *+ another field* takes anything the standard
-ones do not cover.
+ones do not cover. Email and phone keep a small icon beside them for reaching
+the mail app or dialer, so clicking the value itself always means *edit*.
+
+An edit is never interrupted by sync: an update arriving from another device
+while a field is open is held, folded into whatever you just typed, and applied
+when you finish. A single failed request shows as *Retrying* rather than an
+error, since the next poll usually settles it.
 
 ## Talking to it
 

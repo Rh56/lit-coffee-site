@@ -15,6 +15,17 @@ var COLD_DAYS = 90;
 var state = { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, circleTombstones: {}, coldDays: 90, settingsAt: 0, meUpdated: 0, demo: false, seq: 1 };
 var DEFAULTS = function () { return { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, circleTombstones: {}, coldDays: 90, settingsAt: 0, meUpdated: 0, demo: false, seq: 1 }; };
 var applyingRemote = false;
+var pendingRemote = null;
+
+/* True while the person is actually typing into something that a re-render
+   would destroy. Sync waits for this to clear. */
+function isEditing() {
+  var el = document.activeElement;
+  if (!el || el === document.body) return false;
+  if (el.matches && el.matches('.inplace, .chipinput, .notebox, .newfield input, .cpick input')) return true;
+  if (el.closest && el.closest('#scrim')) return true;      // a dialog is open
+  return false;
+}
 
 function uid() { return 'p' + (state.seq++) + Math.random().toString(36).slice(2, 6); }
 
@@ -408,6 +419,36 @@ function parse(raw) {
     if (digits.length >= 10 && digits.length <= 15) { take('phone', m[1]); work = work.replace(m[1], ' '); }
   }
 
+  // 7b. who connected us — found before the name hunt, and cut out of the
+  //     sentence, so the person who made the introduction is not mistaken for
+  //     the person you met.
+  var VIA = null;
+  var introRe = new RegExp('(' + NAME + ')\\s+(?:introduced|connected|referred|put)\\s+(?:me\\s+)?(?:to|with|onto|in touch with)\\s+(' + NAME + ')');
+  var introM = introRe.exec(work);
+  var introSubject = '';
+  if (introM) {
+    VIA = introM[1];
+    introSubject = clean(introM[2]);
+    work = work.replace(introM[1], ' ');
+  }
+  if (!VIA) {
+    var viaRe = new RegExp('\\b(?:through|via|introduced by|intro(?:\'d)?\\s+by|referred by|thanks to|friend of|courtesy of)\\s+(' + NAME + ')');
+    if ((m = viaRe.exec(work))) { VIA = m[1]; work = work.replace(m[0], ' '); }
+  }
+  if (!VIA) {
+    var gotRe = new RegExp('\\bgot\\s+(?:[\\w\'’ ]{0,28}?)(?:info|number|email|contact|details)\\s+from\\s+(' + NAME + ')');
+    if ((m = gotRe.exec(work))) {
+      VIA = m[1];
+      // strip only the "from <name>" tail; the subject may be sitting in front of it
+      work = work.replace(m[0].slice(m[0].toLowerCase().lastIndexOf('from')), ' ');
+    }
+  }
+  if (VIA) {
+    var viaClean = clean(VIA).replace(HONORIFIC, '');
+    var viaPerson = findPerson(viaClean);
+    if (viaPerson) out.via = viaPerson; else out.viaName = viaClean;
+  }
+
   // 8. who this is about
   var TRIGGER = '(?:[Ww]ith|w\\/|[Tt]o|[Ff]rom|[Mm]et|[Ss]aw|[Cc]alled|[Ee]mailed|[Tt]exted|[Aa]bout|[Ff]or)';
   var nm = new RegExp('\\b' + TRIGGER + '\\s+(' + NAME + ')');
@@ -439,9 +480,12 @@ function parse(raw) {
       if (byWord.length === 1) { out.name = byWord[0].name; break; }
     }
   }
+  if (introSubject) out.name = introSubject;
   if (out.patch.name) { out.name = out.patch.name; delete out.patch.name; }
   out.name = clean(out.name).replace(/[’']s$/, '').replace(HONORIFIC, '');
   out.person = findPerson(out.name);
+  if (out.via && out.person && out.via.id === out.person.id) out.via = null;
+  if (out.viaName && out.name && out.viaName.toLowerCase() === out.name.toLowerCase()) out.viaName = '';
 
   /* "she went to Rutgers", typed right after logging someone — or while their
      dossier is open — is about them, not about a stranger. */
@@ -518,21 +562,6 @@ function parse(raw) {
   }
   if (!out.patch.location && (m = /\b(?:lives in|living in|based in|moved to|is in|located in|out of|home in)\s+([A-Z][\w.'’-]*(?:[\s,]+[A-Z][\w.'’-]*){0,2})/.exec(body))) {
     take('location', m[1]);
-  }
-
-  // 11. who connected us
-  var VIA = null;
-  var intro = new RegExp('(' + NAME + ')\\s+(?:introduced|connected|put)\\s+me\\s+(?:to|with|onto)\\s+(' + NAME + ')').exec(text);
-  if (intro) {
-    VIA = intro[1];
-    if (!out.person && clean(intro[2])) { out.name = clean(intro[2]); out.person = findPerson(out.name); }
-  }
-  if (!VIA && (m = new RegExp('\\b(?:through|via|introduced by|intro(?:\'d)?\\s+by|referred by|thanks to|friend of|from)\\s+(' + NAME + ')').exec(body))) VIA = m[1];
-  if (!VIA && (m = new RegExp('\\bgot\\s+(?:her|his|their)\\s+(?:info|number|email|details|contact)\\s+from\\s+(' + NAME + ')').exec(text))) VIA = m[1];
-  if (VIA) {
-    var viaPerson = findPerson(clean(VIA).replace(HONORIFIC, ''));
-    if (viaPerson && viaPerson.name !== out.name) out.via = viaPerson;
-    else if (!viaPerson) out.viaName = clean(VIA).replace(HONORIFIC, '');
   }
 
   // 12. the takeaway
@@ -929,18 +958,39 @@ function draw() {
 
   links.forEach(function (L) {
     var dim = focus && !(lit[L.a.id] && lit[L.b.id]) ? DIM : 1;
-    if (L.tie) {                                   // person to person
+    if (L.tie) {
+      // Drawn from the person who made the introduction towards the person
+      // you ended up meeting, with an arrowhead so the direction is readable.
+      var from = L.b, to = L.a;
+      var dx = to.x - from.x, dy = to.y - from.y;
+      var d = Math.sqrt(dx * dx + dy * dy) || 1;
+      var cx = (from.x + to.x) / 2 - dy * 0.12, cy = (from.y + to.y) / 2 + dx * 0.12;
+
       ctx.save();
       ctx.setLineDash([5 / cam.k, 4 / cam.k]);
       ctx.lineWidth = 1.1 / cam.k;
       ctx.strokeStyle = mix(C.ink, 0.42 * dim);
       ctx.beginPath();
-      var mx = (L.a.x + L.b.x) / 2, my = (L.a.y + L.b.y) / 2;
-      var dx = L.b.x - L.a.x, dy = L.b.y - L.a.y;
-      var d = Math.sqrt(dx * dx + dy * dy) || 1;
-      ctx.moveTo(L.a.x, L.a.y);
-      ctx.quadraticCurveTo(mx - dy / d * d * 0.12, my + dx / d * d * 0.12, L.b.x, L.b.y);
+      ctx.moveTo(from.x, from.y);
+      ctx.quadraticCurveTo(cx, cy, to.x, to.y);
       ctx.stroke();
+      ctx.setLineDash([]);
+
+      var t = 0.62, mt = 1 - t;
+      var px = mt * mt * from.x + 2 * mt * t * cx + t * t * to.x;
+      var py = mt * mt * from.y + 2 * mt * t * cy + t * t * to.y;
+      var tx = 2 * mt * (cx - from.x) + 2 * t * (to.x - cx);
+      var ty = 2 * mt * (cy - from.y) + 2 * t * (to.y - cy);
+      var tl = Math.sqrt(tx * tx + ty * ty) || 1;
+      var ax = tx / tl, ay = ty / tl;
+      var head = 7 / cam.k;
+      ctx.beginPath();
+      ctx.moveTo(px + ax * head, py + ay * head);
+      ctx.lineTo(px - ax * head * 0.6 - ay * head * 0.55, py - ay * head * 0.6 + ax * head * 0.55);
+      ctx.lineTo(px - ax * head * 0.6 + ay * head * 0.55, py - ay * head * 0.6 - ax * head * 0.55);
+      ctx.closePath();
+      ctx.fillStyle = mix(C.ink, 0.55 * dim);
+      ctx.fill();
       ctx.restore();
       return;
     }
@@ -1241,12 +1291,19 @@ function openDossier(node) {
   var lt = lastTouch(p);
 
   function row(k, field, v, href) {
-    var body = v
-      ? (href ? '<a href="' + href + esc(v) + '" data-keep>' + esc(v) + '</a>' : esc(v))
-      : '<span class="add">add</span>';
+    var body = v ? esc(v) : '<span class="add">add</span>';
+    var jump = (v && href)
+      ? '<a class="jump" href="' + href + esc(v) + '" data-keep title="' +
+        (href === 'mailto:' ? 'Send an email' : 'Call') + '" aria-label="' +
+        (href === 'mailto:' ? 'Send an email' : 'Call') + '">' +
+        (href === 'mailto:'
+          ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>'
+          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h4l2 5-2.5 1.5a12 12 0 0 0 5 5L15 13l5 2v4a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1z"/></svg>') +
+        '</a>'
+      : '';
     return '<dt>' + esc(k) + '</dt>' +
       '<dd class="' + (v ? '' : 'empty') + '"><span class="val" data-field="' + esc(field) + '" tabindex="0" role="button" ' +
-      'title="Click to edit">' + body + '</span></dd>';
+      'title="Click to edit">' + body + '</span>' + jump + '</dd>';
   }
 
   d.innerHTML =
@@ -2186,7 +2243,7 @@ function helpModal() {
       '<p><b>Click a circle on the map</b> to recolour, rename, hide or delete it. The button beside <em>Add person</em> makes a new one, and an empty circle stays as a branch until you delete it — which is what makes “remove everyone but keep the categories” worth saying.</p></section>' +
     '<section><h5>Schools, tags, connections</h5>' +
       '<p>Type a school and press <kbd>↵</kbd> — it lands as a chip, and the level next to it cycles between undergrad, grad and unset when you click it. Saying “<em>swarthmore undergrad</em>” or “<em>wharton mba</em>” sets the level as you type, in the bar or in the chip.</p>' +
-      '<p><b>Connections</b> record who put you onto whom. <b>Drag one person onto another</b> and they are joined by a dashed line; the toast offers to flip the direction if you had it the other way round. The bar understands it too — “<em>Marcus introduced me to Rae Kim</em>”, “<em>got her info from Ada</em>”, “<em>met Lila through Priya</em>” — and the Connections row on a card takes a name directly.</p>' +
+      '<p><b>Connections</b> record who put you onto whom, drawn as a dashed arrow pointing from the person who made the introduction to the person you met. <b>Drag one person onto another</b> to join them; the toast offers to flip the direction if you had it the other way round. The bar understands it too — “<em>Marcus introduced me to Rae Kim</em>”, “<em>got her info from Ada</em>”, “<em>met Lila through Priya</em>” — and the Connections row on a card takes a name directly.</p>' +
       '<p><b>Notes</b> sit under the history on every card — write one and press <kbd>↵</kbd>. Click an existing note to edit it.</p></section>' +
     '<section><h5>When the map gets messy</h5>' +
       '<p>The <b>tidy</b> button (top right, or <kbd>T</kbd>) lets go of everyone you have dragged into place and lets the whole thing settle again. Circles claim room in proportion to how many people they hold, so a School of thirty gets the space it needs.</p></section>' +
@@ -2985,13 +3042,30 @@ document.addEventListener('keydown', function (e) {
   if (e.key === 'n') { e.preventDefault(); personForm(null); }
 });
 
+document.addEventListener('focusout', function () {
+  setTimeout(function () {
+    if (!pendingRemote || isEditing()) return;
+    var next = pendingRemote;
+    pendingRemote = null;
+    // The held copy is older than whatever was just typed, so fold the two
+    // together rather than letting the server's version win by arriving last.
+    if (window.RootworkSync && window.RootworkSync.merge) {
+      try { next = window.RootworkSync.merge(state, next); } catch (e) { }
+    }
+    window.Rootwork.setState(next);
+  }, 80);
+});
+
 window.addEventListener('resize', resize);
 
 /* ---- the surface sync.js drives ---- */
 
 window.Rootwork = {
   getState: function () { return state; },
+  busy: isEditing,
   setState: function (next) {
+    // hold anything arriving from another device until the field is finished
+    if (isEditing()) { pendingRemote = next; return false; }
     applyingRemote = true;
     var keepSelected = selected && selected.ref ? selected.ref.id : null;
     state = Object.assign(DEFAULTS(), next);
@@ -3002,6 +3076,7 @@ window.Rootwork = {
     if (keepSelected && byId[keepSelected]) openDossier(byId[keepSelected]);
     syncSampleBtn();
     applyingRemote = false;
+    return true;
   },
   modal: modal, closeModal: closeModal, toast: toast,
   parse: parse,                                 // exposed for tests

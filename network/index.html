@@ -44,6 +44,9 @@
 
     <div class="tools">
       <button class="btn" id="btn-add">Add person</button>
+      <button class="btn icon" id="btn-newcircle" title="New circle" aria-label="New circle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10" cy="14" r="5"/><path d="M17 4v7M13.5 7.5h7"/></svg>
+      </button>
       <button class="btn" id="btn-import">Import</button>
       <button class="btn" id="btn-export">Export</button>
       <button class="btn icon" id="btn-help" title="How to talk to it" aria-label="Help">
@@ -74,10 +77,9 @@
         <h3>Going cold <span class="count" id="nudge-count"></span></h3>
         <div class="nudge-list" id="nudges"></div>
       </div>
-      <div class="card">
-        <h3>Circles <span class="count" id="legend-count"></span>
-          <button class="mini" id="btn-newcircle" title="New circle" aria-label="New circle">+</button></h3>
-        <div class="legend-list" id="legend"></div>
+      <div class="card hiddenbar" id="hiddenbar" hidden>
+        <h3>Hidden <span class="count" id="hidden-count"></span></h3>
+        <div class="legend-list" id="hiddenlist"></div>
       </div>
     </div>
 

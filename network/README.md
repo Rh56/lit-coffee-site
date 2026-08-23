@@ -52,17 +52,27 @@ first.
    into Rootwork's Sync dialog, pick a passphrase, connect.
 
 **On every other device**: copy the pairing code from the first device's Sync
-dialog, paste it under *Add a device*, type the same passphrase.
+dialog, paste it under *Add a device*, type the same passphrase. The pairing
+code carries your project address and anon key — treat it like a password and
+never paste it anywhere public. It does not carry the passphrase.
 
 ### What the server can and cannot see
 
 The payload is AES-GCM ciphertext; the key is derived from your passphrase with
-PBKDF2 (200k iterations, SHA-256, salted with the space id) and never leaves the
-device. The row holds an opaque id, that ciphertext, and a timestamp — no names,
-no emails, nothing legible. The anon key and the space id are what authorise the
-write, and the policy above lets any holder of them read the row, which is why
-the encryption is the part doing the real work. Lose the passphrase and the map
-is unrecoverable; there is no reset.
+PBKDF2 (600,000 iterations, SHA-256, salted with the space id) and never leaves
+the device. The row holds an opaque id, that ciphertext, and a timestamp — no
+names, no emails, nothing legible.
+
+The anon key and the space id are what authorise the write, and any holder of
+both can fetch or overwrite that blob — but not read it. The policies above
+grant select, insert and update only, deliberately **not** delete, so a leaked
+key cannot destroy the map either. That makes the passphrase the thing standing
+between a stolen blob and your contacts, which is why weak ones are refused
+outright and the dialog will generate a ~98-bit one for you. Put it in a
+password manager: lose it and the map is unrecoverable, there is no reset.
+
+Payloads are tagged with their format (`v2:`), so raising the iteration count
+again later will not lock anyone out of an existing space.
 
 ### How two devices agree
 
@@ -71,6 +81,40 @@ merge is newest-wins per person rather than last-write-wins over the whole file.
 A phone edited offline merges cleanly instead of clobbering the laptop. Changes
 push about a second after you stop typing; other devices hear about it over a
 websocket, with a five-second poll behind it in case the socket is unavailable.
+
+## What is public, and what is not
+
+The repository is public. **None of your data is in it, and none of it can get
+there by accident.**
+
+| | where it lives | who can see it |
+| --- | --- | --- |
+| The code | this repo, and GitHub Pages | anyone — it is just a program |
+| Your map | `localStorage` in your own browser | you, on that device |
+| Your map, if sync is on | one row in *your* Supabase project, encrypted | nobody without your passphrase |
+
+Someone opening the app's public URL gets an empty map (or the sample), the way
+opening a spreadsheet program does not show them your spreadsheet. The app has
+no server of its own, no analytics, no third-party scripts, and makes exactly
+one kind of outbound request — to the Supabase project you configure, if you
+configure one. Fonts come from Google Fonts; nothing else is fetched.
+
+Exports never touch the disk inside the repo: they go to your clipboard or
+through the browser's own save dialog. As a second line of defence, `.gitignore`
+covers CSV/backup patterns and there is a hook that refuses to commit any file
+carrying what look like real email addresses or phone numbers. Enable it once
+per clone:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+The one personal thing a public repo does expose is the **email address on your
+git commits** — that is how GitHub attributes them, and it applies to every
+public repo, not just this one. To stop it: GitHub → Settings → Emails → *Keep
+my email addresses private*, then `git config --global user.email
+"<id>+<user>@users.noreply.github.com"`. Existing commits keep the old address
+unless the history is rewritten.
 
 ## Importing a spreadsheet
 

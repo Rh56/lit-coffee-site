@@ -1,3 +1,14 @@
 .DS_Store
 node_modules/
 .netlify/
+
+# Never commit anything that could carry real contacts.
+# Rootwork writes nothing here on its own — these guard against a stray
+# export, screenshot or backup being dragged into the repo by hand.
+*.csv
+*.tsv
+rootwork*.json
+*-backup.json
+*backup*.json
+contacts*
+network/rootwork.artifact.html

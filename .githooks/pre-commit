@@ -1,0 +1,35 @@
+#!/bin/sh
+# Refuses to commit anything that looks like a real contact list.
+# Enable once per clone:  git config core.hooksPath .githooks
+
+fail() { printf '\nBLOCKED: %s\n\n' "$1" >&2; exit 1; }
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+for f in $staged; do
+  case "$f" in
+    *.csv|*.tsv|*backup*.json|rootwork*.json|contacts*)
+      fail "$f looks like an exported contact list. Keep exports outside the repo." ;;
+  esac
+done
+
+# Sample data in this project uses example.com and the 555-01xx fiction range.
+# Anything else that reads like a real address or number is treated as a leak.
+for f in $staged; do
+  case "$f" in
+    .githooks/*|*/README.md|README.md) continue ;;
+  esac
+  [ -f "$f" ] || continue
+  hits=$(git show ":$f" 2>/dev/null | grep -oE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,}' \
+    | grep -viE '@(example|test|invalid|localhost)\.|@merck\.com|noreply@|@anthropic\.com|@petalworks\.co|x@y\.com|marcus\.bell@vanta\.com' | sort -u)
+  [ -n "$hits" ] && fail "$f contains what look like real email addresses:
+$hits"
+
+  nums=$(git show ":$f" 2>/dev/null | grep -oE '\(?[0-9]{3}\)?[ .-][0-9]{3}-[0-9]{4}' \
+    | grep -vE '555-01[0-9]{2}' | sort -u)
+  [ -n "$nums" ] && fail "$f contains what look like real phone numbers:
+$nums"
+done
+
+exit 0

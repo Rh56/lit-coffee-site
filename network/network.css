@@ -260,9 +260,12 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 
 .viewtools{
   position:absolute; right:14px; top:14px; z-index:4;
+  transition:right .26s cubic-bezier(.22,.7,.28,1);
   display:flex; flex-direction:column; gap:5px;
 }
 .viewtools .btn{ background:color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter:blur(8px); }
+.stage.panel-open .viewtools{ right:386px; }        /* stay clear of the open card */
+@media (max-width:880px){ .stage.panel-open .viewtools{ right:14px; } }
 
 /* ---------- chat bar ---------- */
 
@@ -792,3 +795,44 @@ kbd{
   padding:5px 7px; font-size:13px; outline:none; width:160px;
 }
 .hiddenbar .n{ color:var(--accent); }
+
+/* ---------- chip lists (schools, tags) ---------- */
+
+.chiplist{ display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+.cchip.school .lbl, .cchip.tag .lbl{ padding:3px 7px; font-size:12.5px; }
+.cchip.school .lvl{
+  padding:3px 6px; font-family:var(--mono); font-size:9.5px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--muted);
+  border-left:1px solid var(--rule); border-right:1px solid var(--rule);
+}
+.cchip.school .lvl:hover{ color:var(--accent); }
+.cchip.school .lvl.none{ color:var(--faint); opacity:.6; }
+.cchip.tag .lbl{ font-family:var(--mono); font-size:11px; color:var(--muted); }
+.chipinput{
+  flex:1; min-width:110px;
+  background:none; border:none; border-bottom:1px dashed var(--rule);
+  padding:3px 2px; font-size:12.5px; outline:none;
+}
+.chipinput::placeholder{ color:var(--faint); }
+.chipinput:focus{ border-bottom-color:var(--accent); border-bottom-style:solid; }
+
+.notebox{
+  width:100%; margin-top:2px; resize:none; overflow:hidden;
+  background:var(--field); border:1px solid var(--rule); border-radius:var(--r);
+  padding:7px 9px; font-size:13px; line-height:1.5; outline:none;
+}
+.notebox:focus{ border-color:var(--accent); }
+.notebox::placeholder{ color:var(--faint); }
+.note .val{ display:block; cursor:text; border-radius:2px; }
+.note:hover .val{ background:color-mix(in srgb, var(--ink) 4%, transparent); }
+
+.cchip.tie .lbl{ padding:3px 8px; font-size:12.5px; display:inline-flex; align-items:baseline; gap:6px; }
+.cchip.tie .lbl i{
+  font-family:var(--mono); font-style:normal; font-size:9px; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--faint);
+}
+.cchip.tie .lbl:hover{ color:var(--accent); }
+.tiehint{
+  margin:7px 0 0; font-family:var(--mono); font-size:10px; letter-spacing:.06em;
+  color:var(--faint);
+}

@@ -335,6 +335,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 }
 .chip .v{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .chip.new{ border-color:var(--accent); }
+.chip.clear{ border-color:var(--rule); opacity:.75; text-decoration:line-through; text-decoration-color:var(--faint); }
 .chip button{ color:var(--faint); font-size:14px; line-height:1; padding:0 1px; }
 .chip button:hover{ color:var(--accent); }
 .preview .actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -567,3 +568,60 @@ kbd{
 .sync .ex.sql{ margin-top:6px; font-size:11px; line-height:1.6; white-space:pre; }
 .sync .field input[readonly]{ font-family:var(--mono); font-size:11px; cursor:pointer; }
 .sync .status{ margin-top:10px; }
+
+/* ---------- import ---------- */
+
+.import .drop{
+  border:1px dashed var(--rule); border-radius:var(--r);
+  background:var(--field);
+  padding:22px 18px; text-align:center;
+  transition:border-color .15s, background .15s;
+}
+.import .drop.over{ border-color:var(--accent); background:var(--panel-2); }
+.import .drop svg{ width:26px; height:26px; color:var(--faint); margin-bottom:6px; }
+.import .drop p{ margin:0; font-size:13px; }
+.import .drop b{ font-weight:500; }
+.import .drop .fine{ margin-top:6px; font-size:11.5px; color:var(--faint); line-height:1.5; }
+.import .pick{
+  color:var(--accent); cursor:pointer; text-decoration:underline;
+  text-underline-offset:2px;
+}
+.import details{ margin-top:10px; }
+.import summary{
+  font-size:12px; color:var(--muted); cursor:pointer; list-style:none;
+  padding:4px 0;
+}
+.import summary::-webkit-details-marker{ display:none; }
+.import summary::before{ content:"＋ "; color:var(--faint); }
+.import details[open] summary::before{ content:"− "; }
+.import details textarea{ min-height:120px; margin-top:6px; }
+
+.maphead{
+  margin-top:14px; padding-bottom:8px;
+  font-size:12.5px; color:var(--muted);
+  border-bottom:1px solid var(--rule-soft);
+}
+.maphead b{ color:var(--ink); font-weight:500; }
+.maptable{ max-height:230px; overflow:auto; }
+.maptable table{ width:100%; border-collapse:collapse; }
+.maptable th{
+  text-align:left; font-weight:400; padding:7px 10px 7px 0;
+  border-bottom:1px solid var(--rule-soft); vertical-align:top;
+  font-size:13px;
+}
+.maptable th span{
+  display:block; font-family:var(--mono); font-size:10.5px; color:var(--faint);
+  margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:230px;
+}
+.maptable td{ border-bottom:1px solid var(--rule-soft); padding:6px 0; width:180px; }
+.maptable select{
+  width:100%; background:var(--field); border:1px solid var(--rule);
+  border-radius:var(--r); padding:5px 7px; font-size:12.5px; outline:none;
+}
+.maptable select:focus{ border-color:var(--accent); }
+.circlepick{ margin-top:14px; }
+.circlepick select, .circlepick input{
+  background:var(--field); border:1px solid var(--rule); border-radius:var(--r);
+  padding:7px 9px; font-size:13.5px; outline:none;
+}
+.circlepick input{ margin-top:6px; }

@@ -50,6 +50,7 @@ function forget(p) {
 
 function normalizePerson(p) {
   p.tags = p.tags || [];
+  p.custom = p.custom || {};
   p.notes = p.notes || [];
   p.log = p.log || [];
   p.circle = p.circle || 'Unsorted';
@@ -60,7 +61,7 @@ function normalizePerson(p) {
 function blankPerson(name) {
   return normalizePerson({
     id: uid(), name: name || '', email: '', phone: '', profession: '', company: '',
-    school: '', location: '', circle: 'Unsorted', tags: [], howMet: '',
+    school: '', location: '', birthday: '', circle: 'Unsorted', tags: [], howMet: '', custom: {},
     followUp: null, notes: [], log: [], created: Date.now()
   });
 }
@@ -97,6 +98,7 @@ function circleIndex(name) {
 }
 
 var hidden = {};   // circle name -> true when filtered out
+var lastSubject = null;  // who the last entry was about, so pronouns have a referent
 
 /* ---------------------------------------------------------------- parse -- */
 
@@ -114,7 +116,7 @@ var CHANNELS = [
 
 var STOPNAMES = /^(I|We|My|The|A|An|He|She|They|Her|His|Their|Today|Yesterday|Just|Had|Met|Talked|Spoke|Zoom|Call|Coffee|Lunch|Dinner|Email|Last|This|Next|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|October|November|December)$/;
 
-var NAME = "[A-Z][A-Za-z'’\\-]+(?:\\s+(?:van|von|de|del|della|da|di|la|le|bin|al)\\s+[A-Z][A-Za-z'’\\-]+|\\s+[A-Z][A-Za-z'’\\-]+){0,2}";
+var NAME = "[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’\\-]+(?:\\s+(?:van|von|de|del|della|da|di|la|le|bin|al)\\s+[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’\\-]+|\\s[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’\\-]+){0,2}";
 
 function clean(s) {
   return (s || '').replace(/\s+/g, ' ')
@@ -123,7 +125,7 @@ function clean(s) {
 
 function titleish(s) {
   s = clean(s);
-  return s.replace(/^(the|a|an)\s+/i, '');
+  return s.replace(/^(the|a|an|named|called)\s+/i, '');
 }
 
 function relativeDate(text) {
@@ -163,52 +165,107 @@ function futureDate(text) {
 
 function findPerson(name) {
   if (!name) return null;
-  var n = name.toLowerCase();
+  var n = name.toLowerCase().replace(/[’']s$/, '').trim();
+  if (!n) return null;
   var exact = state.people.filter(function (p) { return p.name.toLowerCase() === n; });
   if (exact.length) return exact[0];
   var first = state.people.filter(function (p) {
     return p.name.toLowerCase().split(' ')[0] === n.split(' ')[0];
   });
-  if (first.length === 1 && name.split(' ').length === 1) return first[0];
+  if (first.length === 1 && n.split(' ').length === 1) return first[0];
   var starts = state.people.filter(function (p) { return p.name.toLowerCase().indexOf(n) === 0; });
   return starts.length === 1 ? starts[0] : null;
 }
 
-/* Turns a sentence into a draft: which person, which fields, what happened. */
+/* Field names people actually type, and what they mean here. */
+var SETTABLE = {
+  email: 'email', 'e-mail': 'email', mail: 'email', phone: 'phone', number: 'phone',
+  cell: 'phone', mobile: 'phone', school: 'school', college: 'school', university: 'school',
+  role: 'profession', title: 'profession', job: 'profession', profession: 'profession',
+  company: 'company', employer: 'company', work: 'company', workplace: 'company',
+  location: 'location', city: 'location', address: 'location', circle: 'circle',
+  group: 'circle', birthday: 'birthday', bday: 'birthday', name: 'name'
+};
+var SET_WORDS = Object.keys(SETTABLE).join('|');
+var CLEARABLE = /^(e-?mail|mail|phone|number|school|company|employer|role|title|profession|job|location|city|birthday)$/i;
+
+/* Turns a sentence into a draft: which person, which fields, what happened.
+
+   Order matters more than cleverness here. Anything stated outright — "her
+   location is Bethlehem", "his favourite coffee is a cortado" — is taken and
+   CUT OUT of the sentence first, so a proper noun sitting in a value can no
+   longer be mistaken for the person's name further down. */
 function parse(raw) {
   var text = clean(raw);
-  var out = { name: '', person: null, patch: {}, tags: [], entry: null, followUp: null };
+  var out = { name: '', person: null, patch: {}, custom: {}, clears: [], tags: [], entry: null, followUp: null };
   var work = ' ' + text + ' ';
   var m;
 
-  // explicit "key: value" always wins
-  var KEYMAP = {
-    email: 'email', mail: 'email', phone: 'phone', cell: 'phone', mobile: 'phone',
-    school: 'school', college: 'school', university: 'school', role: 'profession',
-    title: 'profession', job: 'profession', profession: 'profession', work: 'company',
-    company: 'company', employer: 'company', city: 'location', location: 'location',
-    circle: 'circle', group: 'circle', met: 'howMet', via: 'howMet', name: 'name'
-  };
-  work = work.replace(/\b(\w+)\s*:\s*([^,;\n]+)/g, function (all, k, v) {
+  function endClause(v) {                    // "marcus.bell@x.com" survives; a new sentence does not
+    return clean(String(v).replace(/\.\s+\S[\s\S]*$/, '').replace(/[.,;]+$/, ''));
+  }
+
+  function take(field, value, force) {
+    value = titleish(value);
+    if (!value) return;
+    if (!out.patch[field] || force) out.patch[field] = value;
+  }
+
+  // 1. explicit "key: value"
+  var KEYMAP = Object.assign({}, SETTABLE, { via: 'howMet', met: 'howMet', tag: 'tags', note: 'note' });
+  work = work.replace(/\b(\w[\w-]*)\s*:\s*([^,;\n]+)/g, function (all, k, v) {
     var f = KEYMAP[k.toLowerCase()];
-    if (!f) return all;
-    out.patch[f] = clean(v);
+    if (!f || f === 'tags' || f === 'note') return all;
+    out.patch[f] = titleish(endClause(v));
+    if (f === 'circle') out.circleForced = true;
     return ' ';
   });
 
-  // tags
+  // 2. tags
   work = work.replace(/#([\w’'-]+)/g, function (all, t) { out.tags.push(t); return ' '; });
 
-  // contacts
-  if ((m = /[\w.+-]+@[\w-]+\.[\w.-]+/.exec(work))) { out.patch.email = out.patch.email || m[0]; work = work.replace(m[0], ' '); }
+  // 3. "set her school to Lehigh", "his email is x@y.com", "change the company to Merck"
+  var setRe = new RegExp('\\b(?:add|set|change|update|make|correct|fix)?\\s*(?:her|his|their|the|my)?\\s*\\b(' + SET_WORDS + ')\\b\\s*(?:is|are|was|as|to|=)\\s+([^;,\\n]{2,70}?)(?=\\s+and\\s+(?:her|his|their)\\b|\\.\\s|$)', 'gi');
+  work = work.replace(setRe, function (all, k, v) {
+    var f = SETTABLE[k.toLowerCase()];
+    if (!f) return all;
+    out.patch[f] = titleish(endClause(v));
+    if (f === 'circle') out.circleForced = true;
+    return ' ';
+  });
+
+  // 4. "remove her phone"
+  work = work.replace(/\b(?:remove|clear|delete|forget|drop)\s+(?:her|his|their|the|my)?\s*\b([\w-]+)\b/gi, function (all, k) {
+    if (!CLEARABLE.test(k)) return all;
+    var f = SETTABLE[k.toLowerCase().replace('e-mail', 'email')];
+    if (f) { out.clears.push(f); return ' '; }
+    return all;
+  });
+
+  // 5. anything else stated as "her X is Y" becomes a labelled line on the card
+  var customRe = /(?:^|[.;,]\s*|\s)(?:her|his|their)\s+([a-z][a-z ]{2,22}?)\s+(?:is|are|was|were)\s+([^;\n]{2,70}?)(?=\s+and\s+(?:her|his|their)\b|\.\s|;|$)/gi;
+  work = work.replace(customRe, function (all, k, v) {
+    var key = clean(k).toLowerCase();
+    if (SETTABLE[key.replace(/\s+/g, '')] || /^(name|number)$/.test(key)) return all;
+    out.custom[key] = titleish(endClause(v));
+    return ' ';
+  });
+
+  // 6. contacts
+  if ((m = /[\w.+-]+@[\w-]+\.[\w.-]+/.exec(work))) { take('email', m[0]); work = work.replace(m[0], ' '); }
   if ((m = /(\+?\d[\d\-.() ]{8,}\d)/.exec(work))) {
     var digits = m[1].replace(/\D/g, '');
-    if (digits.length >= 10 && digits.length <= 15) { out.patch.phone = out.patch.phone || clean(m[1]); work = work.replace(m[1], ' '); }
+    if (digits.length >= 10 && digits.length <= 15) { take('phone', m[1]); work = work.replace(m[1], ' '); }
   }
 
-  // who
-  var nm = /\b(?:with|w\/|to|from|met|saw|called|emailed|texted|about)\s+(NAME)/.source.replace('NAME', NAME);
-  if ((m = new RegExp(nm).exec(work)) && !STOPNAMES.test(m[1].split(' ')[0])) out.name = m[1];
+  // 7. a birthday mentioned in passing
+  if ((m = /\b(?:birthday|born)\b[^.;\n]{0,14}?\b((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i.exec(work))) {
+    take('birthday', m[1]);
+  }
+
+  // 8. who this is about
+  var nm = new RegExp('\\b(?:with|w\\/|to|from|met|saw|called|emailed|texted|about|for)\\s+(' + NAME + ')');
+  if ((m = nm.exec(work)) && !STOPNAMES.test(m[1].split(' ')[0])) out.name = m[1];
   if (!out.name && (m = new RegExp('^\\s*(' + NAME + ')').exec(work)) && !STOPNAMES.test(m[1].split(' ')[0])) out.name = m[1];
   if (!out.name) {
     var all = work.match(new RegExp(NAME, 'g')) || [];
@@ -216,59 +273,80 @@ function parse(raw) {
       if (!STOPNAMES.test(all[i].split(' ')[0])) { out.name = all[i]; break; }
     }
   }
-  if (out.patch.name) { out.name = out.patch.name; delete out.patch.name; }
-  out.name = clean(out.name);
-  out.person = findPerson(out.name);
-
-  var body = out.name ? work.replace(out.name, ' ') : work;
-
-  // school
-  if (!out.patch.school) {
-    if ((m = /\b(?:went to|studied at|graduated from|graduated|attended|was at|alum(?:na|nus)? of|did (?:her|his|their) (?:mba|ph\.?d|masters|undergrad|degree) at)\s+([A-Z][^,;.—\n]*)/.exec(body))) {
-      out.patch.school = titleish(m[1]);
-    } else if ((m = /\b([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,3})\s+(?:grad|alum|alumna|alumnus|undergrad)\b/.exec(body))) {
-      out.patch.school = titleish(m[1]);
+  if (!out.name) {
+    var words = text.toLowerCase().match(/[a-zà-ÿ']{2,}/g) || [];
+    for (var w = 0; w < words.length; w++) {
+      var byWord = state.people.filter(function (p) { return p.name.toLowerCase() === words[w]; });
+      if (byWord.length === 1) { out.name = byWord[0].name; break; }
     }
   }
-  if (out.patch.school) body = body.replace(out.patch.school, ' ');
+  if (out.patch.name) { out.name = out.patch.name; delete out.patch.name; }
+  out.name = clean(out.name).replace(/[’']s$/, '');
+  out.person = findPerson(out.name);
 
-  // profession + company
+  /* "she went to Rutgers", typed right after logging someone — or while their
+     dossier is open — is about them, not about a stranger. */
+  var pronounLed = /^\s*(?:she|he|they|her|his|their|him|them)\b/i.test(text);
+  if (!out.person && /\b(she|he|they|her|his|their|them|him)\b/i.test(text)) {
+    var referent = (selected && selected.ref) || lastSubject;
+    if (referent && (pronounLed || !out.name || !findPerson(out.name))) {
+      out.person = referent; out.name = referent.name; out.byPronoun = true;
+    }
+  }
+
+  var body = out.name ? work.split(out.name).join(' ') : work;
+
+  // 9. school
+  if (!out.patch.school) {
+    if ((m = /\b(?:went to|studied at|graduated from|graduated|attended|was at|alum(?:na|nus)? of|did (?:her|his|their) (?:mba|ph\.?d|masters|undergrad|degree) at)\s+([A-Z][^,;.—\n]*)/.exec(body))) {
+      take('school', m[1]);
+    } else if ((m = /\b([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,3})\s+(?:grad|alum|alumna|alumnus|undergrad)\b/.exec(body))) {
+      take('school', m[1]);
+    }
+  }
+  if (out.patch.school) body = body.split(out.patch.school).join(' ');
+
+  // 10. what they do, and where
   if (!out.patch.profession && (m = /\b(?:is|was|works)?\s*(?:a|an)\s+([a-z][\w\/&.’' -]{2,40}?)\s+(?:at|for|with)\s+([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,2})/.exec(body))) {
-    out.patch.profession = titleish(m[1]);
-    out.patch.company = out.patch.company || titleish(m[2]);
+    take('profession', m[1]);
+    take('company', m[2]);
   }
   if (!out.patch.profession && (m = /\b(?:is|was|she's|he's|they're|works as)\s+(?:a|an|the)\s+([a-z][\w\/&.’' -]{2,40})/.exec(body))) {
-    out.patch.profession = titleish(m[1]);
+    take('profession', m[1]);
   }
-  if (!out.patch.company && (m = /\b(?:works? (?:at|for)|is at|joined|now at|over at|runs|founded|leads)\s+([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,2})/.exec(body))) {
-    out.patch.company = titleish(m[1]);
+  if (!out.patch.profession && (m = /\b(?:runs|owns|manages|leads|teaches|bakes|makes)\s+(?:a|an|the)\s+([a-z][\w\/&.’' -]{2,34})/.exec(body))) {
+    take('profession', clean(m[0]));
   }
-
-  // where they live
-  if (!out.patch.location && (m = /\b(?:lives in|based in|moved to|is in|located in|out of)\s+([A-Z][\w.'’-]*(?:[\s,]+[A-Z][\w.'’-]*){0,2})/.exec(body))) {
-    out.patch.location = titleish(m[1]);
+  if (!out.patch.company && (m = /\b(?:works? (?:at|for)|is at|joined|now at|over at|founded)\s+([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,2})/.exec(body))) {
+    take('company', m[1]);
   }
-
-  // how we met
-  if (!out.patch.howMet && (m = /\b(?:introduced by|intro(?:'d| to)? (?:by|through)|met (?:at|through|via)|referred by|connected (?:by|through))\s+([^,;.\n]{2,50})/i.exec(body))) {
-    out.patch.howMet = clean(m[0]);
+  if (!out.patch.location && (m = /\b(?:lives in|living in|based in|moved to|is in|located in|out of|home in)\s+([A-Z][\w.'’-]*(?:[\s,]+[A-Z][\w.'’-]*){0,2})/.exec(body))) {
+    take('location', m[1]);
   }
 
-  // what I learned
+  // 11. how we met
+  if (!out.patch.howMet && (m = /\b(?:introduced\s+by|intro(?:'d| to)?\s+(?:by|through)|met\s+(?:at|through|via)|referred\s+by|connected\s+(?:by|through))\s+([^,;.\n]{2,50})/i.exec(body))) {
+    take('howMet', clean(m[0]));
+  }
+
+  // 12. the takeaway
   if ((m = /\b(?:learned|found out|turns out|apparently|note that|she (?:said|mentioned)|he (?:said|mentioned)|they (?:said|mentioned)|told me)\s+(?:that\s+)?(.{4,})/i.exec(work))) {
     out.learned = clean(m[1].split(/\.\s+|;\s+|\s+\|\s+/)[0]).slice(0, 180);
   }
 
-  // channel + date
+  if (!out.learned && (m = /(?:^|,\s*|—\s*)(?:she|he|they)\s+((?:has|have|had|is|was|just|recently|now|wants|needs|works|runs|might|will|would|left|joined|started|moved)\b.{3,140})/i.exec(text))) {
+    out.learned = clean(m[1].split(/\.\s+/)[0]).slice(0, 180);
+  }
+
+  // 13. how and when
   var channel = '';
   for (var c = 0; c < CHANNELS.length; c++) { if (CHANNELS[c][1].test(text)) { channel = CHANNELS[c][0]; break; } }
   out.entry = { channel: channel || 'note', at: relativeDate(text), text: text, learned: out.learned || '' };
 
-  // follow-up
   var fu = futureDate(text);
   if (fu) out.followUp = { date: fu, what: '' };
 
-  // circle
+  // 14. which circle it sprouts from
   if (!out.patch.circle) {
     var known = circleList().map(function (x) { return x.name.toLowerCase(); });
     for (var t = 0; t < out.tags.length; t++) {
@@ -279,11 +357,14 @@ function parse(raw) {
     if (out.patch.company) out.patch.circle = 'Work';
     else if (out.patch.school) out.patch.circle = 'School';
   }
-  if (out.patch.circle) {
-    out.patch.circle = out.patch.circle.charAt(0).toUpperCase() + out.patch.circle.slice(1);
-  }
+  if (out.patch.circle) out.patch.circle = out.patch.circle.charAt(0).toUpperCase() + out.patch.circle.slice(1);
 
   Object.keys(out.patch).forEach(function (k) { if (!out.patch[k]) delete out.patch[k]; });
+
+  /* A bare fact is an edit to the card, not something that happened. */
+  var happened = !!channel || /\b(learned|found out|turns out|talked|spoke|caught up|saw|ran into|introduced|reached out|heard|had)\b/i.test(text);
+  if (!happened && (Object.keys(out.patch).length || Object.keys(out.custom).length || out.clears.length)) out.entry = null;
+
   return out;
 }
 
@@ -295,6 +376,11 @@ function commit(draft) {
     if (k === 'circle' && p.circle && p.circle !== 'Unsorted' && !draft.circleForced) return;
     p[k] = draft.patch[k];
   });
+  (draft.clears || []).forEach(function (k) { p[k] = ''; });
+  if (draft.custom && Object.keys(draft.custom).length) {
+    p.custom = p.custom || {};
+    Object.keys(draft.custom).forEach(function (k) { p.custom[k] = draft.custom[k]; });
+  }
   (draft.tags || []).forEach(function (t) { if (p.tags.indexOf(t) < 0) p.tags.push(t); });
   if (draft.entry && draft.entry.text) {
     p.log.unshift({ id: uid(), at: draft.entry.at, channel: draft.entry.channel, text: draft.entry.text, learned: draft.entry.learned || '' });
@@ -302,6 +388,7 @@ function commit(draft) {
   if (draft.followUp) p.followUp = draft.followUp;
   circleIndex(p.circle || 'Unsorted');
   p.updated = Date.now();
+  lastSubject = p;
   save();
   return p;
 }
@@ -799,7 +886,11 @@ function openDossier(node) {
         row('Email', p.email, 'mailto:') + row('Phone', p.phone, 'tel:') +
         row('Profession', p.profession) + row('Company', p.company) +
         row('School', p.school) + row('Location', p.location) +
+        (p.birthday ? '<dt>Birthday</dt><dd>' + esc(p.birthday) + '</dd>' : '') +
         row('Met via', p.howMet) +
+        Object.keys(p.custom || {}).map(function (k) {
+          return '<dt>' + esc(k) + '</dt><dd>' + esc(p.custom[k]) + '</dd>';
+        }).join('') +
         (p.followUp && p.followUp.date ? '<dt>Follow up</dt><dd>' + fmtDate(p.followUp.date) +
           (p.followUp.what ? ' — ' + esc(p.followUp.what) : '') + '</dd>' : '') +
       '</dl>' +
@@ -900,7 +991,7 @@ function personForm(p) {
     f('email', 'Email', 'email') + f('phone', 'Phone', 'tel') +
     f('profession', 'Profession') + f('company', 'Company') +
     f('school', 'School') + f('location', 'Location') +
-    '<div class="field wide"><label for="f-howMet">How we met</label><input id="f-howMet" value="' + esc(p.howMet) + '"></div>' +
+    f('birthday', 'Birthday') + f('howMet', 'How we met') +
     '<div class="field wide"><label for="f-tags">Tags</label><input id="f-tags" value="' + esc(p.tags.join(', ')) + '">' +
       '<span class="hint">Comma separated.</span></div>' +
     '<div class="field wide"><label for="f-note">Add a note</label><textarea id="f-note" placeholder="Anything worth remembering"></textarea></div>' +
@@ -912,7 +1003,7 @@ function personForm(p) {
   m.querySelector('#f-save').addEventListener('click', function () {
     var g = function (k) { return m.querySelector('#f-' + k).value.trim(); };
     if (!g('name')) { m.querySelector('#f-name').focus(); return; }
-    ['name', 'email', 'phone', 'profession', 'company', 'school', 'location', 'howMet'].forEach(function (k) { p[k] = g(k); });
+    ['name', 'email', 'phone', 'profession', 'company', 'school', 'location', 'birthday', 'howMet'].forEach(function (k) { p[k] = g(k); });
     p.circle = g('circle') || 'Unsorted';
     p.tags = g('tags').split(',').map(function (t) { return t.trim().replace(/^#/, ''); }).filter(Boolean);
     if (g('note')) p.notes.unshift({ id: uid(), t: g('note'), at: Date.now() });
@@ -947,111 +1038,317 @@ function splitRows(text) {
   return rows.filter(function (r) { return r.some(function (c) { return c.trim(); }); });
 }
 
-var COLMAP = [
-  ['name', /^(name|full ?name|person|contact)$/i],
-  ['phone', /^(phone|phone ?number|mobile|cell|tel)$/i],
-  ['email', /^(e-?mail|email ?address)$/i],
-  ['profession', /^(profession|role|title|job|occupation|position)$/i],
-  ['company', /^(company|employer|org|organization|firm|works? at)$/i],
-  ['school', /^(school|college|university|alma ?mater|education)$/i],
-  ['location', /^(location|city|where|based|address)$/i],
-  ['circle', /^(circle|group|category|bucket|type|relationship)$/i],
-  ['tags', /^(tags|labels)$/i],
-  ['howMet', /^(how ?we ?met|met|source|via|intro)$/i],
-  ['notes', /^(notes?|comments?|details|misc)$/i]
+var FIELDS = [
+  ['name', 'Name'], ['firstName', 'First name'], ['lastName', 'Last name'],
+  ['email', 'Email'], ['phone', 'Phone'], ['profession', 'Profession'],
+  ['company', 'Company'], ['school', 'School'], ['location', 'Location'],
+  ['birthday', 'Birthday'], ['circle', 'Circle'], ['tags', 'Tags'],
+  ['howMet', 'How we met'], ['notes', 'Notes'], ['custom', 'Keep as its own field'],
+  ['skip', 'Ignore this column']
 ];
 
-function importModal() {
-  var body = '<div class="io">' +
-    '<p style="margin:0 0 9px;font-size:13px;color:var(--muted);line-height:1.55">' +
-    'Paste your spreadsheet — headers in the first row, copied straight out of Sheets or Excel. ' +
-    'Name, phone, email, profession and notes are recognized automatically, along with company, school, location and circle if you have them. ' +
-    'A Rootwork JSON backup works here too.</p>' +
-    '<textarea id="io-in" placeholder="name,phone,email,profession,notes&#10;Dana Okafor,555-0142,dana@…,Data scientist,Met at the Rutgers mixer"></textarea>' +
-    '<div class="status" id="io-status" style="margin-top:8px">&nbsp;</div></div>';
-  var m = modal('Import', 'Nothing leaves this browser.', body,
-    '<button class="btn primary" id="io-go">Import</button>' +
-    '<button class="btn" data-close>Cancel</button>' +
-    '<span class="note">Existing people with the same name are updated, not duplicated.</span>');
+var HEADER_HINTS = [
+  ['name', /^(full ?name|name|person|contact|who)$/i],
+  ['firstName', /^(first|first ?name|given ?name|fname)$/i],
+  ['lastName', /^(last|last ?name|surname|family ?name|lname)$/i],
+  ['email', /^(e-?mail|e-?mail ?address|mail)$/i],
+  ['phone', /^(phone|phone ?number|mobile|cell|tel|telephone|number)$/i],
+  ['profession', /^(profession|role|title|job|job ?title|occupation|position|what ?they ?do)$/i],
+  ['company', /^(company|employer|org|organi[sz]ation|firm|business|works? ?at|workplace)$/i],
+  ['school', /^(school|college|university|alma ?mater|education|studied)$/i],
+  ['location', /^(location|city|town|where|based|address|state|region)$/i],
+  ['birthday', /^(birthday|bday|born|date ?of ?birth|dob)$/i],
+  ['circle', /^(circle|group|category|bucket|type|relationship|list|segment)$/i],
+  ['tags', /^(tags?|labels?|keywords)$/i],
+  ['howMet', /^(how ?we ?met|met|source|via|intro|referral|origin)$/i],
+  ['notes', /^(notes?|comments?|details|misc|description|remarks)$/i]
+];
 
-  var ta = m.querySelector('#io-in'), st = m.querySelector('#io-status');
-  function preview() {
-    var v = ta.value.trim();
-    if (!v) { st.className = 'status'; st.innerHTML = '&nbsp;'; return; }
-    if (v[0] === '{') {
-      try {
-        var d = JSON.parse(v);
-        st.className = 'status ok';
-        st.textContent = 'Backup with ' + (d.people || []).length + ' people — importing replaces the current map.';
-      } catch (e) { st.className = 'status bad'; st.textContent = 'That JSON will not parse.'; }
-      return;
-    }
-    var rows = splitRows(v);
-    if (rows.length < 2) { st.className = 'status bad'; st.textContent = 'Needs a header row and at least one person.'; return; }
-    var map = mapCols(rows[0]);
-    var named = map.indexOf('name') >= 0;
-    st.className = 'status ' + (named ? 'ok' : 'bad');
-    st.textContent = named
-      ? (rows.length - 1) + ' people · reading ' + map.filter(Boolean).join(', ')
-      : 'No “name” column found — rename a column to name and try again.';
-  }
-  function mapCols(header) {
-    return header.map(function (h) {
-      h = h.trim();
-      for (var i = 0; i < COLMAP.length; i++) if (COLMAP[i][1].test(h)) return COLMAP[i][0];
-      return '';
-    });
-  }
-  ta.addEventListener('input', preview);
+var RE_EMAIL = /^[\w.+-]+@[\w-]+\.[\w.-]+$/;
+function digitsOf(v) { return String(v).replace(/\D/g, ''); }
 
-  m.querySelector('#io-go').addEventListener('click', function () {
-    var v = ta.value.trim();
-    if (!v) return;
-    if (v[0] === '{') {
-      try {
-        var d = JSON.parse(v);
-        if (!Array.isArray(d.people)) throw 0;
-        state = Object.assign(DEFAULTS(), d);
-        state.people.forEach(normalizePerson);
-        save(); closeModal(); renderAll(); fit();
-        toast('Restored ' + state.people.length + ' people');
-      } catch (e) { st.className = 'status bad'; st.textContent = 'That backup could not be read.'; }
-      return;
+/* What a column looks like from the inside, for when the header lies or is
+   missing entirely. */
+function sniff(values) {
+  var vals = values.filter(function (v) { return v && v.trim(); });
+  if (!vals.length) return '';
+  var hit = function (fn) { return vals.filter(fn).length / vals.length; };
+  if (hit(function (v) { return RE_EMAIL.test(v.trim()); }) > 0.6) return 'email';
+  if (hit(function (v) {
+    var d = digitsOf(v);
+    return d.length >= 7 && d.length <= 15 && /^[\d\-.() +x]{7,}$/i.test(v.trim());
+  }) > 0.6) return 'phone';
+  if (hit(function (v) { return /^(19|20)\d\d[-/]\d{1,2}[-/]\d{1,2}$|^\d{1,2}[-/]\d{1,2}([-/]\d{2,4})?$/.test(v.trim()); }) > 0.6) return 'birthday';
+  var avg = vals.reduce(function (a, v) { return a + v.length; }, 0) / vals.length;
+  if (avg > 60) return 'notes';
+  if (hit(function (v) { return /^[A-ZÀ-Þ][\wÀ-ÿ'’-]+(\s+[A-ZÀ-Þ][\wÀ-ÿ'’.-]+){1,2}$/.test(v.trim()); }) > 0.6) return 'name';
+  return '';
+}
+
+/* Does row 0 read like labels rather than like people? */
+function looksLikeHeader(rows) {
+  if (rows.length < 2) return true;
+  var first = rows[0], rest = rows.slice(1, 12);
+  var dataish = first.filter(function (c) {
+    return RE_EMAIL.test(c.trim()) || digitsOf(c).length >= 10;
+  }).length;
+  if (dataish) return false;
+  var matched = first.filter(function (c) {
+    return HEADER_HINTS.some(function (h) { return h[1].test(c.trim()); });
+  }).length;
+  if (matched >= 1) return true;
+  // a header row is usually shorter and wordier than the rows under it
+  var lenOf = function (r) { return r.join('').length; };
+  var avgRest = rest.reduce(function (a, r) { return a + lenOf(r); }, 0) / (rest.length || 1);
+  return lenOf(first) < avgRest * 0.75;
+}
+
+function guessMapping(headers, rows, hasHeader) {
+  var used = {};
+  return headers.map(function (h, i) {
+    var col = rows.map(function (r) { return r[i] || ''; });
+    var guess = '';
+    if (hasHeader) {
+      for (var j = 0; j < HEADER_HINTS.length; j++) {
+        if (HEADER_HINTS[j][1].test(String(h).trim())) { guess = HEADER_HINTS[j][0]; break; }
+      }
     }
-    var rows = splitRows(v), map = mapCols(rows[0]);
-    if (map.indexOf('name') < 0) return;
-    var added = 0, merged = 0;
-    rows.slice(1).forEach(function (r) {
-      var rec = {};
-      map.forEach(function (k, i) { if (k) rec[k] = (r[i] || '').trim(); });
-      if (!rec.name) return;
-      var p = findPerson(rec.name);
-      if (!p) { p = blankPerson(rec.name); state.people.push(p); added++; } else merged++;
-      ['email', 'phone', 'profession', 'company', 'school', 'location', 'howMet'].forEach(function (k) {
-        if (rec[k]) p[k] = rec[k];
-      });
-      if (rec.circle) p.circle = rec.circle;
-      if (rec.tags) p.tags = rec.tags.split(/[,;]/).map(function (t) { return t.trim().replace(/^#/, ''); }).filter(Boolean);
-      if (rec.notes) p.notes.unshift({ id: uid(), t: rec.notes, at: Date.now() });
-      circleIndex(p.circle); touch(p);
-    });
-    state.demo = false;
-    save(); closeModal(); renderAll(); fit();
-    toast(added + ' added' + (merged ? ', ' + merged + ' updated' : ''));
+    if (!guess) guess = sniff(col);
+    if (!guess && col.some(function (v) { return clean(v); })) guess = 'custom';
+    if (guess && guess !== 'custom' && guess !== 'notes' && used[guess]) guess = 'custom';
+    if (guess) used[guess] = true;
+    return guess || 'skip';
   });
 }
 
+function importModal(preloaded, filename) {
+  var body = '<div class="io import">' +
+    '<div class="drop" id="im-drop">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">' +
+      '<path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>' +
+      '<p><b>Drop your spreadsheet here</b> — or <label class="pick" for="im-file">choose a file</label>' +
+      '<input type="file" id="im-file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" hidden></p>' +
+      '<p class="fine">A CSV or TSV exported from Sheets, Excel or Numbers. Nothing is uploaded — it is read here in the browser.</p>' +
+    '</div>' +
+    '<details id="im-paste-wrap"><summary>or paste the rows instead</summary>' +
+      '<textarea id="io-in" placeholder="name,phone,email,profession,notes"></textarea></details>' +
+    '<div id="im-map" hidden></div>' +
+    '<div class="status" id="io-status">&nbsp;</div></div>';
+
+  var m = modal('Import your list', 'Read here, kept here.', body,
+    '<button class="btn primary" id="io-go" disabled>Import</button>' +
+    '<button class="btn" data-close>Cancel</button>' +
+    '<span class="note" id="im-note">People you already have are updated, not duplicated.</span>');
+
+  var st = m.querySelector('#io-status');
+  var mapBox = m.querySelector('#im-map');
+  var go = m.querySelector('#io-go');
+  var ta = m.querySelector('#io-in');
+  var parsed = null;          // {headers, rows, hasHeader, mapping}
+
+  function say(cls, text) { st.className = 'status ' + (cls || ''); st.textContent = text; }
+
+  function ingest(text, label) {
+    text = String(text || '').trim();
+    if (!text) { mapBox.hidden = true; go.disabled = true; say('', ' '); return; }
+
+    if (text[0] === '{') {                     // a JSON backup, not a spreadsheet
+      try {
+        var d = JSON.parse(text);
+        if (!Array.isArray(d.people)) throw 0;
+        parsed = { backup: d };
+        mapBox.hidden = true; go.disabled = false;
+        say('ok', 'Backup with ' + d.people.length + ' people — importing replaces the current map.');
+        return;
+      } catch (e) { say('bad', 'That JSON will not parse.'); go.disabled = true; return; }
+    }
+
+    var rows = splitRows(text);
+    if (!rows.length) { say('bad', 'Nothing readable in there.'); go.disabled = true; return; }
+    var hasHeader = looksLikeHeader(rows);
+    var headers = hasHeader ? rows[0].map(function (h) { return clean(h) || 'Column'; })
+                            : rows[0].map(function (_, i) { return 'Column ' + (i + 1); });
+    var data = hasHeader ? rows.slice(1) : rows;
+    if (!data.length) { say('bad', 'Found headers but no people under them.'); go.disabled = true; return; }
+    parsed = { headers: headers, rows: data, hasHeader: hasHeader };
+    parsed.mapping = guessMapping(headers, data, hasHeader);
+    drawMapping(label, data.length);
+  }
+
+  function drawMapping(label, count) {
+    var opts = function (sel) {
+      return FIELDS.map(function (f) {
+        return '<option value="' + f[0] + '"' + (f[0] === sel ? ' selected' : '') + '>' + f[1] + '</option>';
+      }).join('');
+    };
+    var rowsHtml = parsed.headers.map(function (h, i) {
+      var samples = parsed.rows.slice(0, 3).map(function (r) { return clean(r[i]); }).filter(Boolean);
+      return '<tr><th>' + esc(h) + '<span>' + esc(samples.join(' · ').slice(0, 54) || 'empty') + '</span></th>' +
+        '<td><select data-col="' + i + '">' + opts(parsed.mapping[i]) + '</select></td></tr>';
+    }).join('');
+
+    mapBox.innerHTML =
+      '<div class="maphead"><b>' + count + ' people</b> in ' + esc(label || 'your list') +
+        (parsed.hasHeader ? '' : ' · no header row found, so columns were read by their contents') + '</div>' +
+      '<div class="maptable"><table><tbody>' + rowsHtml + '</tbody></table></div>' +
+      '<div class="field wide circlepick"><label for="im-circle">Sort them into circles by</label>' +
+        '<select id="im-circle">' +
+          '<option value="column">the Circle column</option>' +
+          '<option value="company">their company</option>' +
+          '<option value="school">their school</option>' +
+          '<option value="one">one circle for everyone</option>' +
+          '<option value="none">nothing — leave them unsorted</option>' +
+        '</select>' +
+        '<input id="im-circle-name" placeholder="Name that circle" hidden></div>';
+
+    var pick = mapBox.querySelector('#im-circle');
+    var nameBox = mapBox.querySelector('#im-circle-name');
+    var hasCircleCol = parsed.mapping.indexOf('circle') >= 0;
+    var hasCompany = parsed.mapping.indexOf('company') >= 0;
+    var hasSchool = parsed.mapping.indexOf('school') >= 0;
+    pick.value = hasCircleCol ? 'column' : hasCompany ? 'company' : hasSchool ? 'school' : 'one';
+    if (!hasCircleCol) pick.querySelector('option[value="column"]').disabled = true;
+    if (!hasCompany) pick.querySelector('option[value="company"]').disabled = true;
+    if (!hasSchool) pick.querySelector('option[value="school"]').disabled = true;
+    var syncName = function () { nameBox.hidden = pick.value !== 'one'; };
+    pick.addEventListener('change', syncName); syncName();
+    if (!nameBox.value) nameBox.value = 'Contacts';
+
+    mapBox.addEventListener('change', function (e) {
+      var sel = e.target.closest('select[data-col]');
+      if (sel) parsed.mapping[+sel.dataset.col] = sel.value;
+      check();
+    });
+
+    mapBox.hidden = false;
+    check();
+
+    function check() {
+      var mp = parsed.mapping;
+      var named = mp.indexOf('name') >= 0 || (mp.indexOf('firstName') >= 0 || mp.indexOf('lastName') >= 0);
+      go.disabled = !named;
+      if (!named) say('bad', 'Point one column at Name (or at First name) so people can be told apart.');
+      else say('ok', count + ' ready · ' + mp.filter(function (f) { return f !== 'skip'; }).length + ' columns read');
+    }
+  }
+
+  function readFile(file) {
+    if (!file) return;
+    var r = new FileReader();
+    r.onload = function () { ingest(r.result, file.name); };
+    r.onerror = function () { say('bad', 'That file could not be read.'); };
+    r.readAsText(file);
+  }
+
+  m.querySelector('#im-file').addEventListener('change', function () { readFile(this.files[0]); });
+  ta.addEventListener('input', function () { ingest(ta.value, 'pasted rows'); });
+
+  var drop = m.querySelector('#im-drop');
+  ['dragenter', 'dragover'].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('over'); });
+  });
+  ['dragleave', 'drop'].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove('over'); });
+  });
+  drop.addEventListener('drop', function (e) {
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]);
+  });
+
+  go.addEventListener('click', function () {
+    if (!parsed) return;
+
+    if (parsed.backup) {
+      state = Object.assign(DEFAULTS(), parsed.backup);
+      state.people.forEach(normalizePerson);
+      save(); closeModal(); renderAll(); fit();
+      toast('Restored ' + state.people.length + ' people');
+      return;
+    }
+
+    var mp = parsed.mapping;
+    var strategy = mapBox.querySelector('#im-circle').value;
+    var oneName = clean(mapBox.querySelector('#im-circle-name').value) || 'Contacts';
+    var added = 0, merged = 0, skipped = 0;
+
+    parsed.rows.forEach(function (r) {
+      var rec = { tags: [], notes: [], custom: {} };
+      mp.forEach(function (field, i) {
+        var v = clean(r[i]);
+        if (!v || field === 'skip') return;
+        if (field === 'custom') rec.custom[parsed.headers[i].toLowerCase()] = v;
+        else if (field === 'notes') rec.notes.push(parsed.headers[i] && !/^notes?$/i.test(parsed.headers[i])
+          ? parsed.headers[i] + ': ' + v : v);
+        else if (field === 'tags') rec.tags = v.split(/[,;|]/).map(function (t) { return clean(t).replace(/^#/, ''); }).filter(Boolean);
+        else rec[field] = v;
+      });
+
+      var name = rec.name || clean([rec.firstName, rec.lastName].filter(Boolean).join(' '));
+      if (!name) { skipped++; return; }
+
+      var p = findPerson(name) || (rec.email ? state.people.filter(function (x) {
+        return x.email && x.email.toLowerCase() === rec.email.toLowerCase();
+      })[0] : null);
+      if (!p) { p = blankPerson(name); state.people.push(p); added++; } else merged++;
+      p.name = name;
+
+      ['email', 'phone', 'profession', 'company', 'school', 'location', 'birthday', 'howMet'].forEach(function (k) {
+        if (rec[k]) p[k] = rec[k];
+      });
+      rec.tags.forEach(function (t) { if (p.tags.indexOf(t) < 0) p.tags.push(t); });
+      Object.keys(rec.custom).forEach(function (k) { p.custom[k] = rec.custom[k]; });
+      rec.notes.forEach(function (t) { p.notes.unshift({ id: uid(), t: t, at: Date.now() }); });
+
+      var circle = clean(
+        strategy === 'column' ? rec.circle :
+        strategy === 'company' ? rec.company :
+        strategy === 'school' ? rec.school :
+        strategy === 'one' ? oneName : '');
+      var settled = p.circle && p.circle !== 'Unsorted';
+      if (circle && (!settled || strategy === 'column')) p.circle = circle;
+      if (!p.circle) p.circle = 'Unsorted';
+      circleIndex(p.circle);
+      touch(p);
+    });
+
+    state.demo = false;
+    save(); closeModal(); renderAll(); fit();
+    toast(added + ' added' + (merged ? ', ' + merged + ' updated' : '') + (skipped ? ', ' + skipped + ' skipped (no name)' : ''));
+  });
+
+  if (preloaded) {
+    m.querySelector('#im-paste-wrap').open = false;
+    ingest(preloaded, filename);
+  }
+}
+
+/* Drop a spreadsheet anywhere on the map and the importer opens with it. */
+(function () {
+  var over = 0;
+  window.addEventListener('dragover', function (e) { e.preventDefault(); });
+  window.addEventListener('drop', function (e) {
+    if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files[0]) return;
+    if (e.target.closest && e.target.closest('#im-drop')) return;   // the dialog handles its own
+    e.preventDefault();
+    var f = e.dataTransfer.files[0];
+    var r = new FileReader();
+    r.onload = function () { importModal(r.result, f.name); };
+    r.readAsText(f);
+  });
+  return over;
+})();
+
 function toCSV() {
-  var cols = ['name', 'phone', 'email', 'profession', 'company', 'school', 'location', 'circle', 'tags', 'howMet', 'lastTouch', 'touchpoints', 'notes'];
+  var cols = ['name', 'phone', 'email', 'profession', 'company', 'school', 'location', 'birthday', 'circle', 'tags', 'howMet', 'lastTouch', 'touchpoints', 'notes'];
   var q = function (v) { v = String(v === undefined || v === null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
   var lines = [cols.join(',')];
   state.people.forEach(function (p) {
     var notes = p.notes.map(function (n) { return n.t; })
       .concat(p.log.map(function (e) { return fmtDate(e.at) + ' ' + e.channel + ': ' + e.text + (e.learned ? ' — ' + e.learned : ''); }))
       .join(' | ');
-    lines.push([p.name, p.phone, p.email, p.profession, p.company, p.school, p.location, p.circle,
+    var extra = Object.keys(p.custom || {}).map(function (k) { return k + ': ' + p.custom[k]; });
+    lines.push([p.name, p.phone, p.email, p.profession, p.company, p.school, p.location, p.birthday, p.circle,
       p.tags.join(' '), p.howMet, p.log.length ? new Date(lastTouch(p)).toISOString().slice(0, 10) : '',
-      p.log.length, notes].map(q).join(','));
+      p.log.length, extra.concat(notes ? [notes] : []).join(' | ')].map(q).join(','));
   });
   return lines.join('\n');
 }
@@ -1108,7 +1405,13 @@ function helpModal() {
       '<p>One sentence in the bar. Rootwork pulls out the person and the fields, shows you what it caught, and you press Enter to keep it.</p>' +
       '<div class="ex">Zoom with <b>Dana Okafor</b> — she is a <b>data scientist at Merck</b>, <b>went to Rutgers</b>, <b>dana@merck.com</b>, <b>555-0142</b>. Learned <b>she runs the internal AI guild</b>. Follow up <b>in two weeks</b>. <b>#work</b></div></section>' +
     '<section><h5>What it looks for</h5>' +
-      '<p>Emails and phone numbers on sight · <em>went to / studied at / Rutgers grad</em> → school · <em>is a X at Y</em> → profession and company · <em>lives in</em> → location · <em>learned / turns out / she said</em> → the takeaway · <em>follow up in two weeks</em> → a nudge · <em>#tag</em> → tags · <em>zoom, coffee, lunch, called, texted, conference</em> → how you talked · <em>yesterday, last Tuesday, on 3/14</em> → when.</p></section>' +
+      '<p>Emails and phone numbers on sight · <em>went to / studied at / Rutgers grad</em> → school · <em>is a X at Y</em>, <em>runs a X</em> → profession and company · <em>lives in</em> → location · <em>learned / turns out / she said</em> → the takeaway · <em>follow up in two weeks</em> → a nudge · <em>#tag</em> → tags · <em>zoom, coffee, lunch, called, texted, conference</em> → how you talked · <em>yesterday, last Tuesday, on 3/14</em> → when.</p></section>' +
+    '<section><h5>Talk about someone already on the map</h5>' +
+      '<p>Open their dossier, or just keep typing after logging them, and pronouns land where you mean:</p>' +
+      '<div class="ex">her location is Bethlehem\nhis birthday is June 3\nchange her email to dana@merck.com\nremove his phone</div>' +
+      '<p>Anything the standard fields do not cover becomes a line of its own — <em>her partner is Sam</em>, <em>his favourite coffee is a cortado</em> — and shows on the card under its own label. A bare fact like these edits the card without logging a touchpoint; say what happened (<em>coffee with…</em>, <em>learned…</em>) and it logs one.</p></section>' +
+    '<section><h5>Your spreadsheet</h5>' +
+      '<p>Import takes a CSV or TSV file — drop it anywhere on the map, or pick it in the Import dialog. It reads the columns, shows you what it thinks each one is with a sample from your own data, and lets you correct any of them. Columns it cannot name are kept as their own labelled fields rather than thrown away, and it can sort everyone into circles by company, by school, by a column of your own, or all into one.</p></section>' +
     '<section><h5>When it guesses wrong</h5>' +
       '<p>Click any chip in the preview to fix it, or the × to drop it. Force a field outright with a colon:</p>' +
       '<div class="ex">school: Lehigh · circle: Family · role: Pastry chef</div></section>' +
@@ -1141,6 +1444,15 @@ function renderPreview() {
       '<span class="v" data-editk="' + k + '" tabindex="0" role="button">' + esc(draft.patch[k]) + '</span>' +
       '<button data-dropk="' + k + '" aria-label="Drop ' + k + '">&times;</button></span>';
   });
+  Object.keys(draft.custom || {}).forEach(function (k) {
+    chips.push('<span class="chip new"><span class="k">' + esc(k) + '</span>' +
+      '<span class="v" data-editc="' + esc(k) + '" tabindex="0" role="button">' + esc(draft.custom[k]) + '</span>' +
+      '<button data-dropc="' + esc(k) + '" aria-label="Drop ' + esc(k) + '">&times;</button></span>');
+  });
+  (draft.clears || []).forEach(function (k) {
+    chips.push('<span class="chip clear"><span class="k">clear</span><span class="v">' + esc(k) + '</span>' +
+      '<button data-dropclear="' + esc(k) + '" aria-label="Keep ' + esc(k) + '">&times;</button></span>');
+  });
   if (draft.entry && draft.entry.channel) {
     chips.unshift('<span class="chip"><span class="k">' + esc(CHANNEL_LABEL[draft.entry.channel]) + '</span>' +
       '<span class="v">' + fmtDate(draft.entry.at) + '</span></span>');
@@ -1156,9 +1468,11 @@ function renderPreview() {
   draft.tags.forEach(function (t) { chips.push('<span class="chip"><span class="v">#' + esc(t) + '</span></span>'); });
 
   slot.innerHTML = '<div class="preview">' +
-    '<div class="head"><span>' + (draft.person ? 'updating' : 'new person') + '</span>' +
+    '<div class="head"><span>' + (draft.person ? (draft.byPronoun ? 'about' : 'updating') : 'new person') + '</span>' +
       '<span class="who" data-editname tabindex="0" role="button">' + esc(draft.name || 'Unnamed') + '</span>' +
-      '<span class="tag">' + (draft.person ? draft.person.log.length + ' prior touchpoints' : 'sprouting from ' + esc(draft.patch.circle || 'Unsorted')) + '</span></div>' +
+      '<span class="tag">' + (draft.person
+        ? (draft.entry ? draft.person.log.length + ' prior touchpoints' : 'card edit — nothing logged')
+        : 'sprouting from ' + esc(draft.patch.circle || 'Unsorted')) + '</span></div>' +
     '<div class="chips">' + chips.join('') + '</div>' +
     '<div class="actions"><button class="btn primary" data-confirm>Add to map</button>' +
       '<button class="btn" data-discard>Discard</button>' +
@@ -1186,6 +1500,17 @@ $('#preview-slot').addEventListener('click', function (e) {
   if (t.closest('[data-confirm]')) return confirmDraft();
   if (t.closest('[data-discard]')) { draft = null; renderPreview(); return; }
   if (t.dataset.dropk) { delete draft.patch[t.dataset.dropk]; renderPreview(); return; }
+  if (t.dataset.dropc) { delete draft.custom[t.dataset.dropc]; renderPreview(); return; }
+  if (t.dataset.dropclear) {
+    draft.clears = draft.clears.filter(function (k) { return k !== t.dataset.dropclear; });
+    renderPreview(); return;
+  }
+  if (t.dataset.editc) {
+    var ck = t.dataset.editc;
+    return editChip(t, draft.custom[ck], function (v) {
+      if (v) draft.custom[ck] = v; else delete draft.custom[ck];
+    });
+  }
   if (t.hasAttribute && t.hasAttribute('data-droplearned')) { draft.entry.learned = ''; renderPreview(); return; }
   if (t.hasAttribute && t.hasAttribute('data-dropfu')) { draft.followUp = null; renderPreview(); return; }
   if (t.dataset.editk) {
@@ -1512,7 +1837,8 @@ window.Rootwork = {
     syncSampleBtn();
     applyingRemote = false;
   },
-  modal: modal, closeModal: closeModal, toast: toast
+  modal: modal, closeModal: closeModal, toast: toast,
+  parse: parse                                  // exposed for tests
 };
 
 /* ---- go ---- */

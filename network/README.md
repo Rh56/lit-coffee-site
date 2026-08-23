@@ -72,9 +72,31 @@ A phone edited offline merges cleanly instead of clobbering the laptop. Changes
 push about a second after you stop typing; other devices hear about it over a
 websocket, with a five-second poll behind it in case the socket is unavailable.
 
-## Data
+## Importing a spreadsheet
 
-Export gives you the spreadsheet view (CSV) or a full JSON backup. Import reads
-either, plus any CSV/TSV with a `name` column — `phone`, `email`, `profession`,
-`company`, `school`, `location`, `circle`, `tags` and `notes` are matched by
-header, and people who already exist are updated rather than duplicated.
+Drop a `.csv` or `.tsv` anywhere on the map, or pick it in the Import dialog.
+The importer reads the file in the browser and shows what it made of each
+column, with samples from your own rows, so a wrong guess is one dropdown away
+from right:
+
+- headers are matched by name (`phone number`, `employer`, `alma mater`, …);
+- when the header is missing or unhelpful, the column's *contents* are sniffed —
+  emails, phone numbers, dates, full names, long prose;
+- a column it cannot name is kept as its own labelled field rather than dropped;
+- people already on the map are matched by name or email and updated, never
+  duplicated, and keep the circle they are already in;
+- circles can come from a column of yours, from company, from school, or
+  everyone into one you name.
+
+Export gives the spreadsheet view (CSV, custom fields folded into notes) or a
+full JSON backup, which Import also accepts.
+
+## Talking to it
+
+The chat bar reads plain sentences — see **How to talk to it** in the app for
+the full list. Beyond logging a touchpoint it understands direct edits
+(`her location is Bethlehem`, `change his email to …`, `remove her phone`),
+resolves *she/he/they* to whoever's dossier is open or was last logged, and
+turns anything the fixed fields do not cover (`her partner is Sam`) into its own
+labelled line on the card. A bare fact edits the card; something that happened
+also logs a touchpoint.

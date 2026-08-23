@@ -19,7 +19,9 @@ var TABLE = 'rootwork';
 var app = null;                      // the bridge app.js hands us
 var cfg = null;                      // {url, key, space, pass}
 var cryptoKey = null;
+var legacyKey = null;                // v1 spaces (200k iterations) still open
 var ws = null, wsAlive = false, wsTimer = null, wsRef = 0;
+var KDF_V2 = 600000, KDF_V1 = 200000;
 var pollTimer = null, pushTimer = null;
 var status = { state: 'off', at: 0, note: '' };
 var pulling = false, pushing = false, adoptRemote = false;
@@ -38,13 +40,41 @@ function unb64(str) {
 }
 function enc(str) { return new TextEncoder().encode(str); }
 
-function deriveKey(pass, space) {
+function deriveKey(pass, space, iterations) {
   return crypto.subtle.importKey('raw', enc(pass), 'PBKDF2', false, ['deriveKey'])
     .then(function (base) {
       return crypto.subtle.deriveKey(
-        { name: 'PBKDF2', salt: enc('rootwork:' + space), iterations: 200000, hash: 'SHA-256' },
+        { name: 'PBKDF2', salt: enc('rootwork:' + space), iterations: iterations, hash: 'SHA-256' },
         base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
     });
+}
+
+/* How hard a stolen ciphertext is to grind through offline comes down to this
+   passphrase, so weak ones are refused rather than warned about. */
+var COMMON = /^(password|passw0rd|letmein|qwerty|welcome|iloveyou|admin123|123456|abc123|monkey|dragon|football|rootwork|changeme)/i;
+
+function strength(pass) {
+  var p = String(pass || '');
+  if (!p) return { score: 0, label: 'empty', ok: false };
+  if (COMMON.test(p)) return { score: 0, label: 'too common', ok: false };
+  var words = p.trim().split(/[\s._-]+/).filter(function (w) { return w.length > 2; }).length;
+  var classes = (/[a-z]/.test(p) ? 1 : 0) + (/[A-Z]/.test(p) ? 1 : 0) +
+                (/\d/.test(p) ? 1 : 0) + (/[^\w\s]/.test(p) ? 1 : 0);
+  var bits = p.length * (classes >= 3 ? 3.2 : classes === 2 ? 2.6 : 2.0) + (words >= 4 ? 12 : 0);
+  if (p.length < 12 && words < 4) return { score: 1, label: 'too short — 12 characters or four words', ok: false };
+  if (bits < 48) return { score: 2, label: 'workable, but longer would be better', ok: true };
+  if (bits < 70) return { score: 3, label: 'good', ok: true };
+  return { score: 4, label: 'strong', ok: true };
+}
+
+function suggestPass() {
+  var alpha = 'abcdefghjkmnpqrstuvwxyz23456789';
+  var b = crypto.getRandomValues(new Uint8Array(20)), out = '';
+  for (var i = 0; i < b.length; i++) {
+    if (i && i % 5 === 0) out += '-';
+    out += alpha[b[i] % alpha.length];
+  }
+  return out;                          // 20 characters, ~98 bits, paste it into a password manager
 }
 
 function encrypt(obj) {
@@ -53,13 +83,16 @@ function encrypt(obj) {
     .then(function (ct) {
       var out = new Uint8Array(iv.length + ct.byteLength);
       out.set(iv, 0); out.set(new Uint8Array(ct), iv.length);
-      return b64(out);
+      return 'v2:' + b64(out);
     });
 }
 
 function decrypt(payload) {
-  var raw = unb64(payload);
-  return crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.slice(0, 12) }, cryptoKey, raw.slice(12))
+  var v2 = payload.indexOf('v2:') === 0;
+  var raw = unb64(v2 ? payload.slice(3) : payload);
+  var key = v2 ? cryptoKey : legacyKey;
+  if (!key) return Promise.reject(new Error('no key'));
+  return crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.slice(0, 12) }, key, raw.slice(12))
     .then(function (pt) { return JSON.parse(new TextDecoder().decode(pt)); });
 }
 
@@ -257,8 +290,11 @@ function randomSpace() {
 }
 
 function connect(next, pass) {
-  return deriveKey(pass, next.space).then(function (k) {
-    cfg = next; cryptoKey = k;
+  return Promise.all([
+    deriveKey(pass, next.space, KDF_V2),
+    deriveKey(pass, next.space, KDF_V1)
+  ]).then(function (keys) {
+    cfg = next; cryptoKey = keys[0]; legacyKey = keys[1];
     try { localStorage.setItem(CFG_KEY, JSON.stringify({ url: cfg.url, key: cfg.key, space: cfg.space, pass: pass })); } catch (e) { }
     setStatus('connecting');
     openSocket();
@@ -268,7 +304,7 @@ function connect(next, pass) {
 }
 
 function disconnect() {
-  cfg = null; cryptoKey = null; wsAlive = false;
+  cfg = null; cryptoKey = null; legacyKey = null; wsAlive = false;
   try { localStorage.removeItem(CFG_KEY); } catch (e) { }
   try { if (ws) ws.close(); } catch (e) { }
   clearInterval(pollTimer); clearInterval(wsTimer);
@@ -281,7 +317,7 @@ function dialog() {
     (connected
       ? '<p class="lead">This device is syncing. Open the same map somewhere else by pasting the pairing code below, then typing the same passphrase.</p>' +
         '<div class="field wide"><label for="s-code">Pairing code</label>' +
-        '<input id="s-code" readonly value="' + pairingCode() + '"><span class="hint">Safe to send to yourself — it does not contain your passphrase, and without that the data is unreadable.</span></div>'
+        '<input id="s-code" readonly value="' + pairingCode() + '"><span class="hint warn">Treat this like a password: it carries your project address and key. It does <b>not</b> carry your passphrase, so the data stays unreadable without that — but do not post it anywhere public.</span></div>'
       : '<p class="lead">Two short steps, once. Your contacts are encrypted in this browser before they are sent, so the database holds nothing readable — but that also means a lost passphrase is a lost map.</p>') +
 
     '<div class="tabs"><button class="btn" id="s-tab-new" data-on="1">First device</button>' +
@@ -294,8 +330,11 @@ function dialog() {
         '<pre class="ex sql">create table if not exists public.rootwork (\n' +
         '  id text primary key,\n  payload text not null,\n' +
         '  updated_at timestamptz not null default now()\n);\n' +
-        'alter table public.rootwork enable row level security;\n' +
-        'create policy rootwork_rw on public.rootwork\n  for all to anon using (true) with check (true);\n' +
+        'alter table public.rootwork enable row level security;\n\n' +
+        '-- read and write only; no delete, so nobody can wipe the map\n' +
+        'create policy rootwork_read on public.rootwork\n  for select to anon using (true);\n' +
+        'create policy rootwork_add on public.rootwork\n  for insert to anon with check (true);\n' +
+        'create policy rootwork_edit on public.rootwork\n  for update to anon using (true) with check (true);\n\n' +
         'alter publication supabase_realtime add table public.rootwork;</pre>' +
         '<button class="btn" id="s-copysql" type="button" style="margin-top:6px">Copy the SQL</button></li>' +
         '<li>Open <b>Project Settings → API</b> and copy the two values below.</li>' +
@@ -303,19 +342,27 @@ function dialog() {
       '<div class="grid2">' +
         '<div class="field wide"><label for="s-url">Project URL</label><input id="s-url" placeholder="https://xxxxxxxx.supabase.co" value="' + (cfg ? cfg.url : '') + '"></div>' +
         '<div class="field wide"><label for="s-key">Anon public key</label><input id="s-key" placeholder="eyJhbGciOi…" value="' + (cfg ? cfg.key : '') + '"></div>' +
-        '<div class="field wide"><label for="s-pass">Passphrase</label><input id="s-pass" type="password" placeholder="Something you will remember">' +
-        '<span class="hint">Never sent anywhere. You will type it on each device.</span></div>' +
+        '<div class="field wide"><label for="s-pass">Passphrase</label>' +
+        '<div class="passrow"><input id="s-pass" type="password" autocomplete="new-password" placeholder="Twelve characters or four words">' +
+        '<button class="btn" id="s-gen" type="button">Generate</button></div>' +
+        '<div class="meter" id="s-meter" data-score="0"><i></i><i></i><i></i><i></i><span></span></div>' +
+        '<span class="hint">Never sent anywhere — it is the key to everything stored, so put it in a password manager. Nobody can reset it for you.</span></div>' +
       '</div>' +
     '</div>' +
 
     '<div id="s-pane-join" hidden>' +
       '<div class="grid2">' +
         '<div class="field wide"><label for="s-join">Pairing code from your other device</label><input id="s-join" placeholder="eyJ1IjoiaHR0cHM6…"></div>' +
-        '<div class="field wide"><label for="s-pass2">Passphrase</label><input id="s-pass2" type="password" placeholder="The same one you set there"></div>' +
+        '<div class="field wide"><label for="s-pass2">Passphrase</label><input id="s-pass2" type="password" autocomplete="current-password" placeholder="The same one you set there"></div>' +
       '</div>' +
       '<p class="lead" style="margin-top:10px">This device will take on the map from the server; anything only stored here now is replaced.</p>' +
     '</div>' +
 
+    '<details class="what"><summary>What the server can and cannot see</summary>' +
+      '<p>The row holds a random id, a blob of AES-GCM ciphertext and a timestamp — no names, no emails, nothing legible. ' +
+      'The key is derived from your passphrase on this device (PBKDF2, 600,000 rounds) and is never transmitted. ' +
+      'Anyone holding your project URL and anon key could fetch or overwrite that blob, but not read it; the SQL above ' +
+      'withholds delete, so it cannot be destroyed either. Treat the pairing code like a password.</p></details>' +
     '<div class="status" id="s-status">&nbsp;</div></div>';
 
   var m = app.modal('Sync across devices', connected ? 'Connected' : 'Not connected', body,
@@ -344,6 +391,26 @@ function dialog() {
     });
   }
 
+  var passBox = m.querySelector('#s-pass');
+  var meter = m.querySelector('#s-meter');
+  if (passBox && meter) {
+    var paint = function () {
+      var r = strength(passBox.value);
+      meter.dataset.score = r.score;
+      meter.querySelector('span').textContent = passBox.value ? r.label : '';
+    };
+    passBox.addEventListener('input', paint);
+    m.querySelector('#s-gen').addEventListener('click', function () {
+      passBox.type = 'text';
+      passBox.value = suggestPass();
+      paint();
+      passBox.select();
+      if (navigator.clipboard) navigator.clipboard.writeText(passBox.value).then(function () {
+        app.toast('Passphrase copied — save it somewhere safe now');
+      });
+    });
+  }
+
   var copySql = m.querySelector('#s-copysql');
   if (copySql) copySql.addEventListener('click', function () {
     var sql = m.querySelector('.ex.sql').textContent;
@@ -368,7 +435,10 @@ function dialog() {
         st.className = 'status bad'; st.textContent = 'Need the project URL and the anon key from Settings → API.'; return;
       }
     }
-    if (!pass || pass.length < 4) { st.className = 'status bad'; st.textContent = 'Pick a passphrase of at least four characters.'; return; }
+    if (mode !== 'join') {
+      var sc = strength(pass);
+      if (!sc.ok) { st.className = 'status bad'; st.textContent = 'That passphrase is ' + sc.label + '. Use Generate if you want one that cannot be guessed.'; return; }
+    } else if (!pass) { st.className = 'status bad'; st.textContent = 'Type the passphrase you set on the first device.'; return; }
     st.className = 'status'; st.textContent = 'Connecting…';
     connect(next, pass).then(function () {
       if (status.state === 'bad') { st.className = 'status bad'; st.textContent = status.note; return; }

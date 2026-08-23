@@ -157,10 +157,14 @@ bridges the two.
 
 ## Connections
 
-Who put you onto whom. Say *"Marcus introduced me to Rae Kim"*, *"got her info
-from Ada"* or *"met Lila through Priya"* and the two are joined by a dashed
-line on the map; the Connections row on a card takes names directly. Stored
-directionally, drawn mutually.
+Who put you onto whom. **Drag one person onto another** to join them, or say
+*"Marcus introduced me to Rae Kim"*, *"got her info from Ada"*, *"met Lila
+through Priya"*; the Connections row on a card also takes names directly. They
+draw as a dashed line between the two. Stored directionally — the toast after a
+drag offers to flip it — and drawn mutually.
+
+Deleting a circle leaves a tombstone, so the deletion survives a sync from a
+device that still has it; the same mechanism has always covered deleted people.
 
 ## Schools
 

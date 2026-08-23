@@ -681,11 +681,12 @@ function rebuild() {
     var share = counts[i] / total;
     var span = share * Math.PI * 2;
     var node = mk('c:' + c, 'circle', c, c, circleIndex(c));
+    node.r = 6 + Math.min(13, Math.sqrt(counts[i]) * 3);
     node.angle = cursor + span / 2;
     node.span = span;
     node.weight = counts[i];
     // busier circles stand a little further out, so their people have room
-    node.ring = 175 + Math.min(150, Math.sqrt(counts[i]) * 34);
+    node.ring = 170 + Math.min(190, Math.sqrt(counts[i]) * 42);
     cursor += span;
     if (!prev[node.id]) {
       node.x = Math.cos(node.angle) * node.ring;
@@ -702,7 +703,7 @@ function rebuild() {
     n.circles = mine;
     n.strength = p.log.length;
     n.cold = isCold(p);
-    n.r = 4.5 + Math.min(6, Math.sqrt(n.strength) * 2.4);
+    n.r = 5 + Math.min(12, Math.sqrt(n.strength) * 3.1);
     if (!prev[n.id]) {
       var a = (parent.angle || 0) + (Math.random() - 0.5) * 1.1;
       n.x = parent.x + Math.cos(a) * 105;
@@ -733,7 +734,7 @@ function rebuild() {
       id: id, kind: kind, label: label, ref: ref, ci: ci,
       x: old ? old.x : (Math.random() - 0.5) * 60,
       y: old ? old.y : (Math.random() - 0.5) * 60,
-      vx: 0, vy: 0, r: kind === 'me' ? 13 : kind === 'circle' ? 6.5 : 6,
+      vx: 0, vy: 0, r: kind === 'me' ? 16 : kind === 'circle' ? 8 : 6,
       angle: old ? old.angle : 0,
       fx: old ? old.fx : null, fy: old ? old.fy : null,
       born: old ? old.born : 0
@@ -743,6 +744,7 @@ function rebuild() {
   }
 
   alpha = 1;
+  if (nodes.length !== lastNodeCount) { wantFit = true; lastNodeCount = nodes.length; }
   updateHint();
 }
 
@@ -837,30 +839,43 @@ function toWorld(sx, sy) { return [(sx - W / 2) / cam.k + cam.x, (sy - H / 2) / 
    The way to get back to something readable after an afternoon of shoving. */
 function tidyMap() {
   nodes.forEach(function (n) { n.fx = n.fy = null; });
-  state.people.forEach(function (p) { delete p.pinned; });
   alpha = 1;
   for (var i = 0; i < 240; i++) tick();
   fit();
   needsDraw = true;
 }
 
-function fit() {
-  if (!nodes.length) return;
+/* Where the camera has to sit for everything to be visible, given the rail,
+   the chat dock and whatever panel is open. */
+function fitTarget() {
+  if (!nodes.length) return null;
   var minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
   nodes.forEach(function (n) {
     minx = Math.min(minx, n.x - 55); maxx = Math.max(maxx, n.x + 55);
     miny = Math.min(miny, n.y - 34); maxy = Math.max(maxy, n.y + 34);
   });
-  // keep the drawing clear of the rail, the chat dock and any open dossier
   var wide = W > 880;
   var L = wide ? 244 : 34, R = (selected && wide ? 400 : 34), T = 16, B = wide ? 132 : 150;
   var availW = Math.max(120, W - L - R), availH = Math.max(120, H - T - B);
-  var k = Math.min(availW / (maxx - minx || 1), availH / (maxy - miny || 1));
-  cam.k = Math.max(0.25, Math.min(1.4, k));
+  var k = Math.max(0.25, Math.min(1.4, Math.min(availW / (maxx - minx || 1), availH / (maxy - miny || 1))));
   var cx = L + availW / 2, cy = T + availH / 2;
-  cam.x = (minx + maxx) / 2 - (cx - W / 2) / cam.k;
-  cam.y = (miny + maxy) / 2 - (cy - H / 2) / cam.k;
+  return {
+    k: k,
+    x: (minx + maxx) / 2 - (cx - W / 2) / k,
+    y: (miny + maxy) / 2 - (cy - H / 2) / k
+  };
+}
+
+function fit() {
+  var t = fitTarget();
+  if (!t) return;
+  cam.x = t.x; cam.y = t.y; cam.k = t.k;
   draw();
+}
+
+function fitSmooth() {
+  var t = fitTarget();
+  if (t) glide(t.x, t.y, t.k);
 }
 
 var rgbCache = {};
@@ -944,7 +959,7 @@ function draw() {
   drawPlate();
 
   var focus = hover || selected;
-  var DIM = hover ? 0.22 : 0.5;
+  var DIM = hover ? 0.24 : 0.72;   // hovering focuses hard; a card open only softens
   var lit = {};
   if (focus) {
     lit[focus.id] = 1;
@@ -1069,16 +1084,18 @@ function draw() {
     var text = n.label, y = p[1] + off, h = 13;
 
     if (n.kind === 'circle') {
-      ctx.font = '500 9.5px "JetBrains Mono", monospace';
+      ctx.font = '500 ' + (9 + Math.min(2.5, Math.sqrt(n.weight || 1) * 0.5)).toFixed(1) + 'px "JetBrains Mono", monospace';
       ctx.letterSpacing = '1.6px';
       text = n.label.toUpperCase();
     } else if (n.kind === 'me') {
-      ctx.font = '400 15px "Instrument Serif", Georgia, serif';
+      ctx.font = '400 17px "Instrument Serif", Georgia, serif';
       ctx.letterSpacing = '0px';
-      y += 2; h = 17;
+      y += 2; h = 19;
     } else {
-      ctx.font = (n === focus ? '500 ' : '400 ') + '11.5px Archivo, system-ui, sans-serif';
+      var size = 11.2 + Math.min(2.6, Math.sqrt(n.strength || 0) * 0.85);
+      ctx.font = (n === focus || n.strength > 3 ? '500 ' : '400 ') + size.toFixed(1) + 'px Archivo, system-ui, sans-serif';
       ctx.letterSpacing = '0.2px';
+      h = Math.round(size) + 2;
     }
 
     var w = ctx.measureText(text).width + 8;
@@ -1123,12 +1140,22 @@ function draw() {
   }
 }
 
+var wantFit = false;
+var lastNodeCount = 0;
+
 var raf = null;
 function loop() {
   raf = requestAnimationFrame(loop);
   var moving = tick();
   var sprouting = nodes.some(function (n) { return n.born && performance.now() - n.born < 460; });
   if (moving || sprouting || needsDraw) { needsDraw = false; draw(); }
+
+  // once the springs stop after a change, bring anything that drifted off the
+  // edge back into view — one movement, not a constant chase
+  if (wantFit && !moving && !isEditing()) {
+    wantFit = false;
+    if (offscreenCount() > 0) fit();
+  }
 }
 var needsDraw = false;
 function kick() { alpha = Math.max(alpha, 0.65); needsDraw = true; }
@@ -1154,6 +1181,18 @@ function circleUnder(sx, sy) {
     if (d < Math.max(46, 54 / cam.k) && d < bd) { bd = d; best = n; }
   });
   return best;
+}
+
+function offscreenCount() {
+  // the open card hides its side of the stage, so treat that as off-screen too
+  var pad = 24;
+  var right = W - (W > 880 && selected ? 392 : pad);
+  var n = 0;
+  nodes.forEach(function (a) {
+    var p = toScreen(a.x, a.y);
+    if (p[0] < pad || p[0] > right || p[1] < pad || p[1] > H - 120) n++;
+  });
+  return n;
 }
 
 function nodeAt(sx, sy) {
@@ -1306,53 +1345,24 @@ function openDossier(node) {
       'title="Click to edit">' + body + '</span>' + jump + '</dd>';
   }
 
+  function chiprow(label, inner) {
+    return '<div class="chiprow"><span class="rlabel">' + label + '</span>' +
+      '<div class="chiplist">' + inner + '</div></div>';
+  }
+
   d.innerHTML =
     '<div class="d-top">' +
       '<button class="d-close" id="d-close" aria-label="Close">&times;</button>' +
       '<div class="d-kicker"><span class="swatch" style="background:' + col + '"></span>' +
         p.log.length + ' touchpoint' + (p.log.length === 1 ? '' : 's') +
-        ' · last ' + (p.log.length ? ago(lt) : 'never') + '</div>' +
+        ' · last ' + (p.log.length ? ago(lt) : 'never') +
+        (nudgeDue(p) ? ' <b class="due">· due a nudge</b>' : '') + '</div>' +
       '<h2 class="d-name"><span class="val" data-field="name" tabindex="0" role="button" title="Click to rename">' + esc(p.name) + '</span></h2>' +
       '<div class="d-sub">' + esc([p.profession, p.company].filter(Boolean).join(' · ') || 'No role recorded') + '</div>' +
     '</div>' +
+
     '<div class="d-body">' +
-      '<div class="d-sec"><h4>Circles</h4>' +
-        '<div class="circlechips">' +
-          circlesOf(p).map(function (c, i) {
-            return '<span class="cchip' + (i === 0 ? ' primary' : '') + '" style="--hue:var(--h' + circleIndex(c) + ')">' +
-              '<button class="lbl" data-primary="' + esc(c) + '" title="' + (i === 0 ? 'Primary circle' : 'Make this their primary circle') + '">' + esc(c) + '</button>' +
-              '<button class="x" data-leave="' + esc(c) + '" aria-label="Remove from ' + esc(c) + '">&times;</button></span>';
-          }).join('') +
-          '<span class="cchip add"><button data-addcircle aria-label="Add to a circle">+ circle</button></span>' +
-        '</div>' +
-      '</div>' +
-      '<div class="d-sec"><h4>Connections</h4>' +
-        '<div class="chiplist">' +
-          tiesOf(p).map(function (t) {
-            return '<span class="cchip tie">' +
-              '<button class="lbl" data-goto="' + t.person.id + '" title="Open ' + esc(t.person.name) + '">' +
-                '<i>' + (t.own ? 'via' : 'led to') + '</i>' + esc(t.person.name) + '</button>' +
-              '<button class="x" data-untie="' + t.person.id + '" data-own="' + (t.own ? 1 : 0) + '" aria-label="Remove connection">&times;</button></span>';
-          }).join('') +
-          '<input class="chipinput" data-add="tie" placeholder="' + (tiesOf(p).length ? 'another…' : 'Who connected you?') + '" aria-label="Add a connection">' +
-        '</div>' +
-        (tiesOf(p).length ? '<p class="tiehint">via — who put you onto them · led to — who you met through them</p>' : '') +
-      '</div>' +
-
-      '<div class="d-sec"><h4>Schools</h4>' +
-        '<div class="chiplist">' +
-          schoolsOf(p).map(function (sc, i) {
-            return '<span class="cchip school">' +
-              '<button class="lbl" data-editschool="' + i + '" title="Click to rename">' + esc(sc.name) + '</button>' +
-              '<button class="lvl' + (sc.level ? '' : ' none') + '" data-level="' + i + '" title="Undergrad, grad, or unspecified">' +
-                (sc.level || 'level') + '</button>' +
-              '<button class="x" data-rmschool="' + i + '" aria-label="Remove ' + esc(sc.name) + '">&times;</button></span>';
-          }).join('') +
-          '<input class="chipinput" data-add="school" placeholder="' + (schoolsOf(p).length ? 'another…' : 'Add a school…') + '" aria-label="Add a school">' +
-        '</div>' +
-      '</div>' +
-
-      '<div class="d-sec"><h4>Card</h4><dl class="fields">' +
+      '<div class="d-sec"><h4>Details</h4><dl class="fields">' +
         row('Email', 'email', p.email, 'mailto:') + row('Phone', 'phone', p.phone, 'tel:') +
         row('Profession', 'profession', p.profession) + row('Company', 'company', p.company) +
         row('Location', 'location', p.location) +
@@ -1366,14 +1376,40 @@ function openDossier(node) {
       '<button class="addfield" data-newfield>+ another field</button>' +
       '</div>' +
 
-      '<div class="d-sec"><h4>Tags</h4>' +
-        '<div class="chiplist">' +
+      '<div class="d-sec"><h4>Filed under</h4>' +
+        chiprow('Circles',
+          circlesOf(p).map(function (c, i) {
+            return '<span class="cchip' + (i === 0 ? ' primary' : '') + '" style="--hue:var(--h' + circleIndex(c) + ')">' +
+              '<button class="lbl" data-primary="' + esc(c) + '" title="' + (i === 0 ? 'Their main circle' : 'Make this their main circle') + '">' + esc(c) + '</button>' +
+              '<button class="x" data-leave="' + esc(c) + '" aria-label="Remove from ' + esc(c) + '">&times;</button></span>';
+          }).join('') +
+          '<span class="cchip add"><button data-addcircle aria-label="Add to a circle">+ circle</button></span>') +
+
+        chiprow('Schools',
+          schoolsOf(p).map(function (sc, i) {
+            return '<span class="cchip school">' +
+              '<button class="lbl" data-editschool="' + i + '" title="Click to rename">' + esc(sc.name) + '</button>' +
+              '<button class="lvl' + (sc.level ? '' : ' none') + '" data-level="' + i + '" title="Undergrad, grad, or unspecified">' +
+                (sc.level || 'level') + '</button>' +
+              '<button class="x" data-rmschool="' + i + '" aria-label="Remove ' + esc(sc.name) + '">&times;</button></span>';
+          }).join('') +
+          '<input class="chipinput" data-add="school" placeholder="' + (schoolsOf(p).length ? 'another…' : 'add…') + '" aria-label="Add a school">') +
+
+        chiprow('Via',
+          tiesOf(p).map(function (t) {
+            return '<span class="cchip tie">' +
+              '<button class="lbl" data-goto="' + t.person.id + '" title="Open ' + esc(t.person.name) + '">' +
+                '<i>' + (t.own ? 'via' : 'led to') + '</i>' + esc(t.person.name) + '</button>' +
+              '<button class="x" data-untie="' + t.person.id + '" data-own="' + (t.own ? 1 : 0) + '" aria-label="Remove connection">&times;</button></span>';
+          }).join('') +
+          '<input class="chipinput" data-add="tie" placeholder="' + (tiesOf(p).length ? 'another…' : 'who connected you?') + '" aria-label="Add a connection">') +
+
+        chiprow('Tags',
           p.tags.map(function (t, i) {
             return '<span class="cchip tag"><span class="lbl">#' + esc(t) + '</span>' +
               '<button class="x" data-rmtag="' + i + '" aria-label="Remove ' + esc(t) + '">&times;</button></span>';
           }).join('') +
-          '<input class="chipinput" data-add="tag" placeholder="' + (p.tags.length ? 'another…' : 'Add a tag…') + '" aria-label="Add a tag">' +
-        '</div>' +
+          '<input class="chipinput" data-add="tag" placeholder="' + (p.tags.length ? 'another…' : 'add…') + '" aria-label="Add a tag">') +
       '</div>' +
 
       '<div class="d-sec"><h4>History</h4>' +
@@ -1385,7 +1421,7 @@ function openDossier(node) {
             '<p>' + esc(e.text) + '</p>' +
             (e.learned ? '<div class="learned">' + esc(e.learned) + '</div>' : '') +
             '</div>';
-        }).join('') + '</div>' : '<div class="empty" style="color:var(--faint);font-size:12.5px">Nothing logged yet.</div>') +
+        }).join('') + '</div>' : '<p class="blank">Nothing logged yet — tell the bar what happened.</p>') +
       '</div>' +
 
       '<div class="d-sec"><h4>Notes</h4><div class="notes-list">' +
@@ -1393,12 +1429,12 @@ function openDossier(node) {
           return '<div class="note"><button class="del" data-delnote="' + n.id + '">&times;</button>' +
             '<span class="val" data-note="' + n.id + '" tabindex="0" role="button" title="Click to edit">' + esc(n.t) + '</span></div>';
         }).join('') +
-        '<textarea class="notebox" id="notebox" rows="1" placeholder="Anything worth remembering — ⌘↵ to keep" aria-label="Add a note"></textarea>' +
+        '<textarea class="notebox" id="notebox" rows="1" placeholder="Anything worth remembering — ↵ to keep" aria-label="Add a note"></textarea>' +
       '</div></div>' +
 
       '<div class="d-actions">' +
         '<button class="btn" data-log="' + p.id + '">Log a touchpoint</button>' +
-        '<button class="btn" data-del="' + p.id + '" style="margin-left:auto">Delete</button>' +
+        '<button class="btn quiet" data-del="' + p.id + '" style="margin-left:auto">Delete</button>' +
       '</div>' +
     '</div>';
 
@@ -1411,6 +1447,14 @@ function openDossier(node) {
   d.classList.add('open');
   $('#stage').classList.add('panel-open');
   d.setAttribute('aria-hidden', 'false');
+
+  // keep whoever is open in sight rather than behind their own card
+  if (W > 880) {
+    var sp = toScreen(node.x, node.y);
+    // re-frame rather than shove: the card takes a third of the stage, so fit
+    // to what is left instead of pushing this person out the other side
+    if (sp[0] > (W - 380) * 0.78 || offscreenCount() > 0) fitSmooth();
+  }
   needsDraw = true;
 }
 
@@ -2220,7 +2264,8 @@ function helpModal() {
       '<p>Click any chip in the preview to fix it, or the × to drop it. Force a field outright with a colon:</p>' +
       '<div class="ex">school: Lehigh · circle: Family · role: Pastry chef</div></section>' +
     '<section><h5>The map</h5>' +
-      '<p>You are the centre. Circles branch off you; people branch off circles. A dot grows with every touchpoint logged, and fades to an outline once ninety days pass without contact — those are the ones in “Going cold”. Drag a person to pin them where you like, double-click to let go. Scroll to zoom, drag the plate to pan.</p></section>' +
+      '<p>You are the centre. Circles branch off you; people branch off circles. Size means volume: a circle grows with the number of people in it and claims a wider fan, and a person’s dot grows with every touchpoint logged. A dot fades to an outline once it has been quiet too long — those are the ones under “Going cold”.</p>' +
+      '<p>Drag a person onto a circle to file them there, or onto another person to connect them. Let go anywhere else and the layout takes them back — nothing stays pinned. Scroll to zoom, drag the plate to pan, <kbd>T</kbd> to tidy.</p></section>' +
     '<section><h5>Reshaping the map</h5>' +
       '<p>The bar takes instructions as well as notes. Anything that changes several people at once is described and counted first, and every one of them can be taken back with <kbd>⌘Z</kbd> or the Undo on the toast.</p>' +
       '<div class="ex">remove everyone but keep the categories\n' +
@@ -2843,6 +2888,7 @@ canvas.addEventListener('pointerup', function (e) {
   if (dragging && dragging.kind === 'person' && dropTarget && moved && dropTarget.kind === 'person') {
     var from = dragging.ref, onto = dropTarget.ref;
     dragging.fx = dragging.fy = null;
+    kick();
     dropTarget = null; dragging = null; panning = null;
     tie(from, onto.id, 'intro');
     save(); renderAll();
@@ -2857,6 +2903,7 @@ canvas.addEventListener('pointerup', function (e) {
     var already = inCircle(person, target);
     joinCircle(person, target, true);
     dragging.fx = dragging.fy = null;
+    kick();
     dropTarget = null; dragging = null; panning = null;
     save(); renderAll();
     toast(person.name + (already ? ' → ' + target + ' is now their main circle'
@@ -2871,14 +2918,10 @@ canvas.addEventListener('pointerup', function (e) {
     else if (n && n.kind === 'me') { closeDossier(); }
     else closeDossier();
   }
+  // nothing stays where it was dropped: the layout takes it back
+  if (dragging) { dragging.fx = dragging.fy = null; kick(); }
   dragging = null; panning = null;
   canvas.style.cursor = n ? 'pointer' : 'grab';
-});
-
-canvas.addEventListener('dblclick', function (e) {
-  var r = canvas.getBoundingClientRect();
-  var n = nodeAt(e.clientX - r.left, e.clientY - r.top);
-  if (n) { n.fx = n.fy = null; kick(); toast('Unpinned ' + n.label); }
 });
 
 canvas.addEventListener('wheel', function (e) {
@@ -3011,9 +3054,8 @@ $('#btn-export').addEventListener('click', exportModal);
 $('#btn-help').addEventListener('click', helpModal);
 $('#btn-fit').addEventListener('click', fit);
 $('#btn-tidy').addEventListener('click', function () {
-  var pinned = nodes.filter(function (n) { return n.fx !== null && n.fx !== undefined; }).length;
   tidyMap();
-  toast(pinned ? 'Untangled — ' + pinned + ' pinned ' + (pinned === 1 ? 'person' : 'people') + ' let go' : 'Untangled');
+  toast('Untangled');
 });
 
 document.addEventListener('keydown', function (e) {

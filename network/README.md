@@ -150,8 +150,13 @@ bridges the two.
 - **Click a circle on the map** to recolour, rename, hide or delete it.
 - Circles claim room in proportion to how many people they hold, so a School of
   thirty gets the space a Family of two does not need.
-- The **tidy** button (or `T`) releases everything you have dragged into place
-  and lets the layout settle again.
+- Size carries volume: a circle's dot grows with the number of people in it and
+  its wedge widens to match; a person's dot grows with touchpoints logged, and
+  their name is set a little larger with them.
+- Nothing stays pinned. Dragging a person moves them; letting go anywhere that
+  is not a circle or another person hands them back to the layout. The **tidy**
+  button (or `T`) re-settles everything, and the map re-frames itself once the
+  springs stop so nothing drifts off the edge or hides behind an open card.
 - The button beside *Add person* makes a new one; empty circles are kept as
   branches until deleted, so structure survives a purge.
 

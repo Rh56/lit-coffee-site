@@ -269,7 +269,7 @@ function paintStatus() {
   else { label = 'Connecting'; tone = 'off'; }
   el.dataset.tone = tone;
   el.title = status.note || (cfg ? 'Connected to your sync space' : 'Not connected');
-  el.innerHTML = '<span class="dot"></span>' + label;
+  el.innerHTML = '<span class="dot"></span><span class="plabel">' + label + '</span>';
 }
 
 function pairingCode() {
@@ -337,11 +337,14 @@ function dialog() {
         'create policy rootwork_edit on public.rootwork\n  for update to anon using (true) with check (true);\n\n' +
         'alter publication supabase_realtime add table public.rootwork;</pre>' +
         '<button class="btn" id="s-copysql" type="button" style="margin-top:6px">Copy the SQL</button></li>' +
-        '<li>Open <b>Project Settings → API</b> and copy the two values below.</li>' +
+        '<li>Open <b>Project Settings → API Keys</b> and copy the two values below. ' +
+        'Supabase calls it the <b>publishable</b> or <b>anon</b> key — the one meant for browsers. ' +
+        'Never the <em>secret</em> or <em>service_role</em> key.</li>' +
       '</ol>' +
       '<div class="grid2">' +
         '<div class="field wide"><label for="s-url">Project URL</label><input id="s-url" placeholder="https://xxxxxxxx.supabase.co" value="' + (cfg ? cfg.url : '') + '"></div>' +
-        '<div class="field wide"><label for="s-key">Anon public key</label><input id="s-key" placeholder="eyJhbGciOi…" value="' + (cfg ? cfg.key : '') + '"></div>' +
+        '<div class="field wide"><label for="s-key">Publishable API key</label><input id="s-key" placeholder="sb_publishable_… or eyJhbGciOi…" value="' + (cfg ? cfg.key : '') + '">' +
+        '<span class="hint">Settings → API Keys. Safe in a browser by design; the secret key is not.</span></div>' +
         '<div class="field wide"><label for="s-pass">Passphrase</label>' +
         '<div class="passrow"><input id="s-pass" type="password" autocomplete="new-password" placeholder="Twelve characters or four words">' +
         '<button class="btn" id="s-gen" type="button">Generate</button></div>' +
@@ -431,8 +434,13 @@ function dialog() {
         space: (cfg && cfg.space) || randomSpace()
       };
       pass = m.querySelector('#s-pass').value;
+      if (/^sb_secret_|service_role/.test(next.key)) {
+        st.className = 'status bad';
+        st.textContent = 'That is the secret key — it must never go in a browser. Copy the publishable (anon) one instead.';
+        return;
+      }
       if (!/^https:\/\/.+/.test(next.url) || next.key.length < 20) {
-        st.className = 'status bad'; st.textContent = 'Need the project URL and the anon key from Settings → API.'; return;
+        st.className = 'status bad'; st.textContent = 'Need the project URL and the publishable API key from Settings → API Keys.'; return;
       }
     }
     if (mode !== 'join') {

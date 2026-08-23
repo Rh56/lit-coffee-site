@@ -12,8 +12,8 @@ var KEY = 'rootwork.v1';
 var DAY = 86400000;
 var COLD_DAYS = 90;
 
-var state = { me: { name: 'Me' }, people: [], circles: [], tombstones: {}, meUpdated: 0, demo: false, seq: 1 };
-var DEFAULTS = function () { return { me: { name: 'Me' }, people: [], circles: [], tombstones: {}, meUpdated: 0, demo: false, seq: 1 }; };
+var state = { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, coldDays: 90, meUpdated: 0, demo: false, seq: 1 };
+var DEFAULTS = function () { return { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, coldDays: 90, meUpdated: 0, demo: false, seq: 1 }; };
 var applyingRemote = false;
 
 function uid() { return 'p' + (state.seq++) + Math.random().toString(36).slice(2, 6); }
@@ -53,7 +53,10 @@ function normalizePerson(p) {
   p.custom = p.custom || {};
   p.notes = p.notes || [];
   p.log = p.log || [];
-  p.circle = p.circle || 'Unsorted';
+  if (!Array.isArray(p.circles)) p.circles = [];
+  if (p.circle && !p.circles.length) p.circles = [p.circle];   // from the single-circle days
+  p.circles = p.circles.filter(Boolean);
+  delete p.circle;
   p.created = p.created || Date.now();
   return p;
 }
@@ -61,7 +64,7 @@ function normalizePerson(p) {
 function blankPerson(name) {
   return normalizePerson({
     id: uid(), name: name || '', email: '', phone: '', profession: '', company: '',
-    school: '', location: '', birthday: '', circle: 'Unsorted', tags: [], howMet: '', custom: {},
+    school: '', location: '', birthday: '', circles: [], tags: [], howMet: '', custom: {},
     followUp: null, notes: [], log: [], created: Date.now()
   });
 }
@@ -72,19 +75,50 @@ function lastTouch(p) {
   return t;
 }
 function daysSince(t) { return Math.floor((Date.now() - t) / DAY); }
-function isCold(p) { return p.log.length > 0 && daysSince(lastTouch(p)) > COLD_DAYS; }
+function coldAfter() { return state.coldDays || COLD_DAYS; }
+function isCold(p) { return p.log.length > 0 && daysSince(lastTouch(p)) > coldAfter(); }
 function nudgeDue(p) {
   if (p.followUp && p.followUp.date && p.followUp.date <= Date.now() + DAY) return true;
   return isCold(p);
 }
 
-function circleList() {
+/* Where a person hangs. First one is their primary — it colours their dot and
+   is the branch they sit closest to. */
+function circlesOf(p) {
+  return (p.circles && p.circles.length) ? p.circles : ['Unsorted'];
+}
+function primaryCircle(p) { return circlesOf(p)[0]; }
+function inCircle(p, name) {
+  return circlesOf(p).some(function (c) { return c.toLowerCase() === String(name).toLowerCase(); });
+}
+
+/* Adds a circle to a person. Dropping someone on a circle makes it primary;
+   adding from the card leaves their primary alone. */
+function joinCircle(p, name, makePrimary) {
+  name = clean(name);
+  if (!name) return;
+  p.circles = circlesOf(p).filter(function (c) { return c.toLowerCase() !== name.toLowerCase() && c !== 'Unsorted'; });
+  if (makePrimary) p.circles.unshift(name); else p.circles.push(name);
+  circleIndex(name);
+  touch(p);
+}
+
+function leaveCircle(p, name) {
+  p.circles = circlesOf(p).filter(function (c) { return c.toLowerCase() !== String(name).toLowerCase(); });
+  if (!p.circles.length) p.circles = [];
+  touch(p);
+}
+
+/* Circles that exist, including ones nobody is in yet — an empty circle is
+   still part of the structure. */
+function circleList(includeEmpty) {
   var seen = {}, out = [];
-  state.people.forEach(function (p) {
-    var c = p.circle || 'Unsorted';
+  var add = function (c) {
     if (!seen[c]) { seen[c] = { name: c, n: 0 }; out.push(seen[c]); }
-    seen[c].n++;
-  });
+    return seen[c];
+  };
+  if (includeEmpty !== false) (state.circles || []).forEach(function (c) { if (c !== 'Unsorted') add(c); });
+  state.people.forEach(function (p) { circlesOf(p).forEach(function (c) { add(c).n++; }); });
   out.sort(function (a, b) { return b.n - a.n || a.name.localeCompare(b.name); });
   return out;
 }
@@ -92,9 +126,33 @@ function circleList() {
 /* Colors are assigned by first appearance and remembered, so a circle keeps
    its pigment even as the map grows. */
 function circleIndex(name) {
+  if (state.colors && state.colors[name]) return state.colors[name];
   var i = state.circles.indexOf(name);
   if (i < 0) { state.circles.push(name); i = state.circles.length - 1; }
   return (i % 8) + 1;
+}
+
+var PIGMENTS = [
+  { i: 1, name: 'copper' }, { i: 2, name: 'verdigris' }, { i: 3, name: 'indigo' },
+  { i: 4, name: 'plum' }, { i: 5, name: 'moss' }, { i: 6, name: 'steel blue' },
+  { i: 7, name: 'brass' }, { i: 8, name: 'brick' }
+];
+
+var COLOR_WORDS = {
+  copper: 1, orange: 1, rust: 1, amber: 1, terracotta: 1, bronze: 1,
+  green: 2, verdigris: 2, emerald: 2, teal: 2, jade: 2, mint: 2,
+  blue: 3, indigo: 3, navy: 3, cobalt: 3, periwinkle: 3,
+  purple: 4, plum: 4, violet: 4, magenta: 4, pink: 4, mauve: 4, lilac: 4,
+  olive: 5, moss: 5, lime: 5, sage: 5, 'olive green': 5,
+  cyan: 6, steel: 6, 'steel blue': 6, sky: 6, aqua: 6, turquoise: 6, slate: 6,
+  gold: 7, yellow: 7, brass: 7, mustard: 7, ochre: 7, honey: 7,
+  red: 8, rose: 8, brick: 8, maroon: 8, crimson: 8, coral: 8
+};
+
+function setCircleColor(name, idx) {
+  if (!state.colors) state.colors = {};
+  state.colors[name] = idx;
+  circleIndex(name);
 }
 
 var hidden = {};   // circle name -> true when filtered out
@@ -201,7 +259,7 @@ function parse(raw) {
   var work = ' ' + text + ' ';
   var m;
 
-  function endClause(v) {                    // "marcus.bell@x.com" survives; a new sentence does not
+  function endClause(v) {                    // "a.name@example.com" survives; a new sentence does not
     return clean(String(v).replace(/\.\s+\S[\s\S]*$/, '').replace(/[.,;]+$/, ''));
   }
 
@@ -373,7 +431,11 @@ function commit(draft) {
   var p = draft.person;
   if (!p) { p = blankPerson(draft.name || 'Unnamed'); state.people.push(p); }
   Object.keys(draft.patch).forEach(function (k) {
-    if (k === 'circle' && p.circle && p.circle !== 'Unsorted' && !draft.circleForced) return;
+    if (k === 'circle') {
+      if (p.circles && p.circles.length && !draft.circleForced) return;
+      joinCircle(p, draft.patch.circle, true);
+      return;
+    }
     p[k] = draft.patch[k];
   });
   (draft.clears || []).forEach(function (k) { p[k] = ''; });
@@ -386,7 +448,7 @@ function commit(draft) {
     p.log.unshift({ id: uid(), at: draft.entry.at, channel: draft.entry.channel, text: draft.entry.text, learned: draft.entry.learned || '' });
   }
   if (draft.followUp) p.followUp = draft.followUp;
-  circleIndex(p.circle || 'Unsorted');
+  circlesOf(p).forEach(circleIndex);
   p.updated = Date.now();
   lastSubject = p;
   save();
@@ -406,15 +468,17 @@ function rebuild() {
   nodes.forEach(function (n) { prev[n.id] = n; });
   nodes = []; links = []; byId = {};
 
-  var visible = state.people.filter(function (p) { return !hidden[p.circle || 'Unsorted']; });
+  var visible = state.people.filter(function (p) {
+    return circlesOf(p).some(function (c) { return !hidden[c]; });
+  });
 
   var me = mk('me', 'me', state.me.name || 'Me', null, 0);
   me.x = 0; me.y = 0;
 
   var circles = [];
+  (state.circles || []).forEach(function (c) { if (c !== 'Unsorted' && !hidden[c]) circles.push(c); });
   visible.forEach(function (p) {
-    var c = p.circle || 'Unsorted';
-    if (circles.indexOf(c) < 0) circles.push(c);
+    circlesOf(p).forEach(function (c) { if (!hidden[c] && circles.indexOf(c) < 0) circles.push(c); });
   });
   circles.sort(function (a, b) { return circleIndex(a) - circleIndex(b); });
 
@@ -429,10 +493,11 @@ function rebuild() {
   });
 
   visible.forEach(function (p) {
-    var c = p.circle || 'Unsorted';
-    var parent = byId['c:' + c] || me;
-    var n = mk(p.id, 'person', p.name, p, circleIndex(c));
+    var mine = circlesOf(p).filter(function (c) { return !hidden[c]; });
+    var parent = byId['c:' + mine[0]] || me;
+    var n = mk(p.id, 'person', p.name, p, circleIndex(mine[0]));
     n.parent = parent;
+    n.circles = mine;
     n.strength = p.log.length;
     n.cold = isCold(p);
     n.r = 4.5 + Math.min(6, Math.sqrt(n.strength) * 2.4);
@@ -443,6 +508,11 @@ function rebuild() {
       n.born = performance.now();
     }
     links.push({ a: parent, b: n, len: 92 + Math.min(30, n.strength * 3), k: 0.035 });
+    // a second or third circle pulls more gently, so the person sits between them
+    mine.slice(1).forEach(function (c) {
+      var other = byId['c:' + c];
+      if (other) links.push({ a: other, b: n, len: 118, k: 0.016, secondary: true });
+    });
   });
 
   function mk(id, kind, label, ref, ci) {
@@ -521,7 +591,7 @@ var canvas = document.getElementById('plate');
 var ctx = canvas.getContext('2d');
 var cam = { x: 0, y: 0, k: 1 };
 var W = 0, H = 0, dpr = 1;
-var hover = null, selected = null, dragging = null, panning = null, moved = false;
+var hover = null, selected = null, dragging = null, panning = null, moved = false, dropTarget = null;
 var C = {};
 
 function readTokens() {
@@ -661,8 +731,9 @@ function draw() {
   links.forEach(function (L) {
     var dim = focus && !(lit[L.a.id] && lit[L.b.id]) ? DIM : 1;
     var trunk = L.b.kind === 'circle';
-    var fade = (L.b.cold ? 0.5 : 1) * dim * (trunk ? 0.5 : 1);
-    branch(L.a, L.b, trunk ? 7 : 5, trunk ? 2.8 : 1.1, hueOf(L.b), fade);
+    var fade = (L.b.cold ? 0.5 : 1) * dim * (trunk ? 0.5 : 1) * (L.secondary ? 0.5 : 1);
+    var hue = L.secondary ? (C.hues[circleIndex(L.a.label)] || C.accent) : hueOf(L.b);
+    branch(L.a, L.b, trunk ? 7 : (L.secondary ? 3 : 5), trunk ? 2.8 : 1.1, hue, fade);
   });
 
   nodes.forEach(function (n) {
@@ -679,9 +750,17 @@ function draw() {
       ctx.beginPath(); ctx.arc(n.x, n.y, r + 4.5, 0, Math.PI * 2);
       ctx.lineWidth = 1 / cam.k; ctx.strokeStyle = mix(C.accent, 0.7); ctx.stroke();
     } else if (n.kind === 'circle') {
+      if (dropTarget === n) {
+        ctx.beginPath(); ctx.arc(n.x, n.y, r + 16, 0, Math.PI * 2);
+        ctx.fillStyle = mix(col, 0.14); ctx.fill();
+        ctx.beginPath(); ctx.arc(n.x, n.y, r + 11, 0, Math.PI * 2);
+        ctx.lineWidth = 1.4 / cam.k; ctx.setLineDash([4 / cam.k, 3 / cam.k]);
+        ctx.strokeStyle = mix(col, 0.95); ctx.stroke(); ctx.setLineDash([]);
+      }
       ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
       ctx.fillStyle = mix(C.ground, 1); ctx.fill();
-      ctx.lineWidth = 1.8 / cam.k; ctx.strokeStyle = mix(col, 0.85 * dim); ctx.stroke();
+      ctx.lineWidth = (dropTarget === n ? 2.6 : 1.8) / cam.k;
+      ctx.strokeStyle = mix(col, 0.85 * dim); ctx.stroke();
     } else {
       ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
       ctx.fillStyle = mix(col, (n.cold ? 0.14 : 0.92) * dim);
@@ -765,6 +844,18 @@ function loop() {
 var needsDraw = false;
 function kick() { alpha = Math.max(alpha, 0.65); needsDraw = true; }
 
+/* Which circle is under the cursor, for a drop. Generous on purpose — the
+   target is a small dot and fingers are not. */
+function circleUnder(sx, sy) {
+  var w = toWorld(sx, sy), best = null, bd = 1e9;
+  nodes.forEach(function (n) {
+    if (n.kind !== 'circle') return;
+    var d = Math.sqrt((w[0] - n.x) * (w[0] - n.x) + (w[1] - n.y) * (w[1] - n.y));
+    if (d < Math.max(46, 54 / cam.k) && d < bd) { bd = d; best = n; }
+  });
+  return best;
+}
+
 function nodeAt(sx, sy) {
   var w = toWorld(sx, sy), best = null, bd = 1e9;
   for (var i = nodes.length - 1; i >= 0; i--) {
@@ -800,11 +891,19 @@ function ago(t) {
 }
 
 var toastTimer = null;
-function toast(msg) {
+function toast(msg, actionLabel, action) {
   var t = $('#toast');
-  t.textContent = msg; t.hidden = false;
+  t.innerHTML = '<span>' + esc(msg) + '</span>';
+  if (actionLabel) {
+    var b = document.createElement('button');
+    b.className = 'undo';
+    b.textContent = actionLabel;
+    b.addEventListener('click', function () { t.hidden = true; action(); });
+    t.appendChild(b);
+  }
+  t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(function () { t.hidden = true; }, 2600);
+  toastTimer = setTimeout(function () { t.hidden = true; }, actionLabel ? 7000 : 2600);
 }
 
 /* ---- rails ---- */
@@ -826,9 +925,11 @@ function renderLegend() {
   $('#legend-count').textContent = list.length || '';
   $('#legend').innerHTML = list.map(function (c) {
     var col = 'var(--h' + circleIndex(c.name) + ')';
-    return '<button data-circle="' + esc(c.name) + '" data-off="' + (hidden[c.name] ? 1 : 0) + '">' +
-      '<span class="swatch" style="background:' + col + '"></span>' +
-      '<span>' + esc(c.name) + '</span><span class="n">' + c.n + '</span></button>';
+    return '<div class="lrow" data-off="' + (hidden[c.name] ? 1 : 0) + '">' +
+      '<button class="swatchbtn" data-color="' + esc(c.name) + '" title="Change colour" aria-label="Change the colour of ' + esc(c.name) + '">' +
+        '<span class="swatch" style="background:' + col + '"></span></button>' +
+      '<button class="lname" data-circle="' + esc(c.name) + '" title="Click to hide or show">' +
+        '<span class="cname">' + esc(c.name) + '</span><span class="n">' + (c.n || '—') + '</span></button></div>';
   }).join('') || '<div class="empty">No circles yet.</div>';
 }
 
@@ -863,7 +964,7 @@ function openDossier(node) {
   if (!p || node.kind !== 'person') return;
   selected = node;
   var d = $('#dossier');
-  var col = 'var(--h' + circleIndex(p.circle) + ')';
+  var col = 'var(--h' + circleIndex(primaryCircle(p)) + ')';
   var lt = lastTouch(p);
 
   function row(k, v, href) {
@@ -876,12 +977,22 @@ function openDossier(node) {
     '<div class="d-top">' +
       '<button class="d-close" id="d-close" aria-label="Close">&times;</button>' +
       '<div class="d-kicker"><span class="swatch" style="background:' + col + '"></span>' +
-        esc(p.circle) + ' · ' + p.log.length + ' touchpoint' + (p.log.length === 1 ? '' : 's') +
+        p.log.length + ' touchpoint' + (p.log.length === 1 ? '' : 's') +
         ' · last ' + (p.log.length ? ago(lt) : 'never') + '</div>' +
       '<h2 class="d-name">' + esc(p.name) + '</h2>' +
       '<div class="d-sub">' + esc([p.profession, p.company].filter(Boolean).join(' · ') || 'No role recorded') + '</div>' +
     '</div>' +
     '<div class="d-body">' +
+      '<div class="d-sec"><h4>Circles</h4>' +
+        '<div class="circlechips">' +
+          circlesOf(p).map(function (c, i) {
+            return '<span class="cchip' + (i === 0 ? ' primary' : '') + '" style="--hue:var(--h' + circleIndex(c) + ')">' +
+              '<button class="lbl" data-primary="' + esc(c) + '" title="' + (i === 0 ? 'Primary circle' : 'Make this their primary circle') + '">' + esc(c) + '</button>' +
+              '<button class="x" data-leave="' + esc(c) + '" aria-label="Remove from ' + esc(c) + '">&times;</button></span>';
+          }).join('') +
+          '<span class="cchip add"><button data-addcircle aria-label="Add to a circle">+ circle</button></span>' +
+        '</div>' +
+      '</div>' +
       '<div class="d-sec"><h4>Card</h4><dl class="fields">' +
         row('Email', p.email, 'mailto:') + row('Phone', p.phone, 'tel:') +
         row('Profession', p.profession) + row('Company', p.company) +
@@ -940,6 +1051,14 @@ $('#dossier').addEventListener('click', function (e) {
   if (!t) return;
   var p = selected && selected.ref;
   if (t.id === 'd-close') return closeDossier();
+  if (t.dataset.primary) { joinCircle(p, t.dataset.primary, true); save(); renderAll(); return; }
+  if (t.dataset.leave) {
+    leaveCircle(p, t.dataset.leave);
+    save(); renderAll(); return;
+  }
+  if (t.hasAttribute('data-addcircle')) return circlePicker(t, function (name) {
+    joinCircle(p, name, false); save(); renderAll();
+  });
   if (t.dataset.edit) return personForm(p);
   if (t.dataset.log) { $('#chat').value = 'Talked with ' + p.name + ' — '; $('#chat').focus(); return; }
   if (t.dataset.del) {
@@ -957,6 +1076,78 @@ $('#dossier').addEventListener('click', function (e) {
     touch(p); save(); openDossier(selected); renderAll();
   }
 });
+
+/* A little popover of the circles that exist, plus a field to name a new one. */
+function circlePicker(anchor, pick) {
+  var old = document.getElementById('cpick');
+  if (old) old.remove();
+  var box = document.createElement('div');
+  box.id = 'cpick';
+  box.className = 'cpick';
+  box.innerHTML = circleList().map(function (c) {
+    return '<button data-pick="' + esc(c.name) + '"><span class="swatch" style="background:var(--h' + circleIndex(c.name) + ')"></span>' +
+      esc(c.name) + '</button>';
+  }).join('') +
+    '<div class="cnew"><input placeholder="New circle…" aria-label="New circle name"><button class="btn" data-new>Add</button></div>';
+  document.body.appendChild(box);
+
+  var r = anchor.getBoundingClientRect();
+  box.style.left = Math.min(window.innerWidth - box.offsetWidth - 10, r.left) + 'px';
+  box.style.top = Math.min(window.innerHeight - box.offsetHeight - 10, r.bottom + 6) + 'px';
+
+  var field = box.querySelector('input');
+  field.focus();
+  var done = function (name) { box.remove(); if (name) pick(clean(name)); };
+  box.addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.pick) return done(b.dataset.pick);
+    if (b.hasAttribute('data-new')) return done(field.value);
+  });
+  field.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); done(field.value); }
+    if (e.key === 'Escape') { e.stopPropagation(); box.remove(); }
+  });
+  setTimeout(function () {
+    document.addEventListener('pointerdown', function off(e) {
+      if (!box.contains(e.target)) { box.remove(); document.removeEventListener('pointerdown', off); }
+    });
+  }, 0);
+}
+
+function colorPicker(anchor, circle) {
+  var old = document.getElementById('cpick');
+  if (old) old.remove();
+  var box = document.createElement('div');
+  box.id = 'cpick';
+  box.className = 'cpick palette';
+  box.innerHTML = '<div class="ptitle">' + esc(circle) + '</div>' +
+    '<div class="pgrid">' + PIGMENTS.map(function (h) {
+      var taken = circleList().filter(function (c) {
+        return c.name !== circle && circleIndex(c.name) === h.i;
+      }).map(function (c) { return c.name; });
+      return '<button data-hue="' + h.i + '" aria-label="' + h.name + '"' +
+        ' title="' + h.name + (taken.length ? ' — already ' + esc(taken.join(', ')) : '') + '"' +
+        (circleIndex(circle) === h.i ? ' data-on="1"' : '') + (taken.length ? ' data-taken="1"' : '') +
+        '><span style="background:var(--h' + h.i + ')"></span></button>';
+    }).join('') + '</div>';
+  document.body.appendChild(box);
+  var r = anchor.getBoundingClientRect();
+  box.style.left = Math.min(window.innerWidth - box.offsetWidth - 10, r.left) + 'px';
+  box.style.top = Math.max(10, Math.min(window.innerHeight - box.offsetHeight - 10, r.top - box.offsetHeight - 6)) + 'px';
+  box.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-hue]');
+    if (!b) return;
+    snapshot(circle + ' colour');
+    setCircleColor(circle, +b.dataset.hue);
+    save(); renderAll(); box.remove();
+  });
+  setTimeout(function () {
+    document.addEventListener('pointerdown', function off(e) {
+      if (!box.contains(e.target)) { box.remove(); document.removeEventListener('pointerdown', off); }
+    });
+  }, 0);
+}
 
 /* ---- modals ---- */
 
@@ -987,7 +1178,9 @@ function personForm(p) {
         : '<input id="f-' + k + '" type="' + (type || 'text') + '" value="' + esc(p[k]) + '">') + '</div>';
   };
   var body = '<div class="grid2">' +
-    f('name', 'Name') + f('circle', 'Circle') +
+    f('name', 'Name') +
+    '<div class="field"><label for="f-circle">Circles</label><input id="f-circle" value="' + esc(circlesOf(p).join(', ')) + '">' +
+      '<span class="hint">Comma separated. The first one colours their dot.</span></div>' +
     f('email', 'Email', 'email') + f('phone', 'Phone', 'tel') +
     f('profession', 'Profession') + f('company', 'Company') +
     f('school', 'School') + f('location', 'Location') +
@@ -1004,11 +1197,11 @@ function personForm(p) {
     var g = function (k) { return m.querySelector('#f-' + k).value.trim(); };
     if (!g('name')) { m.querySelector('#f-name').focus(); return; }
     ['name', 'email', 'phone', 'profession', 'company', 'school', 'location', 'birthday', 'howMet'].forEach(function (k) { p[k] = g(k); });
-    p.circle = g('circle') || 'Unsorted';
+    p.circles = g('circle').split(',').map(clean).filter(Boolean);
     p.tags = g('tags').split(',').map(function (t) { return t.trim().replace(/^#/, ''); }).filter(Boolean);
     if (g('note')) p.notes.unshift({ id: uid(), t: g('note'), at: Date.now() });
     if (isNew) state.people.push(p);
-    circleIndex(p.circle);
+    circlesOf(p).forEach(circleIndex);
     touch(p); save(); closeModal(); renderAll();
     if (byId[p.id]) openDossier(byId[p.id]);
     toast(isNew ? p.name + ' added' : 'Saved');
@@ -1303,10 +1496,13 @@ function importModal(preloaded, filename) {
         strategy === 'company' ? rec.company :
         strategy === 'school' ? rec.school :
         strategy === 'one' ? oneName : '');
-      var settled = p.circle && p.circle !== 'Unsorted';
-      if (circle && (!settled || strategy === 'column')) p.circle = circle;
-      if (!p.circle) p.circle = 'Unsorted';
-      circleIndex(p.circle);
+      var settled = p.circles && p.circles.length;
+      if (circle) {
+        // a circle column may hold several, separated the way people do it
+        circle.split(/[,;|/]/).map(clean).filter(Boolean).forEach(function (c, i) {
+          if (!settled || strategy === 'column') joinCircle(p, c, i === 0 && !settled);
+        });
+      }
       touch(p);
     });
 
@@ -1346,7 +1542,7 @@ function toCSV() {
       .concat(p.log.map(function (e) { return fmtDate(e.at) + ' ' + e.channel + ': ' + e.text + (e.learned ? ' — ' + e.learned : ''); }))
       .join(' | ');
     var extra = Object.keys(p.custom || {}).map(function (k) { return k + ': ' + p.custom[k]; });
-    lines.push([p.name, p.phone, p.email, p.profession, p.company, p.school, p.location, p.birthday, p.circle,
+    lines.push([p.name, p.phone, p.email, p.profession, p.company, p.school, p.location, p.birthday, circlesOf(p).join(' / '),
       p.tags.join(' '), p.howMet, p.log.length ? new Date(lastTouch(p)).toISOString().slice(0, 10) : '',
       p.log.length, extra.concat(notes ? [notes] : []).join(' | ')].map(q).join(','));
   });
@@ -1417,8 +1613,27 @@ function helpModal() {
       '<div class="ex">school: Lehigh · circle: Family · role: Pastry chef</div></section>' +
     '<section><h5>The map</h5>' +
       '<p>You are the centre. Circles branch off you; people branch off circles. A dot grows with every touchpoint logged, and fades to an outline once ninety days pass without contact — those are the ones in “Going cold”. Drag a person to pin them where you like, double-click to let go. Scroll to zoom, drag the plate to pan.</p></section>' +
+    '<section><h5>Reshaping the map</h5>' +
+      '<p>The bar takes instructions as well as notes. Anything that changes several people at once is described and counted first, and every one of them can be taken back with <kbd>⌘Z</kbd> or the Undo on the toast.</p>' +
+      '<div class="ex">remove everyone but keep the categories\n' +
+      'create a category called Vendors\n' +
+      'add Ada to Vendors          ·  remove Ada from Work\n' +
+      'rename Neighbors to Bethlehem\n' +
+      'merge Industry into Vendors\n' +
+      'move everyone from Work to Clients\n' +
+      'empty the School circle     ·  delete the School circle\n' +
+      'delete everyone in Vendors  ·  erase the whole map</div></section>' +
+    '<section><h5>Look and settings</h5>' +
+      '<div class="ex">make Work green             ·  turn School gold\n' +
+      'hide Family                 ·  show everything\n' +
+      'mark people cold after 30 days\n' +
+      'switch to light mode        ·  call me Ben Greenberg\n' +
+      'tidy the map</div>' +
+      '<p>Colours can also be set by clicking the dot beside a circle in the list at the lower left.</p></section>' +
+    '<section><h5>Circles</h5>' +
+      '<p>Someone can be in as many as you like. <b>Drag a person onto a circle</b> to file them there — it becomes their main one, which is the colour their dot takes. Their card lists every circle they are in: click one to promote it, × to take them out, <em>+ circle</em> to add another. The <b>+</b> beside “Circles” makes a new one, and an empty circle is kept as a branch until you delete it.</p></section>' +
     '<section><h5>Commands</h5>' +
-      '<div class="ex">/me Ben Fisher   — name the centre\n/import          — paste your spreadsheet\n/export          — copy it all back out\n/sample          — load or clear the sample map\n/help            — this</div></section>' +
+      '<div class="ex">/undo            — take back the last change\n/me Ben Fisher   — name the centre\n/import          — bring in a spreadsheet\n/export          — copy it all back out\n/sample          — load or clear the sample map\n/help            — this</div></section>' +
     '<section><h5>On your phone</h5>' +
       '<p>Open the app’s address in Safari or Chrome and use <em>Add to Home Screen</em> — it installs with its own icon and opens fullscreen, working with no signal.</p></section>' +
     '<section><h5>Where the data lives</h5>' +
@@ -1427,13 +1642,285 @@ function helpModal() {
   modal('How to talk to it', 'Rootwork', body, '<button class="btn primary" data-close>Got it</button>');
 }
 
+
+/* ------------------------------------------------------- structural work --
+   Commands that reshape the map rather than record something. They are
+   destructive by nature, so each one is described and counted before it runs,
+   and the last one can always be taken back. */
+
+var undoSnap = null;
+
+function snapshot(label) {
+  undoSnap = { label: label, json: JSON.stringify(state) };
+}
+
+function undo() {
+  if (!undoSnap) { toast('Nothing to undo'); return; }
+  var snap = undoSnap;
+  undoSnap = null;
+  state = Object.assign(DEFAULTS(), JSON.parse(snap.json));
+  state.people.forEach(normalizePerson);
+  save(); closeDossier(); renderAll(); fit();
+  toast('Undone · ' + snap.label);
+}
+
+var CWORD = '(?:circle|category|group|list|bucket)';
+
+function matchCircle(name) {
+  name = clean(String(name || '')).replace(/^(the|a|an)\s+/i, '')
+    .replace(new RegExp('\\s+' + CWORD + 's?$', 'i'), '');
+  if (!name) return '';
+  var all = circleList().map(function (c) { return c.name; });
+  var exact = all.filter(function (c) { return c.toLowerCase() === name.toLowerCase(); })[0];
+  if (exact) return exact;
+  var starts = all.filter(function (c) { return c.toLowerCase().indexOf(name.toLowerCase()) === 0; });
+  return starts.length === 1 ? starts[0] : '';
+}
+
+function membersOf(name) {
+  return state.people.filter(function (p) { return inCircle(p, name); });
+}
+
+function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
+
+/* Returns a plan — {summary, detail, run} — or null if this is not a
+   structural instruction at all. */
+function structural(text) {
+  var t = ' ' + clean(text) + ' ';
+  var m, c, c2;
+  var wipeWord = '(?:remove|delete|clear|wipe|drop|erase|get rid of)';
+
+  // everyone out of a named circle
+  if ((m = new RegExp(wipeWord + '\\s+(?:all\\s+)?(?:everyone|everybody|all (?:the )?people|all contacts)\\s+(?:in|from|under)\\s+(?:the\\s+)?(.+?)\\s*$', 'i').exec(t))
+      && (c = matchCircle(m[1]))) {
+    var doomed = membersOf(c);
+    return {
+      summary: 'Delete ' + plural(doomed.length, 'person', 'people') + ' in ' + c,
+      detail: doomed.length ? doomed.slice(0, 6).map(function (p) { return p.name; }).join(', ') +
+        (doomed.length > 6 ? ' and ' + (doomed.length - 6) + ' more' : '') : 'Nobody is in it.',
+      run: function () { doomed.forEach(forget); }
+    };
+  }
+
+  // empty a circle but keep the people
+  if ((m = /(?:empty|clear out|unfile|take everyone out of)\s+(?:the\s+)?(.+?)\s*$/i.exec(t)) && (c = matchCircle(m[1]))) {
+    var mem = membersOf(c);
+    return {
+      summary: 'Take ' + plural(mem.length, 'person', 'people') + ' out of ' + c,
+      detail: 'They stay on the map. The circle stays too, empty.',
+      run: function () { mem.forEach(function (p) { leaveCircle(p, c); }); circleIndex(c); }
+    };
+  }
+
+  // everyone, everywhere
+  if (new RegExp(wipeWord + '\\s+(?:all\\s+)?(?:everyone|everybody|all (?:the )?people|all (?:my )?contacts)\\b', 'i').test(t)) {
+    var keep = /\b(keep|keeping|but keep|leave|retain|save)\b[^.]*\b(circle|categor|group|structure|branch)/i.test(t);
+    var n = state.people.length, cn = circleList().length;
+    return {
+      summary: 'Delete all ' + plural(n, 'person', 'people') + (keep ? ', keep the ' + plural(cn, 'circle') : ' and their circles'),
+      detail: keep ? 'The circles stay as empty branches, ready to be filled again.'
+                   : 'Everything goes except you.',
+      run: function () {
+        state.people.slice().forEach(forget);
+        if (!keep) state.circles = [];
+      }
+    };
+  }
+
+  // the whole thing
+  if (/(?:delete|remove|clear|wipe|erase)\s+(?:everything|the (?:whole|entire) map|it all)\b|\bstart over\b|\bstart from scratch\b/i.test(t)) {
+    return {
+      summary: 'Erase the whole map',
+      detail: plural(state.people.length, 'person', 'people') + ' and ' + plural(circleList().length, 'circle') + ' — everything but you.',
+      run: function () { state.people.slice().forEach(forget); state.circles = []; }
+    };
+  }
+
+  // rename
+  if ((m = new RegExp('rename\\s+(?:the\\s+)?(.+?)\\s+' + CWORD + '?\\s*to\\s+(.+?)\\s*$', 'i').exec(t)) && (c = matchCircle(m[1]))) {
+    var to = clean(m[2]).replace(new RegExp('^' + CWORD + '\\s+', 'i'), '');
+    var n2 = membersOf(c).length;
+    return {
+      summary: 'Rename ' + c + ' to ' + to,
+      detail: plural(n2, 'person', 'people') + ' move across with it.',
+      run: function () { renameCircle(c, to); }
+    };
+  }
+
+  // merge
+  if ((m = /(?:merge|fold|combine)\s+(?:the\s+)?(.+?)\s+(?:in)?to\s+(?:the\s+)?(.+?)\s*$/i.exec(t))
+      && (c = matchCircle(m[1])) && (c2 = matchCircle(m[2]))) {
+    return {
+      summary: 'Merge ' + c + ' into ' + c2,
+      detail: plural(membersOf(c).length, 'person', 'people') + ' from ' + c + ' join ' + c2 + '. ' + c + ' disappears.',
+      run: function () {
+        membersOf(c).forEach(function (p) {
+          var wasPrimary = primaryCircle(p) === c;
+          leaveCircle(p, c);
+          joinCircle(p, c2, wasPrimary);
+        });
+        dropCircle(c);
+      }
+    };
+  }
+
+  // move everyone across
+  if ((m = /move\s+(?:everyone|everybody|them all|all)\s+(?:from|in|out of)\s+(?:the\s+)?(.+?)\s+(?:in)?to\s+(?:the\s+)?(.+?)\s*$/i.exec(t))
+      && (c = matchCircle(m[1]))) {
+    var target = matchCircle(m[2]) || clean(m[2]).replace(new RegExp('\\s*' + CWORD + '$', 'i'), '');
+    var movers = membersOf(c);
+    return {
+      summary: 'Move ' + plural(movers.length, 'person', 'people') + ' from ' + c + ' to ' + target,
+      detail: c + ' stays, empty.',
+      run: function () {
+        movers.forEach(function (p) { leaveCircle(p, c); joinCircle(p, target, true); });
+        circleIndex(c);
+      }
+    };
+  }
+
+  // delete a circle
+  if ((m = new RegExp(wipeWord + '\\s+(?:the\\s+)?(.+?)\\s*(?:' + CWORD + ')\\s*$', 'i').exec(t)) && (c = matchCircle(m[1]))) {
+    var held = membersOf(c).length;
+    return {
+      summary: 'Delete the ' + c + ' circle',
+      detail: held ? plural(held, 'person', 'people') + ' stay on the map, just no longer filed there.' : 'Nobody is in it.',
+      run: function () { membersOf(c).forEach(function (p) { leaveCircle(p, c); }); dropCircle(c); }
+    };
+  }
+
+  // make one
+  if ((m = new RegExp('(?:create|add|make|new|start)\\s+(?:a\\s+|an\\s+)?(?:new\\s+)?' + CWORD + '\\s*(?:called|named|for)?\\s*(.+?)\\s*$', 'i').exec(t))) {
+    var fresh = clean(m[1]).replace(/^["“']|["”']$/g, '');
+    if (fresh) return {
+      summary: 'Add a circle called ' + fresh,
+      detail: 'It starts empty. Drag people onto it, or say “add Dana to ' + fresh + '”.',
+      run: function () { circleIndex(fresh); }
+    };
+  }
+
+  // colour
+  if ((m = new RegExp('(?:make|colou?r|recolou?r|paint|set|turn|change)\\s+(?:the\\s+)?(.+?)\\s*(?:' + CWORD + ')?\\s*(?:colou?r\\s*)?(?:to\\s+|as\\s+)?\\b(' + Object.keys(COLOR_WORDS).join('|') + ')\\b', 'i').exec(t))) {
+    var target = matchCircle(m[1]);
+    var hue = COLOR_WORDS[m[2].toLowerCase()];
+    if (target && hue) return {
+      summary: target + ' turns ' + m[2].toLowerCase(),
+      quiet: true,
+      run: function () { setCircleColor(target, hue); }
+    };
+  }
+
+  // how long before someone counts as cold
+  if ((m = /(?:cold|nudge|stale|quiet|remind)\b[^.]*?\b(?:after|at|past|over)\s+(\d{1,3})\s*(day|week|month)s?\b/i.exec(t))
+      || (m = /(?:mark|call|treat)\b[^.]*?\bcold\b[^.]*?(\d{1,3})\s*(day|week|month)s?/i.exec(t))) {
+    var mult = m[2].toLowerCase() === 'week' ? 7 : m[2].toLowerCase() === 'month' ? 30 : 1;
+    var days = Math.max(1, parseInt(m[1], 10) * mult);
+    return {
+      summary: 'Going cold after ' + days + ' days',
+      quiet: true,
+      run: function () { state.coldDays = days; }
+    };
+  }
+
+  // theme
+  if ((m = /\b(?:switch to|use|turn on|go|set)\s+(light|dark)\s*(?:mode|theme)?\b/i.test(t) ? /\b(light|dark)\b/i.exec(t) : null)) {
+    var want = m[1].toLowerCase();
+    return { summary: want.charAt(0).toUpperCase() + want.slice(1) + ' theme', quiet: true, run: function () { applyTheme(want); } };
+  }
+
+  // showing and hiding branches
+  if ((m = /^\s*(?:hide|mute|collapse)\s+(?:the\s+)?(.+?)\s*$/i.exec(t)) && (c = matchCircle(m[1]))) {
+    return { summary: 'Hide ' + c, quiet: true, run: function () { hidden[c] = true; } };
+  }
+  if (/^\s*(?:show|unhide|reveal)\s+(?:everything|all|all circles|all categories)\s*$/i.test(t)) {
+    return { summary: 'Show every circle', quiet: true, run: function () { hidden = {}; } };
+  }
+  if ((m = /^\s*(?:show|unhide|reveal)\s+(?:the\s+)?(.+?)\s*$/i.exec(t)) && (c = matchCircle(m[1]))) {
+    return { summary: 'Show ' + c, quiet: true, run: function () { delete hidden[c]; } };
+  }
+
+  // odds and ends people reach for
+  if (/^\s*(?:tidy|fit|centre|center|reset the view|zoom to fit)\b/i.test(t)) {
+    return { summary: 'Fit the map to the window', quiet: true, run: function () { fit(); } };
+  }
+  if (/^\s*(?:call me|i am|i'm|my name is)\s+(.+?)\s*$/i.test(t)) {
+    var mine = clean(/^\s*(?:call me|i am|i'm|my name is)\s+(.+?)\s*$/i.exec(t)[1]);
+    return {
+      summary: 'You are ' + mine, quiet: true,
+      run: function () { state.me.name = mine; state.meUpdated = Date.now(); }
+    };
+  }
+
+  // one person in or out
+  if ((m = /(?:add|put|file|move)\s+(.+?)\s+(?:in|into|under|to)\s+(?:the\s+)?(.+?)\s*$/i.exec(t))) {
+    var who = findPerson(clean(m[1]));
+    var dest = matchCircle(m[2]) || clean(m[2]).replace(new RegExp('\\s*' + CWORD + '$', 'i'), '');
+    if (who && dest) return {
+      summary: who.name + ' joins ' + dest,
+      detail: circlesOf(who).length ? 'Already in ' + circlesOf(who).join(', ') + '.' : 'Their first circle.',
+      quiet: true,
+      run: function () { joinCircle(who, dest, false); }
+    };
+  }
+  if ((m = /(?:remove|take|drop|pull)\s+(.+?)\s+(?:out of|from|off)\s+(?:the\s+)?(.+?)\s*$/i.exec(t))) {
+    var who2 = findPerson(clean(m[1]));
+    var from = matchCircle(m[2]);
+    if (who2 && from && inCircle(who2, from)) return {
+      summary: who2.name + ' leaves ' + from,
+      detail: 'They stay on the map.',
+      quiet: true,
+      run: function () { leaveCircle(who2, from); }
+    };
+  }
+
+  return null;
+}
+
+function renameCircle(from, to) {
+  to = clean(to);
+  if (!to) return;
+  state.people.forEach(function (p) {
+    p.circles = circlesOf(p).map(function (c) { return c === from ? to : c; })
+      .filter(function (c, i, a) { return a.indexOf(c) === i; });
+    if (inCircle(p, to)) touch(p);
+  });
+  var i = (state.circles || []).indexOf(from);
+  if (i >= 0) state.circles[i] = to; else circleIndex(to);
+}
+
+function dropCircle(name) {
+  state.circles = (state.circles || []).filter(function (c) { return c !== name; });
+}
+
 /* ---- chat + preview ---- */
 
-var draft = null;
+var draft = null, pendingPlan = null;
 var FIELD_LABEL = {
   email: 'email', phone: 'phone', profession: 'role', company: 'company', school: 'school',
   location: 'lives in', circle: 'circle', howMet: 'met via', name: 'name'
 };
+
+function renderPlan() {
+  var slot = $('#preview-slot');
+  if (!pendingPlan) { slot.innerHTML = ''; return; }
+  slot.innerHTML = '<div class="preview danger">' +
+    '<div class="head"><span>about to change the map</span>' +
+      '<span class="who">' + esc(pendingPlan.summary) + '</span></div>' +
+    '<p class="plandetail">' + esc(pendingPlan.detail || '') + '</p>' +
+    '<div class="actions"><button class="btn primary" data-doplan>Do it</button>' +
+      '<button class="btn" data-discard>Cancel</button>' +
+      '<span class="hintkey"><kbd>Enter</kbd> to run · <kbd>Esc</kbd> to cancel</span></div></div>';
+}
+
+function runPlan() {
+  if (!pendingPlan) return;
+  var plan = pendingPlan;
+  pendingPlan = null;
+  snapshot(plan.summary);
+  plan.run();
+  save(); closeDossier(); renderPlan(); renderAll(); fit();
+  toast(plan.summary, 'Undo', undo);
+}
 
 function renderPreview() {
   var slot = $('#preview-slot');
@@ -1495,10 +1982,12 @@ function editChip(el, current, done) {
 }
 
 $('#preview-slot').addEventListener('click', function (e) {
-  if (!draft) return;
   var t = e.target;
+  if (t.closest('[data-doplan]')) return runPlan();
+  if (pendingPlan && t.closest('[data-discard]')) { pendingPlan = null; renderPlan(); return; }
+  if (!draft) return;
   if (t.closest('[data-confirm]')) return confirmDraft();
-  if (t.closest('[data-discard]')) { draft = null; renderPreview(); return; }
+  if (t.closest('[data-discard]')) { draft = null; pendingPlan = null; renderPreview(); renderPlan(); return; }
   if (t.dataset.dropk) { delete draft.patch[t.dataset.dropk]; renderPreview(); return; }
   if (t.dataset.dropc) { delete draft.custom[t.dataset.dropc]; renderPreview(); return; }
   if (t.dataset.dropclear) {
@@ -1545,7 +2034,11 @@ chat.addEventListener('input', autosize);
 $('#chatform').addEventListener('submit', function (e) {
   e.preventDefault();
   var v = chat.value.trim();
-  if (!v) { if (draft) confirmDraft(); return; }
+  if (!v) {
+    if (pendingPlan) return runPlan();
+    if (draft) confirmDraft();
+    return;
+  }
 
   if (v[0] === '/') {
     var cmd = v.slice(1).split(' ')[0].toLowerCase(), rest = v.slice(cmd.length + 2).trim();
@@ -1559,19 +2052,40 @@ $('#chatform').addEventListener('submit', function (e) {
       return;
     }
     if (cmd === 'sample') { toggleSample(); return; }
+    if (cmd === 'undo') { undo(); return; }
     toast('Unknown command. /help lists them.');
+    return;
+  }
+
+  var plan = structural(v);
+  if (plan) {
+    chat.value = ''; autosize();
+    draft = null; renderPreview();
+    if (plan.quiet) {                    // small, obvious moves just happen
+      snapshot(plan.summary);
+      plan.run();
+      save(); renderAll();
+      toast(plan.summary, 'Undo', undo);
+      return;
+    }
+    pendingPlan = plan;
+    renderPlan();
     return;
   }
 
   draft = parse(v);
   chat.value = ''; autosize();
+  pendingPlan = null; renderPlan();
   renderPreview();
   if (!draft.name) toast('Could not find a name — click “Unnamed” to set it.');
 });
 
 chat.addEventListener('keydown', function (e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#chatform').requestSubmit(); }
-  if (e.key === 'Escape' && draft) { draft = null; renderPreview(); }
+  if (e.key === 'Escape') {
+    if (pendingPlan) { pendingPlan = null; renderPlan(); }
+    if (draft) { draft = null; renderPreview(); }
+  }
 });
 
 /* ---- search ---- */
@@ -1581,15 +2095,15 @@ function runSearch() {
   var q = search.value.trim().toLowerCase();
   if (!q) { results.innerHTML = ''; return; }
   var hits = state.people.filter(function (p) {
-    return [p.name, p.profession, p.company, p.school, p.location, p.circle, p.email, p.tags.join(' '),
+    return [p.name, p.profession, p.company, p.school, p.location, circlesOf(p).join(' '), p.email, p.tags.join(' '),
       p.notes.map(function (n) { return n.t; }).join(' '),
       p.log.map(function (e) { return e.text + ' ' + e.learned; }).join(' ')]
       .join(' ').toLowerCase().indexOf(q) >= 0;
   }).slice(0, 12);
   results.innerHTML = hits.map(function (p) {
-    return '<button data-goto="' + p.id + '"><span class="swatch" style="background:var(--h' + circleIndex(p.circle) + ')"></span>' +
+    return '<button data-goto="' + p.id + '"><span class="swatch" style="background:var(--h' + circleIndex(primaryCircle(p)) + ')"></span>' +
       '<span class="rname">' + esc(p.name) + '</span>' +
-      '<span class="rmeta">' + esc(p.company || p.profession || p.circle) + '</span></button>';
+      '<span class="rmeta">' + esc(p.company || p.profession || primaryCircle(p)) + '</span></button>';
   }).join('') || '<div class="empty" style="padding:8px 10px;font-size:12px;color:var(--faint)">Nobody by that name.</div>';
 }
 search.addEventListener('input', runSearch);
@@ -1602,6 +2116,8 @@ document.addEventListener('click', function (e) {
   if (!e.target.closest('.searchwrap')) results.innerHTML = '';
   var g = e.target.closest('[data-goto]');
   if (g) { goTo(g.dataset.goto); results.innerHTML = ''; }
+  var cc = e.target.closest('[data-color]');
+  if (cc) { colorPicker(cc, cc.dataset.color); return; }
   var c = e.target.closest('[data-circle]');
   if (c) {
     var name = c.dataset.circle;
@@ -1644,7 +2160,10 @@ canvas.addEventListener('pointermove', function (e) {
     var w = toWorld(sx, sy);
     dragging.fx = w[0]; dragging.fy = w[1];
     dragging.x = w[0]; dragging.y = w[1];
-    moved = true; kick();
+    moved = true;
+    var t = dragging.kind === 'person' ? circleUnder(sx, sy) : null;
+    if (t !== dropTarget) { dropTarget = t; canvas.style.cursor = t ? 'copy' : 'grabbing'; }
+    kick();
     return;
   }
   if (panning) {
@@ -1670,6 +2189,20 @@ canvas.addEventListener('pointerdown', function (e) {
 canvas.addEventListener('pointerup', function (e) {
   var r = canvas.getBoundingClientRect();
   var n = nodeAt(e.clientX - r.left, e.clientY - r.top);
+
+  if (dragging && dragging.kind === 'person' && dropTarget && moved) {
+    var person = dragging.ref, target = dropTarget.label;
+    var already = inCircle(person, target);
+    joinCircle(person, target, true);
+    dragging.fx = dragging.fy = null;
+    dropTarget = null; dragging = null; panning = null;
+    save(); renderAll();
+    toast(person.name + (already ? ' → ' + target + ' is now their main circle'
+      : ' added to ' + target + (circlesOf(person).length > 1 ? ' · also in ' + circlesOf(person).slice(1).join(', ') : '')));
+    return;
+  }
+  dropTarget = null;
+
   if (!moved) {
     if (n && n.kind === 'person') openDossier(n);
     else if (n && n.kind === 'circle') { hover = n; needsDraw = true; }
@@ -1725,11 +2258,12 @@ function sample() {
   var mk = function (o, logs) {
     var p = blankPerson(o.name);
     Object.assign(p, o);
+    normalizePerson(p);                  // turns circle: 'Work' into circles: ['Work']
     p.log = (logs || []).map(function (l) {
       return { id: uid(), at: d - l[0] * DAY, channel: l[1], text: l[2], learned: l[3] || '' };
     });
     p.created = d - 400 * DAY;
-    circleIndex(p.circle);
+    circlesOf(p).forEach(circleIndex);
     return p;
   };
   return [
@@ -1746,7 +2280,7 @@ function sample() {
     mk({ name: 'Priya Raman', circle: 'Work', profession: 'Product designer', company: 'Figma',
       email: 'priya@example.com', tags: ['design'] },
       [[130, 'coffee', 'Coffee at Monkey + Elf. Talked through the onboarding redesign.', 'Moving to Lisbon in the spring']]),
-    mk({ name: 'Tomás Ferreira', circle: 'School', school: 'Lehigh', profession: 'Attorney', company: 'Reed Smith',
+    mk({ name: 'Tomás Ferreira', circles: ['School', 'Work'], school: 'Lehigh', profession: 'Attorney', company: 'Reed Smith',
       email: 'tomas@example.com', phone: '(610) 555-0119' },
       [[22, 'meal', 'Dinner at Bolete with the Lehigh crowd.', 'Just made partner'],
        [210, 'call', 'Called for advice on the LLC paperwork.']]),
@@ -1755,7 +2289,7 @@ function sample() {
       [[6, 'message', 'Texted about the croissant lamination class.', 'Teaching a Saturday workshop in March']]),
     mk({ name: 'Owen Reilly', circle: 'School', school: 'Lehigh', profession: 'High school teacher' },
       [[168, 'event', 'Ran into him at homecoming.']]),
-    mk({ name: 'Ada Whitfield', circle: 'Industry', profession: 'Roaster', company: 'Deep Roots Coffee',
+    mk({ name: 'Ada Whitfield', circles: ['Industry', 'Neighbors'], profession: 'Roaster', company: 'Deep Roots Coffee',
       email: 'ada@example.com', phone: '(484) 555-0177', location: 'Bethlehem, PA',
       howMet: 'intro through Marcus Bell', tags: ['coffee'] },
       [[2, 'coffee', 'Cupping session at her roastery — she walked me through the Ethiopia lots.', 'Has spare capacity on the Loring in Q2'],
@@ -1800,6 +2334,19 @@ function syncSampleBtn() {
 /* ---- wiring ---- */
 
 $('#btn-add').addEventListener('click', function () { personForm(null); });
+$('#btn-newcircle').addEventListener('click', function (e) {
+  circlePicker(e.currentTarget, function (name) {
+    if (!name) return;
+    if (!state.circles) state.circles = [];
+    if (state.circles.some(function (c) { return c.toLowerCase() === name.toLowerCase(); })) {
+      toast(name + ' already exists');
+    } else {
+      circleIndex(name);
+      save(); renderAll(); fit();
+      toast(name + ' added — drag people onto it');
+    }
+  });
+});
 $('#btn-import').addEventListener('click', importModal);
 $('#btn-export').addEventListener('click', exportModal);
 $('#btn-help').addEventListener('click', helpModal);
@@ -1808,10 +2355,16 @@ $('#btn-fit').addEventListener('click', fit);
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') {
     if (!$('#scrim').hidden) return closeModal();
+    if (pendingPlan) { pendingPlan = null; return renderPlan(); }
     if (draft) { draft = null; return renderPreview(); }
     if (selected) return closeDossier();
   }
-  var typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+  var el = document.activeElement;
+  var typing = /^(INPUT|TEXTAREA)$/.test(el.tagName);
+  // an empty chat bar has nothing of its own to undo, so the map gets the key
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && (!typing || (el === chat && !chat.value))) {
+    e.preventDefault(); undo(); return;
+  }
   if (typing) return;
   if (e.key === '/') { e.preventDefault(); chat.focus(); }
   if (e.key === 'f') fit();
@@ -1830,7 +2383,7 @@ window.Rootwork = {
     var keepSelected = selected && selected.ref ? selected.ref.id : null;
     state = Object.assign(DEFAULTS(), next);
     state.people.forEach(normalizePerson);
-    state.people.forEach(function (p) { circleIndex(p.circle || 'Unsorted'); });
+    state.people.forEach(function (p) { circlesOf(p).forEach(circleIndex); });
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { }
     renderAll();
     if (keepSelected && byId[keepSelected]) openDossier(byId[keepSelected]);
@@ -1838,7 +2391,14 @@ window.Rootwork = {
     applyingRemote = false;
   },
   modal: modal, closeModal: closeModal, toast: toast,
-  parse: parse                                  // exposed for tests
+  parse: parse,                                 // exposed for tests
+  nodeScreen: function (id) {
+    var n = byId[id] || nodes.filter(function (x) { return x.label === id; })[0];
+    if (!n) return null;
+    var p = toScreen(n.x, n.y);
+    var r = canvas.getBoundingClientRect();
+    return { x: r.left + p[0], y: r.top + p[1], kind: n.kind, label: n.label };
+  }
 };
 
 /* ---- go ---- */
@@ -1865,7 +2425,7 @@ window.Rootwork = {
   pill.id = 'sync-pill';
   pill.type = 'button';
   pill.dataset.tone = 'off';
-  pill.innerHTML = '<span class="dot"></span>Sync off';
+  pill.innerHTML = '<span class="dot"></span><span class="plabel">Sync off</span>';
   pill.addEventListener('click', function () {
     if (window.RootworkSync) window.RootworkSync.open();
     else toast('Sync is not available in this build');

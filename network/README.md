@@ -48,8 +48,10 @@ first.
    alter publication supabase_realtime add table public.rootwork;
    ```
 
-3. Project Settings → API: copy the **Project URL** and the **anon public key**
-   into Rootwork's Sync dialog, pick a passphrase, connect.
+3. Project Settings → **API Keys**: copy the **Project URL** and the
+   **publishable** (formerly *anon public*) key into Rootwork's Sync dialog,
+   pick a passphrase, connect. Never the *secret* / *service_role* key — the
+   dialog refuses it.
 
 **On every other device**: copy the pairing code from the first device's Sync
 dialog, paste it under *Add a device*, type the same passphrase. The pairing
@@ -135,10 +137,30 @@ from right:
 Export gives the spreadsheet view (CSV, custom fields folded into notes) or a
 full JSON backup, which Import also accepts.
 
+## Circles
+
+A person can be in as many circles as you like. The first is their primary: it
+colours their dot and is the branch they sit nearest. Extra memberships draw as
+lighter branches, so someone who is both a neighbour and a supplier visibly
+bridges the two.
+
+- **Drag a person onto a circle** to file them there — it becomes their primary.
+- Their card lists every circle: click one to promote it, `×` to leave, *+
+  circle* to add another.
+- **+** beside *Circles* in the rail makes a new one; empty circles are kept as
+  branches until deleted, so structure survives a purge.
+- The dot beside a circle in the rail opens its palette.
+
 ## Talking to it
 
 The chat bar reads plain sentences — see **How to talk to it** in the app for
-the full list. Beyond logging a touchpoint it understands direct edits
+the full list. It also takes instructions that reshape the map (`remove everyone
+but keep the categories`, `merge Industry into Vendors`, `rename Neighbors to
+Bethlehem`, `create a category called Vendors`, `add Ada to Vendors`) and ones
+that change how it looks or behaves (`make Work green`, `hide Family`, `mark
+people cold after 30 days`, `switch to light mode`, `call me Ben`). Anything
+touching more than one person is described and counted before it runs, and
+every change can be taken back with ⌘Z, the Undo on the toast, or `/undo`. Beyond logging a touchpoint it understands direct edits
 (`her location is Bethlehem`, `change his email to …`, `remove her phone`),
 resolves *she/he/they* to whoever's dossier is open or was last logged, and
 turns anything the fixed fields do not cover (`her partner is Sam`) into its own

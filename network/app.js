@@ -48,9 +48,32 @@ function forget(p) {
   state.people = state.people.filter(function (x) { return x.id !== p.id; });
 }
 
+var LEVELS = ['', 'undergrad', 'grad'];
+
+function schoolsOf(p) { return p.schools || []; }
+
+function addSchool(list, name, level) {
+  name = clean(name);
+  if (!name) return list;
+  var found = list.filter(function (s) { return s.name.toLowerCase() === name.toLowerCase(); })[0];
+  if (found) { if (level && !found.level) found.level = level; return list; }
+  list.push({ name: name, level: level || '' });
+  return list;
+}
+
 function normalizePerson(p) {
+  p.ties = p.ties || [];
   p.tags = p.tags || [];
   p.custom = p.custom || {};
+
+  // schools became a list with a level on each
+  if (!Array.isArray(p.schools)) p.schools = [];
+  if (p.school) { addSchool(p.schools, p.school, ''); delete p.school; }
+
+  // birthday and "met via" are gone as fields; anything already recorded
+  // keeps its place on the card as a line of its own
+  if (p.birthday) { p.custom.birthday = p.custom.birthday || p.birthday; delete p.birthday; }
+  if (p.howMet) { p.custom['met via'] = p.custom['met via'] || p.howMet; delete p.howMet; }
   p.notes = p.notes || [];
   p.log = p.log || [];
   if (!Array.isArray(p.circles)) p.circles = [];
@@ -64,9 +87,35 @@ function normalizePerson(p) {
 function blankPerson(name) {
   return normalizePerson({
     id: uid(), name: name || '', email: '', phone: '', profession: '', company: '',
-    school: '', location: '', birthday: '', circles: [], tags: [], howMet: '', custom: {},
+    schools: [], location: '', circles: [], tags: [], custom: {},
     followUp: null, notes: [], log: [], created: Date.now()
   });
+}
+
+/* Who put you onto whom. Stored on the person who was introduced. */
+function tie(person, otherId, kind) {
+  if (!person || !otherId || person.id === otherId) return;
+  if (person.ties.some(function (t) { return t.id === otherId; })) return;
+  person.ties.push({ id: otherId, kind: kind || 'intro' });
+  touch(person);
+}
+function untie(person, otherId) {
+  person.ties = person.ties.filter(function (t) { return t.id !== otherId; });
+  touch(person);
+}
+function personById(id) {
+  return state.people.filter(function (p) { return p.id === id; })[0] || null;
+}
+/* Ties are directional in storage but mutual on the map. */
+function tiesOf(p) {
+  var out = p.ties.map(function (t) { return { person: personById(t.id), kind: t.kind, own: true }; });
+  state.people.forEach(function (other) {
+    if (other.id === p.id) return;
+    other.ties.forEach(function (t) {
+      if (t.id === p.id) out.push({ person: other, kind: t.kind, own: false });
+    });
+  });
+  return out.filter(function (x) { return x.person; });
 }
 
 function lastTouch(p) {
@@ -126,12 +175,14 @@ function circleList(includeEmpty) {
 /* Colors are assigned by first appearance and remembered, so a circle keeps
    its pigment even as the map grows. */
 function circleIndex(name) {
+  if (name === 'Unsorted') return 0;
   if (state.colors && state.colors[name]) return state.colors[name];
   var i = state.circles.indexOf(name);
   if (i < 0) { state.circles.push(name); i = state.circles.length - 1; }
   return (i % 8) + 1;
 }
 
+// index 0 is reserved for Unsorted, which draws in the neutral ink
 var PIGMENTS = [
   { i: 1, name: 'copper' }, { i: 2, name: 'verdigris' }, { i: 3, name: 'indigo' },
   { i: 4, name: 'plum' }, { i: 5, name: 'moss' }, { i: 6, name: 'steel blue' },
@@ -170,10 +221,11 @@ var CHANNELS = [
   ['email', /\b(emailed|email(?:ed)? (?:with|from|to)|sent (?:her|him|them) an email|replied)\b/i],
   ['message', /\b(texted|dm(?:ed|d)?|slack(?:ed)?|whatsapp|linkedin message|messaged)\b/i],
   ['intro', /\b(introduced|intro(?:'d| to)|connected me|referred)\b/i],
-  ['met', /\b(met|ran into|bumped into|sat next to|caught up)\b/i]
+  ['met', /\b(met|saw|ran into|bumped into|sat next to|dropped by|stopped by)\b/i]
 ];
 
-var STOPNAMES = /^(I|We|My|The|A|An|He|She|They|Her|His|Their|Today|Yesterday|Just|Had|Met|Talked|Spoke|Zoom|Call|Coffee|Lunch|Dinner|Email|Last|This|Next|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|October|November|December)$/;
+var LOWER_STOP = /^(my|the|a|an|his|her|their|them|him|some|someone|everyone|about|dinner|lunch|coffee|drinks|breakfast|him|us|it|that|this|there|here|today|yesterday|tonight|again|both|new|old|guy|girl|friend|mom|dad|work)$/i;
+var STOPNAMES = /^(I|We|My|The|A|An|He|She|They|Her|His|Their|Today|Yesterday|Just|Had|Got|Met|Talked|Spoke|Chatted|Saw|Zoom|Call|Coffee|Lunch|Dinner|Email|Last|This|Next|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|October|November|December)$/;
 
 var HONORIFIC = /^(?:dr|mr|mrs|ms|mx|prof|professor|rev|fr|sr|sir|dame)\.?\s+/i;
 var NAME = "(?:(?:Dr|Mr|Mrs|Ms|Mx|Prof|Rev|Fr|Sir)\\.?\\s+)?[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’\\-]+(?:\\s+(?:van|von|de|del|della|da|di|la|le|bin|al)\\s+[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’\\-]+|\\s[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’\\-]+){0,2}";
@@ -202,6 +254,23 @@ function relativeDate(text) {
   var m;
   if (/\byesterday\b/i.test(text)) return now.getTime() - DAY;
   if (/\bthis morning|today|just now|tonight\b/i.test(text)) return now.getTime();
+  if (/\blast night\b/i.test(text)) return now.getTime() - DAY;
+  if (/\bthe other day\b/i.test(text)) return now.getTime() - 3 * DAY;
+  if (/\b(?:over|during)\s+the\s+weekend\b/i.test(text)) {
+    var back = (now.getDay() + 1) % 7 || 7;          // the Saturday just gone
+    return now.getTime() - back * DAY;
+  }
+  if ((m = /\b(?:like\s+|about\s+|maybe\s+|roughly\s+)?(\d{1,3}|a|an|one|two|three|four|five|six|seven|eight|nine|ten|a couple(?: of)?|couple(?: of)?|a few|few)\s+(day|week|month|year)s?\s+ago\b/i.exec(text))) {
+    var words = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7,
+      eight: 8, nine: 9, ten: 10, 'a couple': 2, 'a couple of': 2, couple: 2, 'couple of': 2, 'a few': 3, few: 3 };
+    var key = m[1].toLowerCase();
+    var n = words[key] !== undefined ? words[key] : (parseInt(m[1], 10) || 1);
+    var unit = m[2].toLowerCase();
+    var mult = unit === 'day' ? 1 : unit === 'week' ? 7 : unit === 'month' ? 30 : 365;
+    return now.getTime() - n * mult * DAY;
+  }
+  if (/\blast week\b/i.test(text)) return now.getTime() - 7 * DAY;
+  if (/\blast month\b/i.test(text)) return now.getTime() - 30 * DAY;
   if ((m = /\blast (mon|tues|wednes|thurs|fri|satur|sun)day\b/i.exec(text))) {
     var target = ['sun', 'mon', 'tues', 'wednes', 'thurs', 'fri', 'satur'].indexOf(m[1].toLowerCase());
     var d = now.getDay(), back = (d - target + 7) % 7 || 7;
@@ -253,10 +322,10 @@ var SETTABLE = {
   role: 'profession', title: 'profession', job: 'profession', profession: 'profession',
   company: 'company', employer: 'company', work: 'company', workplace: 'company',
   location: 'location', city: 'location', address: 'location', circle: 'circle',
-  group: 'circle', birthday: 'birthday', bday: 'birthday', name: 'name'
+  group: 'circle', name: 'name'
 };
 var SET_WORDS = Object.keys(SETTABLE).join('|');
-var CLEARABLE = /^(e-?mail|mail|phone|number|school|company|employer|role|title|profession|job|location|city|birthday)$/i;
+var CLEARABLE = /^(e-?mail|mail|phone|number|school|company|employer|role|title|profession|job|location|city)$/i;
 
 /* Turns a sentence into a draft: which person, which fields, what happened.
 
@@ -266,7 +335,7 @@ var CLEARABLE = /^(e-?mail|mail|phone|number|school|company|employer|role|title|
    longer be mistaken for the person's name further down. */
 function parse(raw) {
   var text = clean(raw);
-  var out = { name: '', person: null, patch: {}, custom: {}, clears: [], tags: [], entry: null, followUp: null };
+  var out = { name: '', person: null, patch: {}, custom: {}, clears: [], tags: [], schools: [], via: null, viaName: '', entry: null, followUp: null };
   var work = ' ' + text + ' ';
   var m;
 
@@ -281,7 +350,7 @@ function parse(raw) {
   }
 
   // 1. explicit "key: value"
-  var KEYMAP = Object.assign({}, SETTABLE, { via: 'howMet', met: 'howMet', tag: 'tags', note: 'note' });
+  var KEYMAP = Object.assign({}, SETTABLE, { tag: 'tags', note: 'note' });
   work = work.replace(/\b(\w[\w-]*)\s*:\s*([^,;\n]+)/g, function (all, k, v) {
     var f = KEYMAP[k.toLowerCase()];
     if (!f || f === 'tags' || f === 'note') return all;
@@ -327,21 +396,30 @@ function parse(raw) {
     if (digits.length >= 10 && digits.length <= 15) { take('phone', m[1]); work = work.replace(m[1], ' '); }
   }
 
-  // 7. a birthday mentioned in passing
-  if ((m = /\b(?:birthday|born)\b[^.;\n]{0,14}?\b((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i.exec(work))) {
-    take('birthday', m[1]);
+  // 8. who this is about
+  var TRIGGER = '(?:[Ww]ith|w\\/|[Tt]o|[Ff]rom|[Mm]et|[Ss]aw|[Cc]alled|[Ee]mailed|[Tt]exted|[Aa]bout|[Ff]or)';
+  var nm = new RegExp('\\b' + TRIGGER + '\\s+(' + NAME + ')');
+  if ((m = nm.exec(work)) && !STOPNAMES.test(m[1].split(' ')[0])) out.name = m[1];
+
+  // people type their friends in lower case: "talked with josh donaldson"
+  if (!out.name && (m = new RegExp('\\b' + TRIGGER + "\\s+([a-zà-ÿ'’-]{2,}(?:\\s+[a-zà-ÿ'’-]{2,}){0,2})").exec(work))) {
+    var bits = m[1].split(/\s+/);
+    while (bits.length && LOWER_STOP.test(bits[0])) bits.shift();
+    while (bits.length && LOWER_STOP.test(bits[bits.length - 1])) bits.pop();
+    if (bits.length >= 2 || (bits.length === 1 && findPerson(bits[0]))) out.name = titleCase(bits.join(' '));
   }
 
-  // 8. who this is about
-  var nm = new RegExp('\\b(?:with|w\\/|to|from|met|saw|called|emailed|texted|about|for)\\s+(' + NAME + ')');
-  if ((m = nm.exec(work)) && !STOPNAMES.test(m[1].split(' ')[0])) out.name = m[1];
   if (!out.name && (m = new RegExp('^\\s*(' + NAME + ')').exec(work)) && !STOPNAMES.test(m[1].split(' ')[0])) out.name = m[1];
   if (!out.name) {
     var all = work.match(new RegExp(NAME, 'g')) || [];
     for (var i = 0; i < all.length; i++) {
-      if (!STOPNAMES.test(all[i].split(' ')[0])) { out.name = all[i]; break; }
+      // "Met Rae Kim" — drop the leading word rather than the whole match
+      var parts = all[i].split(' ');
+      while (parts.length && STOPNAMES.test(parts[0])) parts.shift();
+      if (parts.length) { out.name = parts.join(' '); break; }
     }
   }
+
   if (!out.name) {
     var words = text.toLowerCase().match(/[a-zà-ÿ']{2,}/g) || [];
     for (var w = 0; w < words.length; w++) {
@@ -358,22 +436,45 @@ function parse(raw) {
   var pronounLed = /^\s*(?:she|he|they|her|his|their|him|them)\b/i.test(text);
   if (!out.person && /\b(she|he|they|her|his|their|them|him)\b/i.test(text)) {
     var referent = (selected && selected.ref) || lastSubject;
-    if (referent && (pronounLed || !out.name || !findPerson(out.name))) {
+    if (referent && !out.name) {
       out.person = referent; out.name = referent.name; out.byPronoun = true;
     }
   }
 
   var body = out.name ? work.split(out.name).join(' ') : work;
 
-  // 9. school — people write these in lower case as often as not
-  if (!out.patch.school) {
-    if ((m = /\b(?:went to|studied at|graduated from|graduated|attended|was at|alum(?:n|ni|na|nus)?\s+of|did (?:her|his|their) (?:mba|ph\.?d|masters|undergrad|degree) at)\s+([\w'’.&-]+(?:\s+[\w'’.&-]+){0,3})/i.exec(body))) {
-      take('school', titleCase(m[1]));
-    } else if ((m = /\b([\w'’.&-]+(?:\s+[\w'’.&-]+){0,2})\s+(?:alumn?[ai]?|alumnus|alumna|grad(?:uate)?)\b/i.exec(body))) {
-      take('school', titleCase(m[1]));
-    }
+  // 9. schools — several, each possibly undergrad or graduate. People write
+  //    them in lower case as often as not, so casing is restored on the way in.
+  var GRAD = /\b(mba|ph\.?d|phd|masters?|master's|grad school|graduate school|jd|md|mfa|m\.?s\.?|m\.?a\.?|doctorate|law school|med school|business school|residency|fellowship)\b/i;
+  var UNDER = /\b(undergrad(?:uate)?|bachelors?|b\.?[as]\.?|freshman|sophomore)\b/i;
+
+  function levelNear(hay) {
+    if (GRAD.test(hay)) return 'grad';
+    if (UNDER.test(hay)) return 'undergrad';
+    return '';
   }
-  if (out.patch.school) body = body.split(new RegExp(out.patch.school, 'i')).join(' ');
+
+  var SCHOOL_NAME = "[\\w'’.&-]+(?:\\s+[\\w'’.&-]+){0,3}";
+  var seenSchool = {};
+  function noteSchool(name, hay) {
+    name = titleCase(clean(name).replace(/\s+(?:for|in|on|as|with|and)$/i, ''));
+    if (!name || name.length < 2) return;
+    if (seenSchool[name.toLowerCase()]) return;
+    seenSchool[name.toLowerCase()] = 1;
+    addSchool(out.schools, name, levelNear(hay));
+  }
+
+  var sre = new RegExp('\\b(?:went to|studied at|graduated from|attended|was at|alum(?:n|ni|na|nus)?\\s+of|did (?:her|his|their) (?:mba|ph\\.?d|masters?|jd|md|mfa|degree|doctorate|undergrad) at|got (?:her|his|their) (?:mba|ph\\.?d|masters?|jd|md|mfa|degree|doctorate) (?:at|from))\\s+(' + SCHOOL_NAME + ')([^.;\\n]{0,28})', 'gi');
+  while ((m = sre.exec(body))) noteSchool(m[1], m[0] + ' ' + (m[2] || ''));
+
+  var are = new RegExp('\\b(' + SCHOOL_NAME + ')\\s+(?:alumn?[ai]?|alumnus|alumna|grad(?:uate)?|undergrad)\\b', 'gi');
+  while ((m = are.exec(body))) noteSchool(m[1], m[0]);
+
+  // "her MBA at Wharton", "law school at Penn"
+  var gre = new RegExp('\\b(mba|ph\\.?d|masters?|jd|md|mfa|grad school|law school|med school|business school)\\s+(?:at|from)\\s+(' + SCHOOL_NAME + ')', 'gi');
+  while ((m = gre.exec(body))) noteSchool(m[2], m[0]);
+
+  out.schools.forEach(function (sc) { body = body.split(new RegExp(sc.name, 'i')).join(' '); });
 
   // 10. what they do, and where.
   //     Kept deliberately tight: a loose pattern here used to swallow half the
@@ -407,9 +508,19 @@ function parse(raw) {
     take('location', m[1]);
   }
 
-  // 11. how we met
-  if (!out.patch.howMet && (m = /\b(?:introduced\s+by|intro(?:'d| to)?\s+(?:by|through)|met\s+(?:at|through|via)|referred\s+by|connected\s+(?:by|through))\s+([^,;.\n]{2,50})/i.exec(body))) {
-    take('howMet', clean(m[0]));
+  // 11. who connected us
+  var VIA = null;
+  var intro = new RegExp('(' + NAME + ')\\s+(?:introduced|connected|put)\\s+me\\s+(?:to|with|onto)\\s+(' + NAME + ')').exec(text);
+  if (intro) {
+    VIA = intro[1];
+    if (!out.person && clean(intro[2])) { out.name = clean(intro[2]); out.person = findPerson(out.name); }
+  }
+  if (!VIA && (m = new RegExp('\\b(?:through|via|introduced by|intro(?:\'d)?\\s+by|referred by|thanks to|friend of|from)\\s+(' + NAME + ')').exec(body))) VIA = m[1];
+  if (!VIA && (m = new RegExp('\\bgot\\s+(?:her|his|their)\\s+(?:info|number|email|details|contact)\\s+from\\s+(' + NAME + ')').exec(text))) VIA = m[1];
+  if (VIA) {
+    var viaPerson = findPerson(clean(VIA).replace(HONORIFIC, ''));
+    if (viaPerson && viaPerson.name !== out.name) out.via = viaPerson;
+    else if (!viaPerson) out.viaName = clean(VIA).replace(HONORIFIC, '');
   }
 
   // 12. the takeaway
@@ -439,7 +550,7 @@ function parse(raw) {
   }
   if (!out.patch.circle && !out.person) {
     if (out.patch.company) out.patch.circle = 'Work';
-    else if (out.patch.school) out.patch.circle = 'School';
+    else if (out.schools.length) out.patch.circle = 'School';
   }
   if (out.patch.circle) out.patch.circle = out.patch.circle.charAt(0).toUpperCase() + out.patch.circle.slice(1);
 
@@ -464,6 +575,15 @@ function commit(draft) {
     }
     p[k] = draft.patch[k];
   });
+  (draft.schools || []).forEach(function (sc) { addSchool(p.schools, sc.name, sc.level); });
+  if (draft.via || draft.viaName) {
+    var source = draft.via;
+    if (!source && draft.viaName) {
+      source = findPerson(draft.viaName);
+      if (!source) { source = blankPerson(draft.viaName); state.people.push(source); }
+    }
+    if (source) tie(p, source.id, 'intro');
+  }
   (draft.clears || []).forEach(function (k) { p[k] = ''; });
   if (draft.custom && Object.keys(draft.custom).length) {
     p.custom = p.custom || {};
@@ -508,14 +628,29 @@ function rebuild() {
   });
   circles.sort(function (a, b) { return circleIndex(a) - circleIndex(b); });
 
+  // Each circle owns a wedge sized by its population, so a School of thirty
+  // gets the room it needs and a Family of two does not sprawl.
+  var counts = circles.map(function (c) {
+    return Math.max(1, visible.filter(function (p) { return inCircle(p, c) && !hidden[c]; }).length);
+  });
+  var total = counts.reduce(function (a, b) { return a + b; }, 0) || 1;
+  var cursor = -Math.PI / 2;
+
   circles.forEach(function (c, i) {
+    var share = counts[i] / total;
+    var span = share * Math.PI * 2;
     var node = mk('c:' + c, 'circle', c, c, circleIndex(c));
-    node.angle = (i / circles.length) * Math.PI * 2 - Math.PI / 2;
+    node.angle = cursor + span / 2;
+    node.span = span;
+    node.weight = counts[i];
+    // busier circles stand a little further out, so their people have room
+    node.ring = 175 + Math.min(150, Math.sqrt(counts[i]) * 34);
+    cursor += span;
     if (!prev[node.id]) {
-      node.x = Math.cos(node.angle) * 200;
-      node.y = Math.sin(node.angle) * 200;
+      node.x = Math.cos(node.angle) * node.ring;
+      node.y = Math.sin(node.angle) * node.ring;
     }
-    links.push({ a: me, b: node, len: 190, k: 0.02 });
+    links.push({ a: me, b: node, len: node.ring, k: 0.02 });
   });
 
   visible.forEach(function (p) {
@@ -538,6 +673,16 @@ function rebuild() {
     mine.slice(1).forEach(function (c) {
       var other = byId['c:' + c];
       if (other) links.push({ a: other, b: n, len: 118, k: 0.016, secondary: true });
+    });
+  });
+
+  visible.forEach(function (p) {
+    var a = byId[p.id];
+    if (!a) return;
+    p.ties.forEach(function (t) {
+      var b = byId[t.id];
+      if (!b) return;
+      links.push({ a: a, b: b, len: 96, k: 0.008, tie: true, kind: t.kind });
     });
   });
 
@@ -593,13 +738,15 @@ function tick() {
   for (i = 0; i < nodes.length; i++) {
     a = nodes[i];
     if (a.kind === 'circle') {                    // hold its own ray
-      var tx = Math.cos(a.angle) * 200, ty = Math.sin(a.angle) * 200;
+      var ring = a.ring || 200;
+      var tx = Math.cos(a.angle) * ring, ty = Math.sin(a.angle) * ring;
       a.vx += (tx - a.x) * 0.012 * alpha;
       a.vy += (ty - a.y) * 0.012 * alpha;
     } else if (a.kind === 'person' && a.parent) { // drift outward from the trunk
       var pa = Math.atan2(a.parent.y, a.parent.x);
-      a.vx += Math.cos(pa) * 0.28 * alpha;
-      a.vy += Math.sin(pa) * 0.28 * alpha;
+      var push = 0.28 + Math.min(0.3, (a.parent.weight || 1) * 0.012);
+      a.vx += Math.cos(pa) * push * alpha;
+      a.vy += Math.sin(pa) * push * alpha;
     }
     if (a.kind === 'me') { a.x = 0; a.y = 0; a.vx = a.vy = 0; continue; }
     if (a.fx !== null && a.fx !== undefined) { a.x = a.fx; a.y = a.fy; a.vx = a.vy = 0; continue; }
@@ -631,7 +778,7 @@ function readTokens() {
   };
 }
 
-function hueOf(n) { return C.hues[n.ci] || C.accent; }
+function hueOf(n) { return n.ci ? (C.hues[n.ci] || C.accent) : C.muted; }
 
 function resize() {
   dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -644,6 +791,17 @@ function resize() {
 
 function toScreen(x, y) { return [(x - cam.x) * cam.k + W / 2, (y - cam.y) * cam.k + H / 2]; }
 function toWorld(sx, sy) { return [(sx - W / 2) / cam.k + cam.x, (sy - H / 2) / cam.k + cam.y]; }
+
+/* Everything dragged around gets let go, the springs run, the view re-frames.
+   The way to get back to something readable after an afternoon of shoving. */
+function tidyMap() {
+  nodes.forEach(function (n) { n.fx = n.fy = null; });
+  state.people.forEach(function (p) { delete p.pinned; });
+  alpha = 1;
+  for (var i = 0; i < 240; i++) tick();
+  fit();
+  needsDraw = true;
+}
 
 function fit() {
   if (!nodes.length) return;
@@ -751,11 +909,29 @@ function draw() {
     lit[focus.id] = 1;
     if (focus.parent) { lit[focus.parent.id] = 1; lit['me'] = 1; }
     if (focus.kind === 'circle') nodes.forEach(function (n) { if (n.parent === focus) lit[n.id] = 1; });
+    if (focus.kind === 'person' && focus.ref) {
+      tiesOf(focus.ref).forEach(function (t) { lit[t.person.id] = 1; });
+    }
     if (focus.kind === 'me') nodes.forEach(function (n) { lit[n.id] = 1; });
   }
 
   links.forEach(function (L) {
     var dim = focus && !(lit[L.a.id] && lit[L.b.id]) ? DIM : 1;
+    if (L.tie) {                                   // person to person
+      ctx.save();
+      ctx.setLineDash([5 / cam.k, 4 / cam.k]);
+      ctx.lineWidth = 1.1 / cam.k;
+      ctx.strokeStyle = mix(C.ink, 0.42 * dim);
+      ctx.beginPath();
+      var mx = (L.a.x + L.b.x) / 2, my = (L.a.y + L.b.y) / 2;
+      var dx = L.b.x - L.a.x, dy = L.b.y - L.a.y;
+      var d = Math.sqrt(dx * dx + dy * dy) || 1;
+      ctx.moveTo(L.a.x, L.a.y);
+      ctx.quadraticCurveTo(mx - dy / d * d * 0.12, my + dx / d * d * 0.12, L.b.x, L.b.y);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
     var trunk = L.b.kind === 'circle';
     var fade = (L.b.cold ? 0.5 : 1) * dim * (trunk ? 0.5 : 1) * (L.secondary ? 0.5 : 1);
     var hue = L.secondary ? (C.hues[circleIndex(L.a.label)] || C.accent) : hueOf(L.b);
@@ -818,7 +994,7 @@ function draw() {
   var placed = [];
   jobs.forEach(function (n) {
     var p = toScreen(n.x, n.y);
-    if (p[0] < -80 || p[0] > W + 80 || p[1] < -40 || p[1] > H + 40) return;
+    if (p[0] < -140 || p[0] > W + 140 || p[1] < -60 || p[1] > H + 60) return;
     var dim = focus && !lit[n.id] ? Math.max(DIM, 0.3) : 1;
     var off = n.r * cam.k + 7;
     var text = n.label, y = p[1] + off, h = 13;
@@ -837,13 +1013,31 @@ function draw() {
     }
 
     var w = ctx.measureText(text).width + 8;
+    var hits = function (bx) {
+      return placed.some(function (q) {
+        return bx[0] < q[0] + q[2] && bx[0] + bx[2] > q[0] && bx[1] < q[1] + q[3] && bx[1] + bx[3] > q[1];
+      });
+    };
+    // nudge a clashing label out of the way rather than hiding the person
     var box = [p[0] - w / 2, y - 2, w, h];
-    var forced = n === focus || n === selected || n.kind === 'me';
-    if (!forced && placed.some(function (q) {
-      return box[0] < q[0] + q[2] && box[0] + box[2] > q[0] && box[1] < q[1] + q[3] && box[1] + box[3] > q[1];
-    })) return;
+    var nudges = [0, h + 1, -(h + 1), 2 * (h + 1), -2 * (h + 1), 3 * (h + 1), -3 * (h + 1)];
+    for (var k = 0; k < nudges.length; k++) {
+      box = [p[0] - w / 2, y - 2 + nudges[k], w, h];
+      if (!hits(box)) break;
+    }
+    y = box[1] + 2;
     placed.push(box);
 
+    if (Math.abs(y - (p[1] + off)) > 4) {
+      ctx.save();
+      ctx.strokeStyle = mix(C.rule, 0.9 * dim);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(p[0], p[1] + off - 1);
+      ctx.lineTo(p[0], y);
+      ctx.stroke();
+      ctx.restore();
+    }
     ctx.fillStyle = n.kind === 'circle' ? mix(C.muted, dim)
       : n.kind === 'me' ? C.ink
       : mix(n.cold ? C.muted : C.ink, dim);
@@ -1045,11 +1239,36 @@ function openDossier(node) {
           '<span class="cchip add"><button data-addcircle aria-label="Add to a circle">+ circle</button></span>' +
         '</div>' +
       '</div>' +
+      '<div class="d-sec"><h4>Connections</h4>' +
+        '<div class="chiplist">' +
+          tiesOf(p).map(function (t) {
+            return '<span class="cchip tie">' +
+              '<button class="lbl" data-goto="' + t.person.id + '" title="Open ' + esc(t.person.name) + '">' +
+                '<i>' + (t.own ? 'via' : 'led to') + '</i>' + esc(t.person.name) + '</button>' +
+              '<button class="x" data-untie="' + t.person.id + '" data-own="' + (t.own ? 1 : 0) + '" aria-label="Remove connection">&times;</button></span>';
+          }).join('') +
+          '<input class="chipinput" data-add="tie" placeholder="' + (tiesOf(p).length ? 'another…' : 'Who connected you?') + '" aria-label="Add a connection">' +
+        '</div>' +
+        (tiesOf(p).length ? '<p class="tiehint">via — who put you onto them · led to — who you met through them</p>' : '') +
+      '</div>' +
+
+      '<div class="d-sec"><h4>Schools</h4>' +
+        '<div class="chiplist">' +
+          schoolsOf(p).map(function (sc, i) {
+            return '<span class="cchip school">' +
+              '<button class="lbl" data-editschool="' + i + '" title="Click to rename">' + esc(sc.name) + '</button>' +
+              '<button class="lvl' + (sc.level ? '' : ' none') + '" data-level="' + i + '" title="Undergrad, grad, or unspecified">' +
+                (sc.level || 'level') + '</button>' +
+              '<button class="x" data-rmschool="' + i + '" aria-label="Remove ' + esc(sc.name) + '">&times;</button></span>';
+          }).join('') +
+          '<input class="chipinput" data-add="school" placeholder="' + (schoolsOf(p).length ? 'another…' : 'Add a school…') + '" aria-label="Add a school">' +
+        '</div>' +
+      '</div>' +
+
       '<div class="d-sec"><h4>Card</h4><dl class="fields">' +
         row('Email', 'email', p.email, 'mailto:') + row('Phone', 'phone', p.phone, 'tel:') +
         row('Profession', 'profession', p.profession) + row('Company', 'company', p.company) +
-        row('School', 'school', p.school) + row('Location', 'location', p.location) +
-        row('Birthday', 'birthday', p.birthday) + row('Met via', 'howMet', p.howMet) +
+        row('Location', 'location', p.location) +
         Object.keys(p.custom || {}).map(function (k) {
           return '<dt>' + esc(k) + '</dt><dd><span class="val" data-custom="' + esc(k) + '" tabindex="0" role="button" ' +
             'title="Click to edit">' + esc(p.custom[k]) + '</span></dd>';
@@ -1058,8 +1277,16 @@ function openDossier(node) {
           fmtDate(p.followUp.date) + '</span></dd>' : '') +
       '</dl>' +
       '<button class="addfield" data-newfield>+ another field</button>' +
-      (p.tags.length ? '<div class="tagrow" style="margin-top:9px">' + p.tags.map(function (t) {
-        return '<span>#' + esc(t) + '</span>'; }).join('') + '</div>' : '') +
+      '</div>' +
+
+      '<div class="d-sec"><h4>Tags</h4>' +
+        '<div class="chiplist">' +
+          p.tags.map(function (t, i) {
+            return '<span class="cchip tag"><span class="lbl">#' + esc(t) + '</span>' +
+              '<button class="x" data-rmtag="' + i + '" aria-label="Remove ' + esc(t) + '">&times;</button></span>';
+          }).join('') +
+          '<input class="chipinput" data-add="tag" placeholder="' + (p.tags.length ? 'another…' : 'Add a tag…') + '" aria-label="Add a tag">' +
+        '</div>' +
       '</div>' +
 
       '<div class="d-sec"><h4>History</h4>' +
@@ -1074,10 +1301,13 @@ function openDossier(node) {
         }).join('') + '</div>' : '<div class="empty" style="color:var(--faint);font-size:12.5px">Nothing logged yet.</div>') +
       '</div>' +
 
-      (p.notes.length ? '<div class="d-sec"><h4>Notes</h4><div class="notes-list">' +
+      '<div class="d-sec"><h4>Notes</h4><div class="notes-list">' +
         p.notes.map(function (n) {
-          return '<div class="note"><button class="del" data-delnote="' + n.id + '">&times;</button>' + esc(n.t) + '</div>';
-        }).join('') + '</div></div>' : '') +
+          return '<div class="note"><button class="del" data-delnote="' + n.id + '">&times;</button>' +
+            '<span class="val" data-note="' + n.id + '" tabindex="0" role="button" title="Click to edit">' + esc(n.t) + '</span></div>';
+        }).join('') +
+        '<textarea class="notebox" id="notebox" rows="1" placeholder="Anything worth remembering — ⌘↵ to keep" aria-label="Add a note"></textarea>' +
+      '</div></div>' +
 
       '<div class="d-actions">' +
         '<button class="btn" data-log="' + p.id + '">Log a touchpoint</button>' +
@@ -1085,7 +1315,14 @@ function openDossier(node) {
       '</div>' +
     '</div>';
 
+  var nb = d.querySelector('.notebox');
+  if (nb) nb.addEventListener('input', function () {
+    nb.style.height = 'auto';
+    nb.style.height = Math.min(160, nb.scrollHeight) + 'px';
+  });
+
   d.classList.add('open');
+  $('#stage').classList.add('panel-open');
   d.setAttribute('aria-hidden', 'false');
   needsDraw = true;
 }
@@ -1094,6 +1331,7 @@ function closeDossier() {
   selected = null;
   var d = $('#dossier');
   d.classList.remove('open');
+  $('#stage').classList.remove('panel-open');
   d.setAttribute('aria-hidden', 'true');
   needsDraw = true;
 }
@@ -1111,6 +1349,15 @@ $('#dossier').addEventListener('click', function (e) {
         if (val === null) return openDossier(selected);
         var d = Date.parse(val);
         p.followUp = isNaN(d) ? null : { date: d, what: p.followUp ? p.followUp.what : '' };
+        touch(p); save(); renderAll(); openDossier(selected);
+      });
+    }
+    if (v.dataset.note) {
+      var nid = v.dataset.note;
+      var note = p.notes.filter(function (x) { return x.id === nid; })[0];
+      return editInPlace(v, note ? note.t : '', true, function (val) {
+        if (val === null) return openDossier(selected);
+        if (val) note.t = val; else p.notes = p.notes.filter(function (x) { return x.id !== nid; });
         touch(p); save(); renderAll(); openDossier(selected);
       });
     }
@@ -1135,6 +1382,35 @@ $('#dossier').addEventListener('click', function (e) {
   var t = e.target.closest('button');
   if (!t) return;
   if (t.id === 'd-close') return closeDossier();
+
+  if (t.dataset.level !== undefined && t.hasAttribute('data-level')) {
+    var sc = schoolsOf(p)[+t.dataset.level];
+    if (sc) { sc.level = LEVELS[(LEVELS.indexOf(sc.level) + 1) % LEVELS.length]; touch(p); save(); openDossier(selected); }
+    return;
+  }
+  if (t.dataset.rmschool !== undefined && t.hasAttribute('data-rmschool')) {
+    p.schools.splice(+t.dataset.rmschool, 1); touch(p); save(); renderAll(); return;
+  }
+  if (t.dataset.editschool !== undefined && t.hasAttribute('data-editschool')) {
+    var idx = +t.dataset.editschool;
+    return editInPlace(t, p.schools[idx].name, false, function (val) {
+      if (val) p.schools[idx].name = val; else if (val === '') p.schools.splice(idx, 1);
+      touch(p); save(); renderAll(); openDossier(selected);
+    });
+  }
+  if (t.dataset.delnote) {
+    p.notes = p.notes.filter(function (x) { return x.id !== t.dataset.delnote; });
+    touch(p); save(); openDossier(selected); renderAll(); return;
+  }
+  if (t.dataset.untie) {
+    var otherId = t.dataset.untie;
+    if (t.dataset.own === '1') untie(p, otherId);
+    else { var other = personById(otherId); if (other) untie(other, p.id); }
+    save(); renderAll(); openDossier(selected); return;
+  }
+  if (t.dataset.rmtag !== undefined && t.hasAttribute('data-rmtag')) {
+    p.tags.splice(+t.dataset.rmtag, 1); touch(p); save(); renderAll(); return;
+  }
   if (t.dataset.primary) { joinCircle(p, t.dataset.primary, true); save(); renderAll(); return; }
   if (t.dataset.leave) {
     leaveCircle(p, t.dataset.leave);
@@ -1332,6 +1608,59 @@ function colorPicker(anchor, circle) {
   }, 0);
 }
 
+$('#dossier').addEventListener('keydown', function (e) {
+  var box = e.target.closest('.notebox');
+  if (box) {
+    e.stopPropagation();
+    var who = selected && selected.ref;
+    if (e.key === 'Escape') { box.value = ''; box.blur(); return; }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || !e.shiftKey)) {
+      e.preventDefault();
+      var text = clean(box.value);
+      if (!text || !who) { box.blur(); return; }
+      who.notes.unshift({ id: uid(), t: text, at: Date.now() });
+      touch(who); save(); renderAll(); openDossier(selected);
+      var again = document.getElementById('notebox');
+      if (again) again.focus();
+      return;
+    }
+    return;
+  }
+  var inp = e.target.closest('.chipinput');
+  if (!inp) return;
+  e.stopPropagation();
+  var p = selected && selected.ref;
+  if (!p) return;
+  if (e.key === 'Escape') { inp.value = ''; inp.blur(); return; }
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  var val = clean(inp.value);
+  if (!val) { inp.blur(); return; }
+  if (inp.dataset.add === 'tie') {
+    var found = findPerson(val);
+    if (!found) { found = blankPerson(titleCase(val)); state.people.push(found); }
+    tie(p, found.id, 'intro');
+    save(); renderAll(); openDossier(selected);
+    var back = $('#dossier').querySelector('.chipinput[data-add="tie"]');
+    if (back) back.focus();
+    return;
+  }
+  if (inp.dataset.add === 'school') {
+    // "Wharton mba" or "Lehigh undergrad" sets the level in the same breath
+    var level = '';
+    var stripped = val.replace(/\s*\b(undergrad(?:uate)?|bachelors?)\b\s*/i, function () { level = 'undergrad'; return ' '; })
+      .replace(/\s*\b(grad(?:uate)?(?: school)?|mba|ph\.?d|masters?|jd|md|mfa|law school|med school)\b\s*/i, function () { level = 'grad'; return ' '; });
+    addSchool(p.schools, titleCase(clean(stripped) || val), level);
+  } else {
+    var tag = val.replace(/^#/, '');
+    if (p.tags.indexOf(tag) < 0) p.tags.push(tag);
+  }
+  touch(p); save(); renderAll();
+  openDossier(selected);
+  var again = $('#dossier').querySelector('.chipinput[data-add="' + inp.dataset.add + '"]');
+  if (again) again.focus();
+});
+
 /* ---- modals ---- */
 
 function modal(title, sub, body, footer) {
@@ -1366,8 +1695,10 @@ function personForm(p) {
       '<span class="hint">Comma separated. The first one colours their dot.</span></div>' +
     f('email', 'Email', 'email') + f('phone', 'Phone', 'tel') +
     f('profession', 'Profession') + f('company', 'Company') +
-    f('school', 'School') + f('location', 'Location') +
-    f('birthday', 'Birthday') + f('howMet', 'How we met') +
+    '<div class="field"><label for="f-school">Schools</label><input id="f-school" value="' +
+      esc(schoolsOf(p).map(function (x) { return x.name + (x.level ? ' ' + x.level : ''); }).join(', ')) + '">' +
+      '<span class="hint">Comma separated. Add “undergrad” or “grad” after a name.</span></div>' +
+    f('location', 'Location') +
     '<div class="field wide"><label for="f-tags">Tags</label><input id="f-tags" value="' + esc(p.tags.join(', ')) + '">' +
       '<span class="hint">Comma separated.</span></div>' +
     '<div class="field wide"><label for="f-note">Add a note</label><textarea id="f-note" placeholder="Anything worth remembering"></textarea></div>' +
@@ -1379,7 +1710,14 @@ function personForm(p) {
   m.querySelector('#f-save').addEventListener('click', function () {
     var g = function (k) { return m.querySelector('#f-' + k).value.trim(); };
     if (!g('name')) { m.querySelector('#f-name').focus(); return; }
-    ['name', 'email', 'phone', 'profession', 'company', 'school', 'location', 'birthday', 'howMet'].forEach(function (k) { p[k] = g(k); });
+    ['name', 'email', 'phone', 'profession', 'company', 'location'].forEach(function (k) { p[k] = g(k); });
+    p.schools = [];
+    g('school').split(',').map(clean).filter(Boolean).forEach(function (bit) {
+      var level = '';
+      var nm = bit.replace(/\s*\b(undergrad(?:uate)?|bachelors?)\b\s*/i, function () { level = 'undergrad'; return ' '; })
+        .replace(/\s*\b(grad(?:uate)?(?: school)?|mba|ph\.?d|masters?|jd|md|mfa)\b\s*/i, function () { level = 'grad'; return ' '; });
+      addSchool(p.schools, titleCase(clean(nm) || bit), level);
+    });
     p.circles = g('circle').split(',').map(clean).filter(Boolean);
     p.tags = g('tags').split(',').map(function (t) { return t.trim().replace(/^#/, ''); }).filter(Boolean);
     if (g('note')) p.notes.unshift({ id: uid(), t: g('note'), at: Date.now() });
@@ -1418,8 +1756,8 @@ var FIELDS = [
   ['name', 'Name'], ['firstName', 'First name'], ['lastName', 'Last name'],
   ['email', 'Email'], ['phone', 'Phone'], ['profession', 'Profession'],
   ['company', 'Company'], ['school', 'School'], ['location', 'Location'],
-  ['birthday', 'Birthday'], ['circle', 'Circle'], ['tags', 'Tags'],
-  ['howMet', 'How we met'], ['notes', 'Notes'], ['custom', 'Keep as its own field'],
+  ['circle', 'Circle'], ['tags', 'Tags'],
+  ['notes', 'Notes'], ['custom', 'Keep as its own field'],
   ['skip', 'Ignore this column']
 ];
 
@@ -1433,10 +1771,8 @@ var HEADER_HINTS = [
   ['company', /^(company|employer|org|organi[sz]ation|firm|business|works? ?at|workplace)$/i],
   ['school', /^(school|college|university|alma ?mater|education|studied)$/i],
   ['location', /^(location|city|town|where|based|address|state|region)$/i],
-  ['birthday', /^(birthday|bday|born|date ?of ?birth|dob)$/i],
   ['circle', /^(circle|group|category|bucket|type|relationship|list|segment)$/i],
   ['tags', /^(tags?|labels?|keywords)$/i],
-  ['howMet', /^(how ?we ?met|met|source|via|intro|referral|origin)$/i],
   ['notes', /^(notes?|comments?|details|misc|description|remarks)$/i]
 ];
 
@@ -1454,7 +1790,6 @@ function sniff(values) {
     var d = digitsOf(v);
     return d.length >= 7 && d.length <= 15 && /^[\d\-.() +x]{7,}$/i.test(v.trim());
   }) > 0.6) return 'phone';
-  if (hit(function (v) { return /^(19|20)\d\d[-/]\d{1,2}[-/]\d{1,2}$|^\d{1,2}[-/]\d{1,2}([-/]\d{2,4})?$/.test(v.trim()); }) > 0.6) return 'birthday';
   var avg = vals.reduce(function (a, v) { return a + v.length; }, 0) / vals.length;
   if (avg > 60) return 'notes';
   if (hit(function (v) { return /^[A-ZÀ-Þ][\wÀ-ÿ'’-]+(\s+[A-ZÀ-Þ][\wÀ-ÿ'’.-]+){1,2}$/.test(v.trim()); }) > 0.6) return 'name';
@@ -1667,9 +2002,11 @@ function importModal(preloaded, filename) {
       if (!p) { p = blankPerson(name); state.people.push(p); added++; } else merged++;
       p.name = name;
 
-      ['email', 'phone', 'profession', 'company', 'school', 'location', 'birthday', 'howMet'].forEach(function (k) {
+      ['email', 'phone', 'profession', 'company', 'location'].forEach(function (k) {
         if (rec[k]) p[k] = rec[k];
       });
+      if (rec.school) rec.school.split(/[,;|/]/).map(clean).filter(Boolean)
+        .forEach(function (nm) { addSchool(p.schools, titleCase(nm), ''); });
       rec.tags.forEach(function (t) { if (p.tags.indexOf(t) < 0) p.tags.push(t); });
       Object.keys(rec.custom).forEach(function (k) { p.custom[k] = rec.custom[k]; });
       rec.notes.forEach(function (t) { p.notes.unshift({ id: uid(), t: t, at: Date.now() }); });
@@ -1717,7 +2054,7 @@ function importModal(preloaded, filename) {
 })();
 
 function toCSV() {
-  var cols = ['name', 'phone', 'email', 'profession', 'company', 'school', 'location', 'birthday', 'circle', 'tags', 'howMet', 'lastTouch', 'touchpoints', 'notes'];
+  var cols = ['name', 'phone', 'email', 'profession', 'company', 'schools', 'location', 'circles', 'tags', 'lastTouch', 'touchpoints', 'notes'];
   var q = function (v) { v = String(v === undefined || v === null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
   var lines = [cols.join(',')];
   state.people.forEach(function (p) {
@@ -1725,8 +2062,9 @@ function toCSV() {
       .concat(p.log.map(function (e) { return fmtDate(e.at) + ' ' + e.channel + ': ' + e.text + (e.learned ? ' — ' + e.learned : ''); }))
       .join(' | ');
     var extra = Object.keys(p.custom || {}).map(function (k) { return k + ': ' + p.custom[k]; });
-    lines.push([p.name, p.phone, p.email, p.profession, p.company, p.school, p.location, p.birthday, circlesOf(p).join(' / '),
-      p.tags.join(' '), p.howMet, p.log.length ? new Date(lastTouch(p)).toISOString().slice(0, 10) : '',
+    var sch = schoolsOf(p).map(function (x) { return x.name + (x.level ? ' (' + x.level + ')' : ''); }).join(' / ');
+    lines.push([p.name, p.phone, p.email, p.profession, p.company, sch, p.location, circlesOf(p).join(' / '),
+      p.tags.join(' '), p.log.length ? new Date(lastTouch(p)).toISOString().slice(0, 10) : '',
       p.log.length, extra.concat(notes ? [notes] : []).join(' | ')].map(q).join(','));
   });
   return lines.join('\n');
@@ -1816,6 +2154,12 @@ function helpModal() {
     '<section><h5>Circles</h5>' +
       '<p>Someone can be in as many as you like. <b>Drag a person onto a circle</b> to file them there — it becomes their main one, which is the colour their dot takes. Their card lists every circle they are in: click one to promote it, × to take them out, <em>+ circle</em> to add another.</p>' +
       '<p><b>Click a circle on the map</b> to recolour, rename, hide or delete it. The button beside <em>Add person</em> makes a new one, and an empty circle stays as a branch until you delete it — which is what makes “remove everyone but keep the categories” worth saying.</p></section>' +
+    '<section><h5>Schools, tags, connections</h5>' +
+      '<p>Type a school and press <kbd>↵</kbd> — it lands as a chip, and the level next to it cycles between undergrad, grad and unset when you click it. Saying “<em>swarthmore undergrad</em>” or “<em>wharton mba</em>” sets the level as you type, in the bar or in the chip.</p>' +
+      '<p><b>Connections</b> record who put you onto whom. Say “<em>Marcus introduced me to Rae Kim</em>”, “<em>got her info from Ada</em>” or “<em>met Lila through Priya</em>” and a dashed line joins the two on the map. You can also type a name into Connections on anyone’s card.</p>' +
+      '<p><b>Notes</b> sit under the history on every card — write one and press <kbd>↵</kbd>. Click an existing note to edit it.</p></section>' +
+    '<section><h5>When the map gets messy</h5>' +
+      '<p>The <b>tidy</b> button (top right, or <kbd>T</kbd>) lets go of everyone you have dragged into place and lets the whole thing settle again. Circles claim room in proportion to how many people they hold, so a School of thirty gets the space it needs.</p></section>' +
     '<section><h5>Fixing a card</h5>' +
       '<p>Click any value on someone’s card and type over it — the name at the top too. Empty fields say <em>add</em>; click to fill them. <em>+ another field</em> at the bottom takes anything the standard ones do not cover.</p></section>' +
     '<section><h5>Commands</h5>' +
@@ -2027,7 +2371,7 @@ function structural(text) {
 
   // odds and ends people reach for
   if (/^\s*(?:tidy|fit|centre|center|reset the view|zoom to fit)\b/i.test(t)) {
-    return { summary: 'Fit the map to the window', quiet: true, run: function () { fit(); } };
+    return { summary: 'Tidied the map', quiet: true, run: function () { tidyMap(); } };
   }
   if (/^\s*(?:call me|i am|i'm|my name is)\s+(.+?)\s*$/i.test(t)) {
     var mine = clean(/^\s*(?:call me|i am|i'm|my name is)\s+(.+?)\s*$/i.exec(t)[1]);
@@ -2075,7 +2419,16 @@ function renameCircle(from, to) {
 }
 
 function dropCircle(name) {
-  state.circles = (state.circles || []).filter(function (c) { return c !== name; });
+  var low = String(name).toLowerCase();
+  state.circles = (state.circles || []).filter(function (c) { return c.toLowerCase() !== low; });
+  if (state.colors) {
+    Object.keys(state.colors).forEach(function (k) { if (k.toLowerCase() === low) delete state.colors[k]; });
+  }
+  // and out of anybody still holding a differently-cased copy of it
+  state.people.forEach(function (p) {
+    if (circlesOf(p).some(function (c) { return c.toLowerCase() === low; })) leaveCircle(p, name);
+  });
+  delete hidden[name];
 }
 
 /* ---- chat + preview ---- */
@@ -2116,6 +2469,16 @@ function renderPreview() {
       '<span class="k">' + (FIELD_LABEL[k] || k) + '</span>' +
       '<span class="v" data-editk="' + k + '" tabindex="0" role="button">' + esc(draft.patch[k]) + '</span>' +
       '<button data-dropk="' + k + '" aria-label="Drop ' + k + '">&times;</button></span>';
+  });
+  if (draft.via || draft.viaName) {
+    chips.push('<span class="chip new"><span class="k">via</span><span class="v">' +
+      esc(draft.via ? draft.via.name : draft.viaName) + '</span>' +
+      '<button data-dropvia aria-label="Drop the connection">&times;</button></span>');
+  }
+  (draft.schools || []).forEach(function (sc) {
+    chips.push('<span class="chip new"><span class="k">school</span><span class="v">' +
+      esc(sc.name) + (sc.level ? ' · ' + sc.level : '') + '</span>' +
+      '<button data-dropschool="' + esc(sc.name) + '" aria-label="Drop ' + esc(sc.name) + '">&times;</button></span>');
   });
   Object.keys(draft.custom || {}).forEach(function (k) {
     chips.push('<span class="chip new"><span class="k">' + esc(k) + '</span>' +
@@ -2176,6 +2539,11 @@ $('#preview-slot').addEventListener('click', function (e) {
   if (t.closest('[data-discard]')) { draft = null; pendingPlan = null; renderPreview(); renderPlan(); return; }
   if (t.dataset.dropk) { delete draft.patch[t.dataset.dropk]; renderPreview(); return; }
   if (t.dataset.dropc) { delete draft.custom[t.dataset.dropc]; renderPreview(); return; }
+  if (t.hasAttribute && t.hasAttribute('data-dropvia')) { draft.via = null; draft.viaName = ''; renderPreview(); return; }
+  if (t.dataset.dropschool) {
+    draft.schools = draft.schools.filter(function (x) { return x.name !== t.dataset.dropschool; });
+    renderPreview(); return;
+  }
   if (t.dataset.dropclear) {
     draft.clears = draft.clears.filter(function (k) { return k !== t.dataset.dropclear; });
     renderPreview(); return;
@@ -2281,7 +2649,8 @@ function runSearch() {
   var q = search.value.trim().toLowerCase();
   if (!q) { results.innerHTML = ''; return; }
   var hits = state.people.filter(function (p) {
-    return [p.name, p.profession, p.company, p.school, p.location, circlesOf(p).join(' '), p.email, p.tags.join(' '),
+    return [p.name, p.profession, p.company, schoolsOf(p).map(function (x) { return x.name; }).join(' '),
+      p.location, circlesOf(p).join(' '), p.email, p.tags.join(' '),
       p.notes.map(function (n) { return n.t; }).join(' '),
       p.log.map(function (e) { return e.text + ' ' + e.learned; }).join(' ')]
       .join(' ').toLowerCase().indexOf(q) >= 0;
@@ -2453,27 +2822,27 @@ function sample() {
     return p;
   };
   return [
-    mk({ name: 'Dana Okafor', circle: 'Work', profession: 'Data scientist', company: 'Merck', school: 'Rutgers',
+    mk({ name: 'Dana Okafor', circle: 'Work', profession: 'Data scientist', company: 'Merck', schools: [{ name: 'Rutgers', level: 'undergrad' }],
       email: 'dana.okafor@example.com', phone: '(908) 555-0142', location: 'Rahway, NJ', tags: ['ai'],
       howMet: 'met at the Rutgers alumni mixer' },
       [[4, 'zoom', 'Zoom about the forecasting pilot — she wants a two-week trial.', 'Runs the internal AI guild, 200 people'],
        [38, 'coffee', 'Coffee downtown before the panel.'],
        [96, 'met', 'Met at the Rutgers alumni mixer.']]),
-    mk({ name: 'Marcus Bell', circle: 'Work', profession: 'Engineering manager', company: 'Vanta', school: 'Lehigh',
+    mk({ name: 'Marcus Bell', circle: 'Work', profession: 'Engineering manager', company: 'Vanta', schools: [{ name: 'Lehigh', level: 'undergrad' }],
       email: 'marcus@example.com', location: 'Brooklyn, NY', tags: ['hiring'] },
       [[11, 'call', 'Called about the staff role on his team.', 'Hiring two backend engineers in Q1'],
        [60, 'event', 'Sat next to him at the Philly infra meetup.']]),
     mk({ name: 'Priya Raman', circle: 'Work', profession: 'Product designer', company: 'Figma',
       email: 'priya@example.com', tags: ['design'] },
       [[130, 'coffee', 'Coffee at Monkey + Elf. Talked through the onboarding redesign.', 'Moving to Lisbon in the spring']]),
-    mk({ name: 'Tomás Ferreira', circles: ['School', 'Work'], school: 'Lehigh', profession: 'Attorney', company: 'Reed Smith',
+    mk({ name: 'Tomás Ferreira', circles: ['School', 'Work'], schools: [{ name: 'Lehigh', level: 'undergrad' }, { name: 'Villanova', level: 'grad' }], profession: 'Attorney', company: 'Reed Smith',
       email: 'tomas@example.com', phone: '(610) 555-0119' },
       [[22, 'meal', 'Dinner at Bolete with the Lehigh crowd.', 'Just made partner'],
        [210, 'call', 'Called for advice on the LLC paperwork.']]),
-    mk({ name: 'Hannah Koenig', circle: 'School', school: 'Lehigh', profession: 'Pastry chef', company: 'Bread & Salt',
+    mk({ name: 'Hannah Koenig', circle: 'School', schools: [{ name: 'Lehigh', level: 'undergrad' }], profession: 'Pastry chef', company: 'Bread & Salt',
       email: 'hannah@example.com', location: 'Jersey City, NJ' },
       [[6, 'message', 'Texted about the croissant lamination class.', 'Teaching a Saturday workshop in March']]),
-    mk({ name: 'Owen Reilly', circle: 'School', school: 'Lehigh', profession: 'High school teacher' },
+    mk({ name: 'Owen Reilly', circle: 'School', schools: [{ name: 'Lehigh', level: 'undergrad' }], profession: 'High school teacher' },
       [[168, 'event', 'Ran into him at homecoming.']]),
     mk({ name: 'Ada Whitfield', circles: ['Industry', 'Neighbors'], profession: 'Roaster', company: 'Deep Roots Coffee',
       email: 'ada@example.com', phone: '(484) 555-0177', location: 'Bethlehem, PA',
@@ -2511,11 +2880,7 @@ function toggleSample() {
   syncSampleBtn();
 }
 
-function syncSampleBtn() {
-  var b = $('#btn-sample');
-  if (b) b.textContent = state.demo ? 'Clear sample' : 'Load sample';
-  if (b) b.hidden = false;
-}
+function syncSampleBtn() { /* the sample lives behind /sample now */ }
 
 /* ---- wiring ---- */
 
@@ -2537,6 +2902,11 @@ $('#btn-import').addEventListener('click', importModal);
 $('#btn-export').addEventListener('click', exportModal);
 $('#btn-help').addEventListener('click', helpModal);
 $('#btn-fit').addEventListener('click', fit);
+$('#btn-tidy').addEventListener('click', function () {
+  var pinned = nodes.filter(function (n) { return n.fx !== null && n.fx !== undefined; }).length;
+  tidyMap();
+  toast(pinned ? 'Untangled — ' + pinned + ' pinned ' + (pinned === 1 ? 'person' : 'people') + ' let go' : 'Untangled');
+});
 
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') {
@@ -2547,6 +2917,11 @@ document.addEventListener('keydown', function (e) {
   }
   var el = document.activeElement;
   var typing = /^(INPUT|TEXTAREA)$/.test(el.tagName);
+  if (e.key === 'Enter' && !typing && (pendingPlan || draft)) {
+    e.preventDefault();
+    if (pendingPlan) runPlan(); else confirmDraft();
+    return;
+  }
   // an empty chat bar has nothing of its own to undo, so the map gets the key
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && (!typing || (el === chat && !chat.value))) {
     e.preventDefault(); undo(); return;
@@ -2554,6 +2929,7 @@ document.addEventListener('keydown', function (e) {
   if (typing) return;
   if (e.key === '/') { e.preventDefault(); chat.focus(); }
   if (e.key === 'f') fit();
+  if (e.key === 't') tidyMap();
   if (e.key === '?') helpModal();
   if (e.key === 'n') { e.preventDefault(); personForm(null); }
 });
@@ -2594,8 +2970,7 @@ window.Rootwork = {
   try { t = localStorage.getItem(THEME_KEY) || 'auto'; } catch (e) { }
   if (t !== 'auto') document.documentElement.setAttribute('data-theme', t);
 
-  var had = load();
-  if (!had) { state.people = sample(); state.demo = true; save(); }
+  load();
 
   readTokens();
   resize();
@@ -2617,13 +2992,6 @@ window.Rootwork = {
     else toast('Sync is not available in this build');
   });
   $('.tools').insertBefore(pill, $('#btn-add'));
-
-  var hintBtn = document.createElement('button');
-  hintBtn.className = 'btn';
-  hintBtn.id = 'btn-sample';
-  $('.tools').insertBefore(hintBtn, $('#btn-help'));
-  hintBtn.addEventListener('click', toggleSample);
-  syncSampleBtn();
 
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { needsDraw = true; });
   loop();

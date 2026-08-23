@@ -148,8 +148,27 @@ bridges the two.
 - Their card lists every circle: click one to promote it, `×` to leave, *+
   circle* to add another.
 - **Click a circle on the map** to recolour, rename, hide or delete it.
+- Circles claim room in proportion to how many people they hold, so a School of
+  thirty gets the space a Family of two does not need.
+- The **tidy** button (or `T`) releases everything you have dragged into place
+  and lets the layout settle again.
 - The button beside *Add person* makes a new one; empty circles are kept as
   branches until deleted, so structure survives a purge.
+
+## Connections
+
+Who put you onto whom. Say *"Marcus introduced me to Rae Kim"*, *"got her info
+from Ada"* or *"met Lila through Priya"* and the two are joined by a dashed
+line on the map; the Connections row on a card takes names directly. Stored
+directionally, drawn mutually.
+
+## Schools
+
+A list, not a field: type one and press enter. Each carries a level —
+undergrad, grad, or unset — cycled by clicking it, or set as you type
+(*"wharton mba"*, *"lehigh undergrad"*). The bar reads them out of a sentence
+the same way, lower case and all: *"swarthmore alumn, did her MBA at Wharton"*
+files both with the right levels.
 
 ## Editing a card
 

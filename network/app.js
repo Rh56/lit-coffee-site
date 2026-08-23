@@ -12,8 +12,8 @@ var KEY = 'rootwork.v1';
 var DAY = 86400000;
 var COLD_DAYS = 90;
 
-var state = { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, coldDays: 90, meUpdated: 0, demo: false, seq: 1 };
-var DEFAULTS = function () { return { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, coldDays: 90, meUpdated: 0, demo: false, seq: 1 }; };
+var state = { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, circleTombstones: {}, coldDays: 90, settingsAt: 0, meUpdated: 0, demo: false, seq: 1 };
+var DEFAULTS = function () { return { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, circleTombstones: {}, coldDays: 90, settingsAt: 0, meUpdated: 0, demo: false, seq: 1 }; };
 var applyingRemote = false;
 
 function uid() { return 'p' + (state.seq++) + Math.random().toString(36).slice(2, 6); }
@@ -78,7 +78,8 @@ function normalizePerson(p) {
   p.log = p.log || [];
   if (!Array.isArray(p.circles)) p.circles = [];
   if (p.circle && !p.circles.length) p.circles = [p.circle];   // from the single-circle days
-  p.circles = p.circles.filter(Boolean);
+  p.circles = p.circles.map(function (c) { return clean(c); }).filter(Boolean)
+    .filter(function (c) { return circleKilled(c) <= (p.updated || p.created || 0); });
   delete p.circle;
   p.created = p.created || Date.now();
   return p;
@@ -143,9 +144,14 @@ function inCircle(p, name) {
 
 /* Adds a circle to a person. Dropping someone on a circle makes it primary;
    adding from the card leaves their primary alone. */
+function reviveCircle(name) {
+  if (state.circleTombstones) delete state.circleTombstones[String(name).trim().toLowerCase()];
+}
+
 function joinCircle(p, name, makePrimary) {
   name = clean(name);
   if (!name) return;
+  reviveCircle(name);
   p.circles = circlesOf(p).filter(function (c) { return c.toLowerCase() !== name.toLowerCase() && c !== 'Unsorted'; });
   if (makePrimary) p.circles.unshift(name); else p.circles.push(name);
   circleIndex(name);
@@ -178,7 +184,11 @@ function circleIndex(name) {
   if (name === 'Unsorted') return 0;
   if (state.colors && state.colors[name]) return state.colors[name];
   var i = state.circles.indexOf(name);
-  if (i < 0) { state.circles.push(name); i = state.circles.length - 1; }
+  if (i < 0) {
+    if (circleKilled(name)) return 6;          // deleted: draw it, do not re-register it
+    state.circles.push(name);
+    i = state.circles.length - 1;
+  }
   return (i % 8) + 1;
 }
 
@@ -201,8 +211,10 @@ var COLOR_WORDS = {
 };
 
 function setCircleColor(name, idx) {
+  reviveCircle(name);
   if (!state.colors) state.colors = {};
   state.colors[name] = idx;
+  state.settingsAt = Date.now();
   circleIndex(name);
 }
 
@@ -971,6 +983,13 @@ function draw() {
         ctx.lineWidth = 1.3 / cam.k;
         ctx.strokeStyle = mix(col, 0.7 * dim); ctx.stroke();
       }
+      if (dropTarget === n) {
+        ctx.beginPath(); ctx.arc(n.x, n.y, r + 12, 0, Math.PI * 2);
+        ctx.fillStyle = mix(col, 0.14); ctx.fill();
+        ctx.beginPath(); ctx.arc(n.x, n.y, r + 8, 0, Math.PI * 2);
+        ctx.lineWidth = 1.4 / cam.k; ctx.setLineDash([4 / cam.k, 3 / cam.k]);
+        ctx.strokeStyle = mix(col, 0.95); ctx.stroke(); ctx.setLineDash([]);
+      }
       if (selected === n) {
         ctx.beginPath(); ctx.arc(n.x, n.y, r + 5, 0, Math.PI * 2);
         ctx.lineWidth = 1.2 / cam.k; ctx.strokeStyle = C.ink; ctx.stroke();
@@ -1066,6 +1085,17 @@ function kick() { alpha = Math.max(alpha, 0.65); needsDraw = true; }
 
 /* Which circle is under the cursor, for a drop. Generous on purpose — the
    target is a small dot and fingers are not. */
+/* A person under the cursor, for connecting two people by dragging. */
+function personUnder(sx, sy, except) {
+  var w = toWorld(sx, sy), best = null, bd = 1e9;
+  nodes.forEach(function (n) {
+    if (n.kind !== 'person' || n === except) return;
+    var d = Math.sqrt((w[0] - n.x) * (w[0] - n.x) + (w[1] - n.y) * (w[1] - n.y));
+    if (d < Math.max(26, 30 / cam.k) && d < bd) { bd = d; best = n; }
+  });
+  return best;
+}
+
 function circleUnder(sx, sy) {
   var w = toWorld(sx, sy), best = null, bd = 1e9;
   nodes.forEach(function (n) {
@@ -2156,7 +2186,7 @@ function helpModal() {
       '<p><b>Click a circle on the map</b> to recolour, rename, hide or delete it. The button beside <em>Add person</em> makes a new one, and an empty circle stays as a branch until you delete it — which is what makes “remove everyone but keep the categories” worth saying.</p></section>' +
     '<section><h5>Schools, tags, connections</h5>' +
       '<p>Type a school and press <kbd>↵</kbd> — it lands as a chip, and the level next to it cycles between undergrad, grad and unset when you click it. Saying “<em>swarthmore undergrad</em>” or “<em>wharton mba</em>” sets the level as you type, in the bar or in the chip.</p>' +
-      '<p><b>Connections</b> record who put you onto whom. Say “<em>Marcus introduced me to Rae Kim</em>”, “<em>got her info from Ada</em>” or “<em>met Lila through Priya</em>” and a dashed line joins the two on the map. You can also type a name into Connections on anyone’s card.</p>' +
+      '<p><b>Connections</b> record who put you onto whom. <b>Drag one person onto another</b> and they are joined by a dashed line; the toast offers to flip the direction if you had it the other way round. The bar understands it too — “<em>Marcus introduced me to Rae Kim</em>”, “<em>got her info from Ada</em>”, “<em>met Lila through Priya</em>” — and the Connections row on a card takes a name directly.</p>' +
       '<p><b>Notes</b> sit under the history on every card — write one and press <kbd>↵</kbd>. Click an existing note to edit it.</p></section>' +
     '<section><h5>When the map gets messy</h5>' +
       '<p>The <b>tidy</b> button (top right, or <kbd>T</kbd>) lets go of everyone you have dragged into place and lets the whole thing settle again. Circles claim room in proportion to how many people they hold, so a School of thirty gets the space it needs.</p></section>' +
@@ -2325,7 +2355,7 @@ function structural(text) {
     if (fresh) return {
       summary: 'Add a circle called ' + fresh,
       detail: 'It starts empty. Drag people onto it, or say “add Dana to ' + fresh + '”.',
-      run: function () { circleIndex(fresh); }
+      run: function () { reviveCircle(fresh); circleIndex(fresh); }
     };
   }
 
@@ -2348,7 +2378,7 @@ function structural(text) {
     return {
       summary: 'Going cold after ' + days + ' days',
       quiet: true,
-      run: function () { state.coldDays = days; }
+      run: function () { state.coldDays = days; state.settingsAt = Date.now(); }
     };
   }
 
@@ -2418,8 +2448,15 @@ function renameCircle(from, to) {
   if (i >= 0) state.circles[i] = to; else circleIndex(to);
 }
 
+function circleKilled(name) {
+  var t = (state.circleTombstones || {})[String(name).trim().toLowerCase()];
+  return t || 0;
+}
+
 function dropCircle(name) {
-  var low = String(name).toLowerCase();
+  var low = String(name).trim().toLowerCase();
+  state.circleTombstones = state.circleTombstones || {};
+  state.circleTombstones[low] = Date.now();
   state.circles = (state.circles || []).filter(function (c) { return c.toLowerCase() !== low; });
   if (state.colors) {
     Object.keys(state.colors).forEach(function (k) { if (k.toLowerCase() === low) delete state.colors[k]; });
@@ -2716,7 +2753,8 @@ canvas.addEventListener('pointermove', function (e) {
     dragging.fx = w[0]; dragging.fy = w[1];
     dragging.x = w[0]; dragging.y = w[1];
     moved = true;
-    var t = dragging.kind === 'person' ? circleUnder(sx, sy) : null;
+    var t = null;
+    if (dragging.kind === 'person') t = personUnder(sx, sy, dragging) || circleUnder(sx, sy);
     if (t !== dropTarget) { dropTarget = t; canvas.style.cursor = t ? 'copy' : 'grabbing'; }
     kick();
     return;
@@ -2744,6 +2782,18 @@ canvas.addEventListener('pointerdown', function (e) {
 canvas.addEventListener('pointerup', function (e) {
   var r = canvas.getBoundingClientRect();
   var n = nodeAt(e.clientX - r.left, e.clientY - r.top);
+
+  if (dragging && dragging.kind === 'person' && dropTarget && moved && dropTarget.kind === 'person') {
+    var from = dragging.ref, onto = dropTarget.ref;
+    dragging.fx = dragging.fy = null;
+    dropTarget = null; dragging = null; panning = null;
+    tie(from, onto.id, 'intro');
+    save(); renderAll();
+    toast(onto.name + ' put you onto ' + from.name, 'Flip', function () {
+      untie(from, onto.id); tie(onto, from.id, 'intro'); save(); renderAll();
+    });
+    return;
+  }
 
   if (dragging && dragging.kind === 'person' && dropTarget && moved) {
     var person = dragging.ref, target = dropTarget.label;
@@ -2892,6 +2942,7 @@ $('#btn-newcircle').addEventListener('click', function (e) {
     if (state.circles.some(function (c) { return c.toLowerCase() === name.toLowerCase(); })) {
       toast(name + ' already exists');
     } else {
+      reviveCircle(name);
       circleIndex(name);
       save(); renderAll(); fit();
       toast(name + ' added — drag people onto it');

@@ -112,6 +112,10 @@ function rest(path, opts) {
 /* ---------------------------------------------------------------- merge -- */
 /* Newest stamp wins per person; a tombstone beats a person older than it. */
 
+function newest(x, y) {                       // keep whichever map touched it last
+  return (y && Object.keys(y).length && (y.__at || 0) > (x.__at || 0)) ? y : (x || y || {});
+}
+
 function merge(a, b) {
   var out = {
     me: (b.meUpdated || 0) > (a.meUpdated || 0) ? b.me : a.me,
@@ -119,10 +123,27 @@ function merge(a, b) {
     circles: (a.circles || []).slice(),
     people: [],
     tombstones: Object.assign({}, a.tombstones || {}, b.tombstones || {}),
+    // a circle deleted on one device must stay deleted on the other, or the
+    // next pull quietly hands it back
+    circleTombstones: Object.assign({}, a.circleTombstones || {}, b.circleTombstones || {}),
+    // settings are a set: whichever device changed them last wins outright,
+    // rather than blending two people's palettes into one
+    colors: ((b.settingsAt || 0) > (a.settingsAt || 0) ? b.colors : a.colors) || {},
+    coldDays: ((b.settingsAt || 0) > (a.settingsAt || 0) ? b.coldDays : a.coldDays) || 90,
+    settingsAt: Math.max(a.settingsAt || 0, b.settingsAt || 0),
     seq: Math.max(a.seq || 1, b.seq || 1),
     demo: false
   };
+  Object.keys(a.circleTombstones || {}).forEach(function (k) {
+    var other = (b.circleTombstones || {})[k];
+    if (other) out.circleTombstones[k] = Math.max(a.circleTombstones[k], other);
+  });
+
   (b.circles || []).forEach(function (c) { if (out.circles.indexOf(c) < 0) out.circles.push(c); });
+
+  var dead = function (name) { return out.circleTombstones[String(name).trim().toLowerCase()] || 0; };
+  out.circles = out.circles.filter(function (c) { return !dead(c); });
+  Object.keys(out.colors).forEach(function (k) { if (dead(k)) delete out.colors[k]; });
 
   var byId = {};
   (a.people || []).forEach(function (p) { byId[p.id] = p; });
@@ -135,6 +156,10 @@ function merge(a, b) {
     var p = byId[id];
     var killed = out.tombstones[id];
     if (killed && killed >= (p.updated || p.created || 0)) return;
+    // strip circles that were deleted after this person was last touched
+    if (Array.isArray(p.circles)) {
+      p.circles = p.circles.filter(function (c) { return dead(c) <= (p.updated || p.created || 0); });
+    }
     out.people.push(p);
   });
 
@@ -142,6 +167,9 @@ function merge(a, b) {
   var cutoff = Date.now() - 90 * 86400000;
   Object.keys(out.tombstones).forEach(function (id) {
     if (out.tombstones[id] < cutoff) delete out.tombstones[id];
+  });
+  Object.keys(out.circleTombstones).forEach(function (k) {
+    if (out.circleTombstones[k] < cutoff) delete out.circleTombstones[k];
   });
   return out;
 }
@@ -465,6 +493,7 @@ function dialog() {
 /* ----------------------------------------------------------------- api --- */
 
 window.RootworkSync = {
+  _merge: merge,                              // exposed for tests
   attach: function (bridge) {
     app = bridge;
     paintStatus();

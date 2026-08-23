@@ -524,7 +524,7 @@ kbd{
   .searchwrap{ flex:1; min-width:0; }
   .searchwrap input{ width:100%; }
   .tools{ margin-left:0; }
-  #btn-import, #btn-export, #btn-sample{ display:none; }  /* /import, /export, /sample */
+  #btn-import, #btn-export, #btn-sample, #btn-newcircle{ display:none; }  /* all reachable from the chat bar */
   .pill{ padding:6px; }
   .pill .plabel{ display:none; }        /* the dot carries the state on a phone */
   .dossier{ width:100%; }
@@ -737,3 +737,58 @@ kbd{
 .cpick .pgrid button[data-taken="1"] span{
   box-shadow:inset 0 0 0 2px var(--panel);      /* this pigment is already spoken for */
 }
+
+/* ---------- editing on the card ---------- */
+
+.fields .val{
+  display:inline-block; border-bottom:1px dashed transparent;
+  border-radius:2px; padding:0 2px; margin:0 -2px; cursor:text;
+}
+.fields .val:hover{ border-bottom-color:var(--rule); background:var(--panel-2); }
+.fields dd.empty .val{ color:var(--faint); }
+.fields .add{
+  font-family:var(--mono); font-size:9.5px; letter-spacing:.12em; text-transform:uppercase;
+  opacity:.45;
+}
+.fields dd.empty .val:hover .add{ opacity:1; color:var(--accent); }
+.d-name .val{
+  display:inline-block; cursor:text; border-radius:2px;
+  border-bottom:1px dashed transparent; padding:0 2px; margin:0 -2px;
+}
+.d-name .val:hover{ border-bottom-color:var(--rule); }
+
+.inplace{
+  font:inherit; color:inherit; width:100%;
+  background:var(--field); border:1px solid var(--accent); border-radius:2px;
+  padding:1px 4px; outline:none; resize:vertical;
+}
+.d-name .inplace{ font-family:var(--display); font-size:29px; padding:0 4px; }
+
+.addfield{
+  margin-top:10px; font-family:var(--mono); font-size:10px; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--faint);
+}
+.addfield:hover{ color:var(--accent); }
+.newfield{ display:flex; gap:6px; margin-top:10px; }
+.newfield input{
+  flex:1; min-width:0; background:var(--field); border:1px solid var(--rule);
+  border-radius:2px; padding:5px 7px; font-size:13px; outline:none;
+}
+.newfield input:focus{ border-color:var(--accent); }
+.newfield .k{ max-width:38%; }
+
+/* ---------- circle menu on the branch ---------- */
+
+.cpick.circlemenu{ min-width:196px; padding:8px; }
+.cpick .mrow{ display:flex; flex-direction:column; margin-top:8px; padding-top:6px; border-top:1px solid var(--rule-soft); }
+.cpick .mrow button{
+  text-align:left; padding:6px 7px; border-radius:2px; font-size:12.5px; color:var(--ink-2);
+}
+.cpick .mrow button:hover{ background:var(--panel-2); color:var(--ink); }
+.cpick .mrow button.danger:hover{ color:var(--accent); }
+.cpick.renamer{ display:flex; gap:6px; padding:8px; }
+.cpick.renamer input{
+  background:var(--field); border:1px solid var(--accent); border-radius:2px;
+  padding:5px 7px; font-size:13px; outline:none; width:160px;
+}
+.hiddenbar .n{ color:var(--accent); }

@@ -147,9 +147,15 @@ bridges the two.
 - **Drag a person onto a circle** to file them there — it becomes their primary.
 - Their card lists every circle: click one to promote it, `×` to leave, *+
   circle* to add another.
-- **+** beside *Circles* in the rail makes a new one; empty circles are kept as
+- **Click a circle on the map** to recolour, rename, hide or delete it.
+- The button beside *Add person* makes a new one; empty circles are kept as
   branches until deleted, so structure survives a purge.
-- The dot beside a circle in the rail opens its palette.
+
+## Editing a card
+
+Every value on a person's card is edited in place — click it and type, including
+the name. Empty fields read *add*; *+ another field* takes anything the standard
+ones do not cover.
 
 ## Talking to it
 

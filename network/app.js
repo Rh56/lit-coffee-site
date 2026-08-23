@@ -161,8 +161,9 @@ var lastSubject = null;  // who the last entry was about, so pronouns have a ref
 /* ---------------------------------------------------------------- parse -- */
 
 var CHANNELS = [
-  ['zoom', /\b(zoom|video ?call|google meet|meet call|teams call|facetime|hangout)\b/i],
-  ['call', /\b(call(?:ed)?|phone|rang|spoke (?:with|to)|voicemail)\b/i],
+  ['zoom', /\b(zoom(?:ed)?|video ?call|google meet|meet call|teams call|facetime|hangout)\b/i],
+  ['call', /\b(call(?:ed)?|phone|rang|voicemail)\b/i],
+  ['talk', /\b(chat(?:ted|ting)?|talk(?:ed|ing)?|spoke|speaking|conversation|catch(?:ing)? up|caught up|met up|sat down|hung out|checked in)\b/i],
   ['coffee', /\b(coffee|tea|drinks?|beer|breakfast)\b/i],
   ['meal', /\b(lunch|dinner|brunch|supper)\b/i],
   ['event', /\b(conference|meetup|panel|summit|wedding|party|networking|mixer|workshop|class)\b/i],
@@ -174,11 +175,21 @@ var CHANNELS = [
 
 var STOPNAMES = /^(I|We|My|The|A|An|He|She|They|Her|His|Their|Today|Yesterday|Just|Had|Met|Talked|Spoke|Zoom|Call|Coffee|Lunch|Dinner|Email|Last|This|Next|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|October|November|December)$/;
 
-var NAME = "[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’\\-]+(?:\\s+(?:van|von|de|del|della|da|di|la|le|bin|al)\\s+[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’\\-]+|\\s[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’\\-]+){0,2}";
+var HONORIFIC = /^(?:dr|mr|mrs|ms|mx|prof|professor|rev|fr|sr|sir|dame)\.?\s+/i;
+var NAME = "(?:(?:Dr|Mr|Mrs|Ms|Mx|Prof|Rev|Fr|Sir)\\.?\\s+)?[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’\\-]+(?:\\s+(?:van|von|de|del|della|da|di|la|le|bin|al)\\s+[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’\\-]+|\\s[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’\\-]+){0,2}";
 
 function clean(s) {
   return (s || '').replace(/\s+/g, ' ')
     .replace(/^[\s,;:—–-]+|[\s,;:.—–-]+$/g, '').trim();
+}
+
+var SMALL_WORD = /^(of|the|at|in|and|for|de|la|von|van)$/i;
+function titleCase(s) {
+  return clean(s).split(/\s+/).map(function (w, i) {
+    if (i && SMALL_WORD.test(w)) return w.toLowerCase();
+    if (/[A-Z]/.test(w.slice(1))) return w;            // MIT, SpaceX, McGill stay as typed
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  }).join(' ');
 }
 
 function titleish(s) {
@@ -339,7 +350,7 @@ function parse(raw) {
     }
   }
   if (out.patch.name) { out.name = out.patch.name; delete out.patch.name; }
-  out.name = clean(out.name).replace(/[’']s$/, '');
+  out.name = clean(out.name).replace(/[’']s$/, '').replace(HONORIFIC, '');
   out.person = findPerson(out.name);
 
   /* "she went to Rutgers", typed right after logging someone — or while their
@@ -354,28 +365,42 @@ function parse(raw) {
 
   var body = out.name ? work.split(out.name).join(' ') : work;
 
-  // 9. school
+  // 9. school — people write these in lower case as often as not
   if (!out.patch.school) {
-    if ((m = /\b(?:went to|studied at|graduated from|graduated|attended|was at|alum(?:na|nus)? of|did (?:her|his|their) (?:mba|ph\.?d|masters|undergrad|degree) at)\s+([A-Z][^,;.—\n]*)/.exec(body))) {
-      take('school', m[1]);
-    } else if ((m = /\b([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,3})\s+(?:grad|alum|alumna|alumnus|undergrad)\b/.exec(body))) {
-      take('school', m[1]);
+    if ((m = /\b(?:went to|studied at|graduated from|graduated|attended|was at|alum(?:n|ni|na|nus)?\s+of|did (?:her|his|their) (?:mba|ph\.?d|masters|undergrad|degree) at)\s+([\w'’.&-]+(?:\s+[\w'’.&-]+){0,3})/i.exec(body))) {
+      take('school', titleCase(m[1]));
+    } else if ((m = /\b([\w'’.&-]+(?:\s+[\w'’.&-]+){0,2})\s+(?:alumn?[ai]?|alumnus|alumna|grad(?:uate)?)\b/i.exec(body))) {
+      take('school', titleCase(m[1]));
     }
   }
-  if (out.patch.school) body = body.split(out.patch.school).join(' ');
+  if (out.patch.school) body = body.split(new RegExp(out.patch.school, 'i')).join(' ');
 
-  // 10. what they do, and where
-  if (!out.patch.profession && (m = /\b(?:is|was|works)?\s*(?:a|an)\s+([a-z][\w\/&.’' -]{2,40}?)\s+(?:at|for|with)\s+([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,2})/.exec(body))) {
-    take('profession', m[1]);
-    take('company', m[2]);
+  // 10. what they do, and where.
+  //     Kept deliberately tight: a loose pattern here used to swallow half the
+  //     sentence ("a chat with who works at …") and file it as a profession.
+  var JOBBY = /\b(with|who|that|which|and|but|chat|call|meeting|zoom|coffee|lunch|dinner|drinks|conference|about|from|had)\b/i;
+  // a role may be several words, but never runs on through a preposition
+  var STOPW = "(?!at\\b|for\\b|with\\b|in\\b|of\\b|from\\b|to\\b|and\\b|who\\b|that\\b)";
+  var ROLE = "((?:[a-z][\\w/&.’'-]*)(?:\\s+" + STOPW + "[a-z][\\w/&.’'-]*){0,3})";
+
+  function takeRole(v) {
+    v = titleish(v).replace(/\s+(?:at|for|with|in|of|from|to|and)$/i, '');
+    if (!v || v.length < 3 || JOBBY.test(v)) return false;
+    take('profession', v);
+    return true;
   }
-  if (!out.patch.profession && (m = /\b(?:is|was|she's|he's|they're|works as)\s+(?:a|an|the)\s+([a-z][\w\/&.’' -]{2,40})/.exec(body))) {
-    take('profession', m[1]);
+
+  if (!out.patch.profession && (m = new RegExp('\\b(?:is|was|works|she.s|he.s|they.re)\\s+(?:as\\s+)?(?:a|an|the)\\s+' + ROLE + '\\s+(?:at|for|with)\\s+([A-Z][\\w&.\'’-]*(?:\\s+[A-Z][\\w&.\'’-]*){0,2})').exec(body))) {
+    if (takeRole(m[1])) take('company', m[2]);
   }
-  if (!out.patch.profession && (m = /\b(?:runs|owns|manages|leads|teaches|bakes|makes)\s+(?:a|an|the)\s+([a-z][\w\/&.’' -]{2,34})/.exec(body))) {
-    take('profession', clean(m[0]));
+  if (!out.patch.profession && (m = new RegExp("\\b(?:is|was|she's|he's|they's|they're|works as)\\s+(?:a|an|the)\\s+" + ROLE).exec(body))) {
+    takeRole(m[1]);
   }
-  if (!out.patch.company && (m = /\b(?:works? (?:at|for)|is at|joined|now at|over at|founded)\s+([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,2})/.exec(body))) {
+  if (!out.patch.profession && (m = new RegExp('\\b(?:runs|owns|manages|leads|teaches|bakes|makes)\\s+(?:a|an|the)\\s+' + ROLE).exec(body))) {
+    var whole = clean(m[0]);
+    if (!JOBBY.test(m[1])) take('profession', whole);
+  }
+  if (!out.patch.company && (m = /\b(?:works? (?:at|for)|working (?:at|for)|is (?:at|with)|joined|started at|now at|over at|founded|employed (?:at|by))\s+([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,2})/.exec(body))) {
     take('company', m[1]);
   }
   if (!out.patch.location && (m = /\b(?:lives in|living in|based in|moved to|is in|located in|out of|home in)\s+([A-Z][\w.'’-]*(?:[\s,]+[A-Z][\w.'’-]*){0,2})/.exec(body))) {
@@ -389,7 +414,8 @@ function parse(raw) {
 
   // 12. the takeaway
   if ((m = /\b(?:learned|found out|turns out|apparently|note that|she (?:said|mentioned)|he (?:said|mentioned)|they (?:said|mentioned)|told me)\s+(?:that\s+)?(.{4,})/i.exec(work))) {
-    out.learned = clean(m[1].split(/\.\s+|;\s+|\s+\|\s+/)[0]).slice(0, 180);
+    out.learned = clean(m[1].split(/\.\s+|;\s+|\s+\|\s+/)[0])
+      .replace(/^(?:about|that|how|why|of)\s+/i, '').slice(0, 180);
   }
 
   if (!out.learned && (m = /(?:^|,\s*|—\s*)(?:she|he|they)\s+((?:has|have|had|is|was|just|recently|now|wants|needs|works|runs|might|will|would|left|joined|started|moved)\b.{3,140})/i.exec(text))) {
@@ -420,7 +446,7 @@ function parse(raw) {
   Object.keys(out.patch).forEach(function (k) { if (!out.patch[k]) delete out.patch[k]; });
 
   /* A bare fact is an edit to the card, not something that happened. */
-  var happened = !!channel || /\b(learned|found out|turns out|talked|spoke|caught up|saw|ran into|introduced|reached out|heard|had)\b/i.test(text);
+  var happened = !!channel || /\b(learned|found out|turns out|told me|mentioned|saw|ran into|introduced|reached out|heard|had a|met)\b/i.test(text);
   if (!happened && (Object.keys(out.patch).length || Object.keys(out.custom).length || out.clears.length)) out.entry = null;
 
   return out;
@@ -921,16 +947,15 @@ function renderStats() {
 }
 
 function renderLegend() {
-  var list = circleList();
-  $('#legend-count').textContent = list.length || '';
-  $('#legend').innerHTML = list.map(function (c) {
-    var col = 'var(--h' + circleIndex(c.name) + ')';
-    return '<div class="lrow" data-off="' + (hidden[c.name] ? 1 : 0) + '">' +
-      '<button class="swatchbtn" data-color="' + esc(c.name) + '" title="Change colour" aria-label="Change the colour of ' + esc(c.name) + '">' +
-        '<span class="swatch" style="background:' + col + '"></span></button>' +
-      '<button class="lname" data-circle="' + esc(c.name) + '" title="Click to hide or show">' +
-        '<span class="cname">' + esc(c.name) + '</span><span class="n">' + (c.n || '—') + '</span></button></div>';
-  }).join('') || '<div class="empty">No circles yet.</div>';
+  var names = Object.keys(hidden).filter(function (c) { return hidden[c]; });
+  var bar = $('#hiddenbar');
+  bar.hidden = !names.length;
+  $('#hidden-count').textContent = names.length || '';
+  $('#hiddenlist').innerHTML = names.map(function (name) {
+    return '<div class="lrow"><button class="lname" data-circle="' + esc(name) + '" title="Show it again">' +
+      '<span class="swatch" style="background:var(--h' + circleIndex(name) + ')"></span>' +
+      '<span class="cname">' + esc(name) + '</span><span class="n">show</span></button></div>';
+  }).join('');
 }
 
 function renderNudges() {
@@ -959,6 +984,30 @@ var CHANNEL_LABEL = {
   email: 'email', message: 'message', intro: 'intro', met: 'met', note: 'note'
 };
 
+/* Click a value, type over it. Used for every field on a card. */
+function editInPlace(el, current, multiline, done) {
+  var box = document.createElement(multiline ? 'textarea' : 'input');
+  box.value = current || '';
+  box.className = 'inplace';
+  if (multiline) box.rows = Math.min(6, Math.max(2, Math.ceil((current || '').length / 40)));
+  var parent = el.parentNode;
+  parent.replaceChild(box, el);
+  box.focus();
+  box.select();
+  var finished = false;
+  var finish = function (commitIt) {
+    if (finished) return;
+    finished = true;
+    if (commitIt) done(clean(box.value)); else done(null);
+  };
+  box.addEventListener('blur', function () { finish(true); });
+  box.addEventListener('keydown', function (e) {
+    e.stopPropagation();
+    if (e.key === 'Enter' && (!multiline || e.metaKey || e.ctrlKey)) { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+}
+
 function openDossier(node) {
   var p = node && node.ref;
   if (!p || node.kind !== 'person') return;
@@ -967,10 +1016,13 @@ function openDossier(node) {
   var col = 'var(--h' + circleIndex(primaryCircle(p)) + ')';
   var lt = lastTouch(p);
 
-  function row(k, v, href) {
-    if (!v) return '<dt>' + k + '</dt><dd class="empty">—</dd>';
-    var val = href ? '<a href="' + href + esc(v) + '">' + esc(v) + '</a>' : esc(v);
-    return '<dt>' + k + '</dt><dd>' + val + '</dd>';
+  function row(k, field, v, href) {
+    var body = v
+      ? (href ? '<a href="' + href + esc(v) + '" data-keep>' + esc(v) + '</a>' : esc(v))
+      : '<span class="add">add</span>';
+    return '<dt>' + esc(k) + '</dt>' +
+      '<dd class="' + (v ? '' : 'empty') + '"><span class="val" data-field="' + esc(field) + '" tabindex="0" role="button" ' +
+      'title="Click to edit">' + body + '</span></dd>';
   }
 
   d.innerHTML =
@@ -979,7 +1031,7 @@ function openDossier(node) {
       '<div class="d-kicker"><span class="swatch" style="background:' + col + '"></span>' +
         p.log.length + ' touchpoint' + (p.log.length === 1 ? '' : 's') +
         ' · last ' + (p.log.length ? ago(lt) : 'never') + '</div>' +
-      '<h2 class="d-name">' + esc(p.name) + '</h2>' +
+      '<h2 class="d-name"><span class="val" data-field="name" tabindex="0" role="button" title="Click to rename">' + esc(p.name) + '</span></h2>' +
       '<div class="d-sub">' + esc([p.profession, p.company].filter(Boolean).join(' · ') || 'No role recorded') + '</div>' +
     '</div>' +
     '<div class="d-body">' +
@@ -994,17 +1046,18 @@ function openDossier(node) {
         '</div>' +
       '</div>' +
       '<div class="d-sec"><h4>Card</h4><dl class="fields">' +
-        row('Email', p.email, 'mailto:') + row('Phone', p.phone, 'tel:') +
-        row('Profession', p.profession) + row('Company', p.company) +
-        row('School', p.school) + row('Location', p.location) +
-        (p.birthday ? '<dt>Birthday</dt><dd>' + esc(p.birthday) + '</dd>' : '') +
-        row('Met via', p.howMet) +
+        row('Email', 'email', p.email, 'mailto:') + row('Phone', 'phone', p.phone, 'tel:') +
+        row('Profession', 'profession', p.profession) + row('Company', 'company', p.company) +
+        row('School', 'school', p.school) + row('Location', 'location', p.location) +
+        row('Birthday', 'birthday', p.birthday) + row('Met via', 'howMet', p.howMet) +
         Object.keys(p.custom || {}).map(function (k) {
-          return '<dt>' + esc(k) + '</dt><dd>' + esc(p.custom[k]) + '</dd>';
+          return '<dt>' + esc(k) + '</dt><dd><span class="val" data-custom="' + esc(k) + '" tabindex="0" role="button" ' +
+            'title="Click to edit">' + esc(p.custom[k]) + '</span></dd>';
         }).join('') +
-        (p.followUp && p.followUp.date ? '<dt>Follow up</dt><dd>' + fmtDate(p.followUp.date) +
-          (p.followUp.what ? ' — ' + esc(p.followUp.what) : '') + '</dd>' : '') +
+        (p.followUp && p.followUp.date ? '<dt>Follow up</dt><dd><span class="val" data-followup tabindex="0" role="button">' +
+          fmtDate(p.followUp.date) + '</span></dd>' : '') +
       '</dl>' +
+      '<button class="addfield" data-newfield>+ another field</button>' +
       (p.tags.length ? '<div class="tagrow" style="margin-top:9px">' + p.tags.map(function (t) {
         return '<span>#' + esc(t) + '</span>'; }).join('') + '</div>' : '') +
       '</div>' +
@@ -1028,7 +1081,6 @@ function openDossier(node) {
 
       '<div class="d-actions">' +
         '<button class="btn" data-log="' + p.id + '">Log a touchpoint</button>' +
-        '<button class="btn" data-edit="' + p.id + '">Edit fields</button>' +
         '<button class="btn" data-del="' + p.id + '" style="margin-left:auto">Delete</button>' +
       '</div>' +
     '</div>';
@@ -1047,9 +1099,41 @@ function closeDossier() {
 }
 
 $('#dossier').addEventListener('click', function (e) {
+  var p = selected && selected.ref;
+  if (!p) return;
+
+  // editing a value in place
+  var v = e.target.closest('.val');
+  if (v && !e.target.closest('[data-keep]')) {
+    var field = v.dataset.field, ckey = v.dataset.custom;
+    if (v.hasAttribute('data-followup')) {
+      return editInPlace(v, p.followUp ? new Date(p.followUp.date).toISOString().slice(0, 10) : '', false, function (val) {
+        if (val === null) return openDossier(selected);
+        var d = Date.parse(val);
+        p.followUp = isNaN(d) ? null : { date: d, what: p.followUp ? p.followUp.what : '' };
+        touch(p); save(); renderAll(); openDossier(selected);
+      });
+    }
+    if (ckey) {
+      return editInPlace(v, p.custom[ckey], false, function (val) {
+        if (val === null) return openDossier(selected);
+        if (val) p.custom[ckey] = val; else delete p.custom[ckey];
+        touch(p); save(); renderAll(); openDossier(selected);
+      });
+    }
+    if (field) {
+      var long = field === 'howMet';
+      return editInPlace(v, p[field] || '', long, function (val) {
+        if (val === null) return openDossier(selected);
+        if (field === 'name' && !val) return openDossier(selected);
+        p[field] = val;
+        touch(p); save(); renderAll(); openDossier(selected);
+      });
+    }
+  }
+
   var t = e.target.closest('button');
   if (!t) return;
-  var p = selected && selected.ref;
   if (t.id === 'd-close') return closeDossier();
   if (t.dataset.primary) { joinCircle(p, t.dataset.primary, true); save(); renderAll(); return; }
   if (t.dataset.leave) {
@@ -1059,7 +1143,28 @@ $('#dossier').addEventListener('click', function (e) {
   if (t.hasAttribute('data-addcircle')) return circlePicker(t, function (name) {
     joinCircle(p, name, false); save(); renderAll();
   });
-  if (t.dataset.edit) return personForm(p);
+  if (t.dataset.newfield !== undefined && t.hasAttribute('data-newfield')) {
+    var row = document.createElement('div');
+    row.className = 'newfield';
+    row.innerHTML = '<input class="k" placeholder="Field name"><input class="v" placeholder="Value">';
+    t.replaceWith(row);
+    var kk = row.querySelector('.k'), vv = row.querySelector('.v');
+    kk.focus();
+    var commit = function () {
+      var key = clean(kk.value).toLowerCase(), val = clean(vv.value);
+      if (key && val) { p.custom[key] = val; touch(p); save(); renderAll(); }
+      openDossier(selected);
+    };
+    [kk, vv].forEach(function (inp) {
+      inp.addEventListener('keydown', function (e) {
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); (inp === kk ? vv : { focus: commit }).focus(); if (inp === vv) commit(); }
+        if (e.key === 'Escape') { e.preventDefault(); openDossier(selected); }
+      });
+    });
+    vv.addEventListener('blur', function () { setTimeout(commit, 120); });
+    return;
+  }
   if (t.dataset.log) { $('#chat').value = 'Talked with ' + p.name + ' — '; $('#chat').focus(); return; }
   if (t.dataset.del) {
     if (!confirm('Delete ' + p.name + ' and their history?')) return;
@@ -1107,6 +1212,84 @@ function circlePicker(anchor, pick) {
   field.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); done(field.value); }
     if (e.key === 'Escape') { e.stopPropagation(); box.remove(); }
+  });
+  setTimeout(function () {
+    document.addEventListener('pointerdown', function off(e) {
+      if (!box.contains(e.target)) { box.remove(); document.removeEventListener('pointerdown', off); }
+    });
+  }, 0);
+}
+
+/* Everything a circle can be: recoloured, renamed, hidden, removed.
+   Anchored to the branch itself now that the rail is gone. */
+function circleMenu(node) {
+  var circle = node.label;
+  var old = document.getElementById('cpick');
+  if (old) old.remove();
+  var box = document.createElement('div');
+  box.id = 'cpick';
+  box.className = 'cpick circlemenu';
+  var n = membersOf(circle).length;
+  box.innerHTML = '<div class="ptitle">' + esc(circle) + ' · ' + plural(n, 'person', 'people') + '</div>' +
+    '<div class="pgrid">' + PIGMENTS.map(function (h) {
+      return '<button data-hue="' + h.i + '" aria-label="' + h.name + '" title="' + h.name + '"' +
+        (circleIndex(circle) === h.i ? ' data-on="1"' : '') +
+        '><span style="background:var(--h' + h.i + ')"></span></button>';
+    }).join('') + '</div>' +
+    '<div class="mrow"><button data-act="rename">Rename…</button>' +
+    '<button data-act="hide">Hide</button>' +
+    '<button data-act="delete" class="danger">Delete circle</button></div>';
+  document.body.appendChild(box);
+
+  var p = toScreen(node.x, node.y);
+  var r = canvas.getBoundingClientRect();
+  box.style.left = Math.max(8, Math.min(window.innerWidth - box.offsetWidth - 8, r.left + p[0] - box.offsetWidth / 2)) + 'px';
+  box.style.top = Math.max(8, Math.min(window.innerHeight - box.offsetHeight - 8, r.top + p[1] + 18)) + 'px';
+
+  box.addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.hue) {
+      snapshot(circle + ' colour');
+      setCircleColor(circle, +b.dataset.hue);
+      save(); renderAll(); box.remove();
+      return;
+    }
+    var act = b.dataset.act;
+    box.remove();
+    if (act === 'hide') { hidden[circle] = true; renderAll(); toast('Hid ' + circle, 'Show', function () { delete hidden[circle]; renderAll(); }); }
+    if (act === 'delete') {
+      pendingPlan = {
+        summary: 'Delete the ' + circle + ' circle',
+        detail: n ? plural(n, 'person', 'people') + ' stay on the map, just no longer filed there.' : 'Nobody is in it.',
+        run: function () { membersOf(circle).forEach(function (x) { leaveCircle(x, circle); }); dropCircle(circle); }
+      };
+      renderPlan();
+    }
+    if (act === 'rename') {
+      var wrap = document.createElement('div');
+      wrap.className = 'cpick renamer';
+      wrap.innerHTML = '<input value="' + esc(circle) + '" aria-label="New name"><button class="btn">Rename</button>';
+      document.body.appendChild(wrap);
+      wrap.style.left = box.style.left; wrap.style.top = box.style.top;
+      var f = wrap.querySelector('input');
+      f.focus(); f.select();
+      var go = function () {
+        var to = clean(f.value);
+        wrap.remove();
+        if (!to || to === circle) return;
+        snapshot('Rename ' + circle);
+        renameCircle(circle, to);
+        save(); renderAll();
+        toast(circle + ' is now ' + to, 'Undo', undo);
+      };
+      wrap.querySelector('button').addEventListener('click', go);
+      f.addEventListener('keydown', function (e2) {
+        e2.stopPropagation();
+        if (e2.key === 'Enter') go();
+        if (e2.key === 'Escape') wrap.remove();
+      });
+    }
   });
   setTimeout(function () {
     document.addEventListener('pointerdown', function off(e) {
@@ -1631,7 +1814,10 @@ function helpModal() {
       'tidy the map</div>' +
       '<p>Colours can also be set by clicking the dot beside a circle in the list at the lower left.</p></section>' +
     '<section><h5>Circles</h5>' +
-      '<p>Someone can be in as many as you like. <b>Drag a person onto a circle</b> to file them there — it becomes their main one, which is the colour their dot takes. Their card lists every circle they are in: click one to promote it, × to take them out, <em>+ circle</em> to add another. The <b>+</b> beside “Circles” makes a new one, and an empty circle is kept as a branch until you delete it.</p></section>' +
+      '<p>Someone can be in as many as you like. <b>Drag a person onto a circle</b> to file them there — it becomes their main one, which is the colour their dot takes. Their card lists every circle they are in: click one to promote it, × to take them out, <em>+ circle</em> to add another.</p>' +
+      '<p><b>Click a circle on the map</b> to recolour, rename, hide or delete it. The button beside <em>Add person</em> makes a new one, and an empty circle stays as a branch until you delete it — which is what makes “remove everyone but keep the categories” worth saying.</p></section>' +
+    '<section><h5>Fixing a card</h5>' +
+      '<p>Click any value on someone’s card and type over it — the name at the top too. Empty fields say <em>add</em>; click to fill them. <em>+ another field</em> at the bottom takes anything the standard ones do not cover.</p></section>' +
     '<section><h5>Commands</h5>' +
       '<div class="ex">/undo            — take back the last change\n/me Ben Fisher   — name the centre\n/import          — bring in a spreadsheet\n/export          — copy it all back out\n/sample          — load or clear the sample map\n/help            — this</div></section>' +
     '<section><h5>On your phone</h5>' +
@@ -2205,7 +2391,7 @@ canvas.addEventListener('pointerup', function (e) {
 
   if (!moved) {
     if (n && n.kind === 'person') openDossier(n);
-    else if (n && n.kind === 'circle') { hover = n; needsDraw = true; }
+    else if (n && n.kind === 'circle') { circleMenu(n); }
     else if (n && n.kind === 'me') { closeDossier(); }
     else closeDossier();
   }
@@ -2335,7 +2521,7 @@ function syncSampleBtn() {
 
 $('#btn-add').addEventListener('click', function () { personForm(null); });
 $('#btn-newcircle').addEventListener('click', function (e) {
-  circlePicker(e.currentTarget, function (name) {
+  circlePicker(e.currentTarget.closest('button'), function (name) {
     if (!name) return;
     if (!state.circles) state.circles = [];
     if (state.circles.some(function (c) { return c.toLowerCase() === name.toLowerCase(); })) {

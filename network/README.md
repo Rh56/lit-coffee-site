@@ -76,6 +76,24 @@ password manager: lose it and the map is unrecoverable, there is no reset.
 Payloads are tagged with their format (`v2:`), so raising the iteration count
 again later will not lock anyone out of an existing space.
 
+### Keeping the project awake
+
+Supabase pauses free projects after about a week of low activity — nothing is
+lost, but sync stops until you restart it from their dashboard. The workflow at
+`.github/workflows/keep-supabase-awake.yml` pings the project every three days
+so that does not happen. It needs two repository secrets (Settings → Secrets and
+variables → Actions):
+
+| secret | value |
+| --- | --- |
+| `SUPABASE_URL` | `https://xxxxxxxx.supabase.co` |
+| `SUPABASE_PUBLISHABLE_KEY` | the publishable (anon) key — never the secret one |
+
+The job prints only an HTTP status code; the URL, the key and the row never
+reach the log, which matters because logs on a public repository are public.
+GitHub switches scheduled workflows off in a repository that sees no activity
+for 60 days — it emails first, and any push turns them back on.
+
 ### How two devices agree
 
 Every person carries an `updated` stamp and deletions leave a tombstone, so a
@@ -134,8 +152,11 @@ from right:
 - circles can come from a column of yours, from company, from school, or
   everyone into one you name.
 
-Export gives the spreadsheet view (CSV, custom fields folded into notes) or a
-full JSON backup, which Import also accepts.
+Export downloads a real file — `rootwork-YYYY-MM-DD.csv` for the spreadsheet
+view (custom fields folded into notes) or `.json` for a full backup, which
+Import also accepts. *Copy instead* is still there for pasting straight into a
+sheet. Inside the published artifact the page cannot start its own download, so
+that build asks the viewer's runtime to save the file for you.
 
 ## Circles
 

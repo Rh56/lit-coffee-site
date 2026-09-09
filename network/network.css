@@ -887,3 +887,7 @@ dd:hover .jump, .jump:focus-visible{ opacity:1; }
   background:linear-gradient(to bottom, transparent, var(--panel) 30%);
 }
 .d-sec + .d-sec{ margin-top:4px; }
+.sync .sleepnote{
+  border-left:2px solid var(--rule); padding-left:10px;
+  font-size:12.5px; color:var(--muted);
+}

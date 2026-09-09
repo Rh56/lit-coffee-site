@@ -2201,6 +2201,26 @@ function toCSV() {
   return lines.join('\n');
 }
 
+/* Hands the browser a real file. The published-artifact sandbox blocks a page
+   from starting its own download, so that path asks the viewer's runtime
+   instead; copying to the clipboard stays as the last resort. */
+function saveFile(filename, text, mime) {
+  try {
+    var blob = new Blob([text], { type: (mime || 'text/plain') + ';charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 400);
+    return true;
+  } catch (e) { return false; }
+}
+
+function stamp() { return new Date().toISOString().slice(0, 10); }
+
 function exportModal() {
   var body = '<div class="io">' +
     '<p style="margin:0 0 9px;font-size:13px;color:var(--muted);line-height:1.55">' +
@@ -2209,42 +2229,56 @@ function exportModal() {
     '<div style="display:flex;gap:6px;margin-bottom:8px">' +
       '<button class="btn" id="x-csv" data-on="1">Spreadsheet (CSV)</button>' +
       '<button class="btn" id="x-json">Backup (JSON)</button></div>' +
-    '<textarea id="x-out" readonly></textarea></div>';
+    '<textarea id="x-out" readonly aria-label="Exported data"></textarea></div>';
   var m = modal('Export', state.people.length + ' people', body,
-    '<button class="btn primary" id="x-copy">Copy</button>' +
-    '<button class="btn" id="x-save" hidden>Save file</button>' +
+    '<button class="btn primary" id="x-save">Download</button>' +
+    '<button class="btn" id="x-copy">Copy instead</button>' +
     '<button class="btn" data-close>Done</button>');
 
   var out = m.querySelector('#x-out'), mode = 'csv';
+  function filename() { return 'rootwork-' + stamp() + (mode === 'csv' ? '.csv' : '.json'); }
   function render() {
     out.value = mode === 'csv' ? toCSV() : JSON.stringify(state, null, 2);
     m.querySelector('#x-csv').style.borderColor = mode === 'csv' ? 'var(--accent)' : '';
     m.querySelector('#x-json').style.borderColor = mode === 'json' ? 'var(--accent)' : '';
+    m.querySelector('#x-save').textContent = 'Download ' + (mode === 'csv' ? '.csv' : '.json');
   }
   m.querySelector('#x-csv').onclick = function () { mode = 'csv'; render(); };
   m.querySelector('#x-json').onclick = function () { mode = 'json'; render(); };
+
+  m.querySelector('#x-save').onclick = function () {
+    var name = filename();
+    var mime = mode === 'csv' ? 'text/csv' : 'application/json';
+
+    // inside a published artifact the page cannot start a download itself
+    if (window.claude && typeof window.claude.use === 'function') {
+      window.claude.use('downloads').then(function (dl) {
+        if (dl) {
+          dl.save({ filename: name, data: out.value })
+            .then(function () { toast('Saved ' + name); }, function () { });
+        } else if (saveFile(name, out.value, mime)) toast('Downloaded ' + name);
+        else toast('Could not start the download — use Copy instead');
+      }, function () { saveFile(name, out.value, mime); });
+      return;
+    }
+    if (saveFile(name, out.value, mime)) toast('Downloaded ' + name);
+    else toast('Could not start the download — use Copy instead');
+  };
+
   m.querySelector('#x-copy').onclick = function () {
+    out.focus();
     out.select();
-    var done = function () { toast('Copied'); };
-    if (navigator.clipboard) navigator.clipboard.writeText(out.value).then(done, function () { document.execCommand('copy'); done(); });
-    else { document.execCommand('copy'); done(); }
+    out.setSelectionRange(0, out.value.length);        // iOS needs the range set
+    var done = function () { toast('Copied — ' + out.value.split('\n').length + ' lines'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(out.value).then(done, function () {
+        toast(document.execCommand('copy') ? 'Copied' : 'Select the text and copy it by hand');
+      });
+    } else {
+      toast(document.execCommand('copy') ? 'Copied' : 'Select the text and copy it by hand');
+    }
   };
   render();
-
-  // Saving a real file only works where the viewer grants it; hide it otherwise.
-  if (window.claude && typeof window.claude.use === 'function') {
-    window.claude.use('downloads').then(function (dl) {
-      if (!dl) return;
-      var btn = m.querySelector('#x-save');
-      btn.hidden = false;
-      btn.onclick = function () {
-        dl.save({
-          filename: mode === 'csv' ? 'rootwork.csv' : 'rootwork-backup.json',
-          data: out.value
-        }).then(function () { toast('Saved'); }, function () { /* viewer declined */ });
-      };
-    }, function () { });
-  }
 }
 
 function helpModal() {

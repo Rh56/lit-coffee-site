@@ -405,6 +405,11 @@ function dialog() {
       '<p class="lead" style="margin-top:10px">This device will take on the map from the server; anything only stored here now is replaced.</p>' +
     '</div>' +
 
+    (connected
+      ? '<p class="lead sleepnote">Free Supabase projects are paused after about a week of no requests. ' +
+        'The <span class="mono">Keep Supabase awake</span> workflow in your repository pings it every three days, ' +
+        'so this keeps running even in a quiet stretch. A paused project is not lost — it restarts from the Supabase dashboard.</p>'
+      : '') +
     '<details class="what"><summary>What the server can and cannot see</summary>' +
       '<p>The row holds a random id, a blob of AES-GCM ciphertext and a timestamp — no names, no emails, nothing legible. ' +
       'The key is derived from your passphrase on this device (PBKDF2, 600,000 rounds) and is never transmitted. ' +

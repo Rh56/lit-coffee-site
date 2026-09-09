@@ -1,0 +1,57 @@
+# Free Supabase projects are paused after about a week of low activity. This
+# pings the project every three days so it stays awake even if Rootwork is not
+# opened. It reads two repository secrets and prints only the status code —
+# never the URL, the key, or the row — because logs on a public repo are public.
+#
+# One-time setup: repo Settings -> Secrets and variables -> Actions -> New
+# repository secret, twice:
+#   SUPABASE_URL               https://xxxxxxxx.supabase.co
+#   SUPABASE_PUBLISHABLE_KEY   the publishable (anon) key, never the secret one
+#
+# Note: GitHub switches off scheduled workflows in a repository with no
+# activity for 60 days. It emails first, and any push turns them back on.
+
+name: Keep Supabase awake
+
+on:
+  schedule:
+    - cron: '17 9 */3 * *'      # 09:17 UTC, every third day
+  workflow_dispatch:            # and whenever you press the button
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping the project
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          set -u
+          if [ -z "${SUPABASE_URL}" ] || [ -z "${SUPABASE_PUBLISHABLE_KEY}" ]; then
+            echo "Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in repository secrets first."
+            exit 1
+          fi
+
+          base="${SUPABASE_URL%/}"
+          code=0
+
+          # A paused project can take a moment to answer, so give it three goes.
+          for attempt in 1 2 3; do
+            code=$(curl -sS -m 45 -o /dev/null -w '%{http_code}' \
+              -H "apikey: ${SUPABASE_PUBLISHABLE_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_PUBLISHABLE_KEY}" \
+              "${base}/rest/v1/rootwork?select=id&limit=0" || echo 000)
+            echo "attempt ${attempt}: HTTP ${code}"
+            case "${code}" in
+              200|206) echo "Project is awake."; exit 0 ;;
+            esac
+            sleep 20
+          done
+
+          echo "No healthy response after three attempts (last status ${code})."
+          echo "If this keeps failing, check the project in the Supabase dashboard."
+          exit 1

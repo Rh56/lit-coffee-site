@@ -31,8 +31,21 @@ jobs:
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
         run: |
           set -u
-          if [ -z "${SUPABASE_URL}" ] || [ -z "${SUPABASE_PUBLISHABLE_KEY}" ]; then
-            echo "Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in repository secrets first."
+          missing=""
+          [ -z "${SUPABASE_URL}" ] && missing="SUPABASE_URL"
+          [ -z "${SUPABASE_PUBLISHABLE_KEY}" ] && missing="${missing:+$missing and }SUPABASE_PUBLISHABLE_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error title=Secrets missing::This job cannot reach Supabase until ${missing} is set."
+            echo ""
+            echo "  Nothing is broken in the workflow — it is waiting on two values."
+            echo ""
+            echo "  1. Open https://github.com/${GITHUB_REPOSITORY}/settings/secrets/actions"
+            echo "  2. New repository secret, twice:"
+            echo "       SUPABASE_URL              https://xxxxxxxx.supabase.co"
+            echo "       SUPABASE_PUBLISHABLE_KEY  the publishable (anon) key, NOT the secret one"
+            echo "     Both are in Supabase: Project Settings -> API Keys."
+            echo "  3. Actions -> Keep Supabase awake -> Run workflow, to check it straight away."
+            echo ""
             exit 1
           fi
 

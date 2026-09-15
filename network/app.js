@@ -12,8 +12,8 @@ var KEY = 'rootwork.v1';
 var DAY = 86400000;
 var COLD_DAYS = 90;
 
-var state = { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, circleTombstones: {}, coldDays: 90, settingsAt: 0, meUpdated: 0, demo: false, seq: 1 };
-var DEFAULTS = function () { return { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, circleTombstones: {}, coldDays: 90, settingsAt: 0, meUpdated: 0, demo: false, seq: 1 }; };
+var state = { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, circleTombstones: {}, coldDays: 90, layout: 'orbit', settingsAt: 0, meUpdated: 0, demo: false, seq: 1 };
+var DEFAULTS = function () { return { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, circleTombstones: {}, coldDays: 90, layout: 'orbit', settingsAt: 0, meUpdated: 0, demo: false, seq: 1 }; };
 var applyingRemote = false;
 var pendingRemote = null;
 
@@ -648,7 +648,25 @@ function commit(draft) {
    circle is nudged toward its own ray so branches don't tangle. */
 
 var nodes = [], links = [], byId = {};
-var alpha = 0;
+
+/* ------------------------------------------------------------ layouts -----
+   Positions are computed, not simulated. Every node is given a target and
+   eased towards it, which means no jitter, no drift, and no two dots landing
+   on top of each other — spacing is decided up front by how many there are.
+   Switching layout animates for free, because only the targets change. */
+
+var LAYOUTS = [
+  { id: 'orbit',   name: 'Orbit',   hint: 'You at the centre, each circle a fan around you' },
+  { id: 'tree',    name: 'Tree',    hint: 'A hierarchy reading left to right' },
+  { id: 'columns', name: 'Columns', hint: 'One column per circle, names in a list' }
+];
+
+function layoutId() {
+  var id = state.layout;
+  return LAYOUTS.some(function (l) { return l.id === id; }) ? id : 'orbit';
+}
+
+var R_PERSON = 6, R_HUB = 9, R_ME = 13;
 
 function rebuild() {
   var prev = {};
@@ -660,7 +678,6 @@ function rebuild() {
   });
 
   var me = mk('me', 'me', state.me.name || 'Me', null, 0);
-  me.x = 0; me.y = 0;
 
   var circles = [];
   (state.circles || []).forEach(function (c) { if (c !== 'Unsorted' && !hidden[c]) circles.push(c); });
@@ -669,30 +686,10 @@ function rebuild() {
   });
   circles.sort(function (a, b) { return circleIndex(a) - circleIndex(b); });
 
-  // Each circle owns a wedge sized by its population, so a School of thirty
-  // gets the room it needs and a Family of two does not sprawl.
-  var counts = circles.map(function (c) {
-    return Math.max(1, visible.filter(function (p) { return inCircle(p, c) && !hidden[c]; }).length);
-  });
-  var total = counts.reduce(function (a, b) { return a + b; }, 0) || 1;
-  var cursor = -Math.PI / 2;
-
-  circles.forEach(function (c, i) {
-    var share = counts[i] / total;
-    var span = share * Math.PI * 2;
+  circles.forEach(function (c) {
     var node = mk('c:' + c, 'circle', c, c, circleIndex(c));
-    node.r = 6 + Math.min(13, Math.sqrt(counts[i]) * 3);
-    node.angle = cursor + span / 2;
-    node.span = span;
-    node.weight = counts[i];
-    // busier circles stand a little further out, so their people have room
-    node.ring = 170 + Math.min(190, Math.sqrt(counts[i]) * 42);
-    cursor += span;
-    if (!prev[node.id]) {
-      node.x = Math.cos(node.angle) * node.ring;
-      node.y = Math.sin(node.angle) * node.ring;
-    }
-    links.push({ a: me, b: node, len: node.ring, k: 0.02 });
+    node.members = [];
+    links.push({ a: me, b: node, trunk: true });
   });
 
   visible.forEach(function (p) {
@@ -703,18 +700,11 @@ function rebuild() {
     n.circles = mine;
     n.strength = p.log.length;
     n.cold = isCold(p);
-    n.r = 5 + Math.min(12, Math.sqrt(n.strength) * 3.1);
-    if (!prev[n.id]) {
-      var a = (parent.angle || 0) + (Math.random() - 0.5) * 1.1;
-      n.x = parent.x + Math.cos(a) * 105;
-      n.y = parent.y + Math.sin(a) * 105;
-      n.born = performance.now();
-    }
-    links.push({ a: parent, b: n, len: 92 + Math.min(30, n.strength * 3), k: 0.035 });
-    // a second or third circle pulls more gently, so the person sits between them
+    if (parent.members) parent.members.push(n);
+    links.push({ a: parent, b: n });
     mine.slice(1).forEach(function (c) {
       var other = byId['c:' + c];
-      if (other) links.push({ a: other, b: n, len: 118, k: 0.016, secondary: true });
+      if (other) links.push({ a: other, b: n, secondary: true });
     });
   });
 
@@ -723,8 +713,7 @@ function rebuild() {
     if (!a) return;
     p.ties.forEach(function (t) {
       var b = byId[t.id];
-      if (!b) return;
-      links.push({ a: a, b: b, len: 96, k: 0.008, tie: true, kind: t.kind });
+      if (b) links.push({ a: a, b: b, tie: true, kind: t.kind });
     });
   });
 
@@ -732,74 +721,193 @@ function rebuild() {
     var old = prev[id];
     var n = {
       id: id, kind: kind, label: label, ref: ref, ci: ci,
-      x: old ? old.x : (Math.random() - 0.5) * 60,
-      y: old ? old.y : (Math.random() - 0.5) * 60,
-      vx: 0, vy: 0, r: kind === 'me' ? 16 : kind === 'circle' ? 8 : 6,
+      x: old ? old.x : 0, y: old ? old.y : 0,
+      tx: 0, ty: 0,
+      r: kind === 'me' ? R_ME : kind === 'circle' ? R_HUB : R_PERSON,
       angle: old ? old.angle : 0,
-      fx: old ? old.fx : null, fy: old ? old.fy : null,
+      fx: null, fy: null,
       born: old ? old.born : 0
     };
     nodes.push(n); byId[id] = n;
     return n;
   }
 
-  alpha = 1;
+  computeLayout();
+
+  // anything new starts at its parent and grows outward, so additions read
+  nodes.forEach(function (n) {
+    if (prev[n.id]) return;
+    n.born = performance.now();
+    var from = n.parent || byId['me'];
+    n.x = from ? from.x : n.tx;
+    n.y = from ? from.y : n.ty;
+  });
+
+  settling = true;
   if (nodes.length !== lastNodeCount) { wantFit = true; lastNodeCount = nodes.length; }
   updateHint();
 }
 
-function tick() {
-  if (alpha < 0.005) return false;
-  var i, j, a, b, dx, dy, d, f;
+function computeLayout() {
+  var mode = layoutId();
+  var me = byId['me'];
+  var hubs = nodes.filter(function (n) { return n.kind === 'circle'; });
+  hubs.forEach(function (h) {
+    h.members.sort(function (a, b) { return a.label.localeCompare(b.label); });
+  });
+  var loose = nodes.filter(function (n) { return n.kind === 'person' && n.parent === me; });
 
-  for (i = 0; i < links.length; i++) {
-    var L = links[i]; a = L.a; b = L.b;
-    dx = b.x - a.x; dy = b.y - a.y;
-    d = Math.sqrt(dx * dx + dy * dy) || 0.01;
-    f = (d - L.len) * L.k * alpha;
-    dx = dx / d * f; dy = dy / d * f;
-    b.vx -= dx; b.vy -= dy;
-    a.vx += dx * 0.35; a.vy += dy * 0.35;
-  }
-
-  for (i = 0; i < nodes.length; i++) {
-    a = nodes[i];
-    for (j = i + 1; j < nodes.length; j++) {
-      b = nodes[j];
-      dx = b.x - a.x; dy = b.y - a.y;
-      var d2 = dx * dx + dy * dy;
-      if (d2 > 62500) continue;
-      d = Math.sqrt(d2) || 0.01;
-      var min = (a.r + b.r) * 3 + 34;
-      f = (min * min / d2) * 0.22 * alpha;
-      if (f > 3) f = 3;
-      dx = dx / d * f; dy = dy / d * f;
-      a.vx -= dx; a.vy -= dy; b.vx += dx; b.vy += dy;
-    }
-  }
-
-  for (i = 0; i < nodes.length; i++) {
-    a = nodes[i];
-    if (a.kind === 'circle') {                    // hold its own ray
-      var ring = a.ring || 200;
-      var tx = Math.cos(a.angle) * ring, ty = Math.sin(a.angle) * ring;
-      a.vx += (tx - a.x) * 0.012 * alpha;
-      a.vy += (ty - a.y) * 0.012 * alpha;
-    } else if (a.kind === 'person' && a.parent) { // drift outward from the trunk
-      var pa = Math.atan2(a.parent.y, a.parent.x);
-      var push = 0.28 + Math.min(0.3, (a.parent.weight || 1) * 0.012);
-      a.vx += Math.cos(pa) * push * alpha;
-      a.vy += Math.sin(pa) * push * alpha;
-    }
-    if (a.kind === 'me') { a.x = 0; a.y = 0; a.vx = a.vy = 0; continue; }
-    if (a.fx !== null && a.fx !== undefined) { a.x = a.fx; a.y = a.fy; a.vx = a.vy = 0; continue; }
-    a.vx *= 0.82; a.vy *= 0.82;
-    a.x += a.vx; a.y += a.vy;
-  }
-
-  alpha *= 0.985;
-  return true;
+  if (mode === 'tree') return layoutTree(me, hubs, loose);
+  if (mode === 'columns') return layoutColumns(me, hubs, loose);
+  return layoutOrbit(me, hubs, loose);
 }
+
+/* Orbit — you at the centre, each circle a small rosette around its own hub.
+   People are placed around their hub rather than on one huge arc through the
+   whole map, and the hub ring is widened until every rosette fits side by side,
+   so two circles can never grow into each other. */
+function layoutOrbit(me, hubs, loose) {
+  me.tx = 0; me.ty = 0;
+
+  var MIN_ARC = 116;        // world units between neighbours on the same ring
+  var RING0 = 100, RING_STEP = 78;
+  var SPREAD = 1.9;         // how far a rosette wraps around its hub, radians
+  var PAD = 46;             // breathing room between neighbouring rosettes
+
+  var groups = hubs.slice();
+  if (loose.length) groups.push({ synthetic: true, members: loose });
+  if (!groups.length) return;
+
+  // 1. lay each circle out in its own frame, and note how big it ends up
+  groups.forEach(function (g) {
+    var left = g.members.slice(), ring = 0;
+    g.local = [];
+    g.cr = 0;
+    while (left.length) {
+      var radius = RING0 + ring * RING_STEP;
+      var cap = Math.max(2, Math.floor((SPREAD * radius) / MIN_ARC));
+      var take = left.splice(0, Math.min(cap, left.length));
+      var step = take.length > 1 ? SPREAD / take.length : 0;
+      var start = -step * (take.length - 1) / 2;
+      take.forEach(function (n, i) { g.local.push({ n: n, r: radius, a: start + step * i }); });
+      g.cr = radius;
+      ring++;
+    }
+    if (!g.members.length) g.cr = 0;
+  });
+
+  // 2. push the hub ring out until every rosette has room on it
+  var HUB_R = 205;
+  for (var iter = 0; iter < 60; iter++) {
+    var need = groups.reduce(function (sum, g) {
+      return sum + 2 * Math.atan((g.cr + PAD) / HUB_R);
+    }, 0);
+    if (need <= Math.PI * 2 * 0.96) break;
+    HUB_R += 28;
+  }
+
+  // 3. hand out the angle, sharing whatever is spare evenly
+  var needs = groups.map(function (g) { return 2 * Math.atan((g.cr + PAD) / HUB_R); });
+  var total = needs.reduce(function (a, b) { return a + b; }, 0);
+  var slack = Math.max(0, Math.PI * 2 - total) / groups.length;
+  var cursor = -Math.PI / 2;
+
+  groups.forEach(function (g, gi) {
+    var span = needs[gi] + slack;
+    var mid = cursor + span / 2;
+    cursor += span;
+    var hx = Math.cos(mid) * HUB_R, hy = Math.sin(mid) * HUB_R;
+    if (!g.synthetic) {
+      g.tx = hx; g.ty = hy;
+      g.angle = mid; g.span = span; g.weight = g.members.length;
+    }
+    g.local.forEach(function (item) {
+      var a = mid + item.a;                    // the rosette opens outward
+      item.n.tx = hx + Math.cos(a) * item.r;
+      item.n.ty = hy + Math.sin(a) * item.r;
+      item.n.angle = a;
+    });
+  });
+}
+
+/* Tree — depth left to right, leaves stacked. Names sit to the right of their
+   dot, which is how a list wants to be read. */
+function layoutTree(me, hubs, loose) {
+  var ROW = 34, COL = 268;
+  var groups = hubs.slice().sort(function (a, b) { return b.members.length - a.members.length; });
+  if (loose.length) groups.push({ synthetic: true, members: loose });
+
+  var y = 0;
+  groups.forEach(function (g, gi) {
+    if (gi) y += ROW * 0.7;                       // a gap between branches
+    var first = y;
+    if (!g.members.length) { y += ROW; }
+    g.members.forEach(function (n) {
+      n.tx = COL * 2;
+      n.ty = y;
+      y += ROW;
+    });
+    var last = y - ROW;
+    if (!g.synthetic) {
+      g.tx = COL;
+      g.ty = g.members.length ? (first + last) / 2 : first;
+    }
+  });
+
+  var all = nodes.filter(function (n) { return n !== me; });
+  var mid = all.length
+    ? all.reduce(function (a, n) { return a + n.ty; }, 0) / all.length
+    : 0;
+  me.tx = 0; me.ty = mid;
+
+  // centre the whole thing on the origin so the camera maths stays simple
+  nodes.forEach(function (n) { n.ty -= mid; });
+  me.ty = 0;
+}
+
+/* Columns — one column per circle, alphabetical. The densest view, and the
+   only one where nothing can ever overlap. */
+function layoutColumns(me, hubs, loose) {
+  var COLW = 214, ROW = 30, HEAD = 58;
+  var groups = hubs.slice();
+  if (loose.length) groups.push({ synthetic: true, members: loose });
+  if (!groups.length) { me.tx = 0; me.ty = 0; return; }
+
+  var width = (groups.length - 1) * COLW;
+  groups.forEach(function (g, gi) {
+    var x = gi * COLW - width / 2;
+    if (!g.synthetic) { g.tx = x; g.ty = 0; }
+    g.members.forEach(function (n, i) {
+      n.tx = x;
+      n.ty = HEAD + i * ROW;
+    });
+  });
+
+  me.tx = 0;
+  me.ty = -96;
+}
+
+/* One easing step towards the targets. Returns true while anything is still
+   moving, so the render loop knows to keep drawing. */
+var settling = true;
+function tick() {
+  if (!settling) return false;
+  var moving = false;
+  var ease = 0.16;
+  for (var i = 0; i < nodes.length; i++) {
+    var n = nodes[i];
+    if (n.fx !== null && n.fx !== undefined) { n.x = n.fx; n.y = n.fy; moving = true; continue; }
+    var dx = n.tx - n.x, dy = n.ty - n.y;
+    if (Math.abs(dx) < 0.12 && Math.abs(dy) < 0.12) { n.x = n.tx; n.y = n.ty; continue; }
+    n.x += dx * ease;
+    n.y += dy * ease;
+    moving = true;
+  }
+  if (!moving) settling = false;
+  return moving;
+}
+
+function kick() { settling = true; needsDraw = true; }
 
 /* ---------------------------------------------------------------- plate -- */
 
@@ -839,9 +947,10 @@ function toWorld(sx, sy) { return [(sx - W / 2) / cam.k + cam.x, (sy - H / 2) / 
    The way to get back to something readable after an afternoon of shoving. */
 function tidyMap() {
   nodes.forEach(function (n) { n.fx = n.fy = null; });
-  alpha = 1;
-  for (var i = 0; i < 240; i++) tick();
-  fit();
+  computeLayout();
+  settling = true;
+  for (var i = 0; i < 60; i++) tick();
+  fitSmooth();
   needsDraw = true;
 }
 
@@ -851,19 +960,41 @@ function fitTarget() {
   if (!nodes.length) return null;
   var minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
   nodes.forEach(function (n) {
-    minx = Math.min(minx, n.x - 55); maxx = Math.max(maxx, n.x + 55);
-    miny = Math.min(miny, n.y - 34); maxy = Math.max(maxy, n.y + 34);
+    minx = Math.min(minx, n.x); maxx = Math.max(maxx, n.x);
+    miny = Math.min(miny, n.y); maxy = Math.max(maxy, n.y);
   });
+
   var wide = W > 880;
   var L = wide ? 244 : 34, R = (selected && wide ? 400 : 34), T = 16, B = wide ? 132 : 150;
   var availW = Math.max(120, W - L - R), availH = Math.max(120, H - T - B);
-  var k = Math.max(0.25, Math.min(1.4, Math.min(availW / (maxx - minx || 1), availH / (maxy - miny || 1))));
+  var floorK = W < 620 ? 0.52 : 0.34;      // legible beats complete
+  var listy = layoutId() !== 'orbit';
+
+  // Names live in screen space, so the room they need depends on the zoom —
+  // solve for it in a couple of passes rather than cropping every label.
+  var k = floorK;
+  var padL = 0, padR = 0, padY = 0;
+  for (var pass = 0; pass < 3; pass++) {
+    padR = (listy ? 168 : 90) / k;
+    padL = (listy ? 20 : 90) / k;
+    padY = (listy ? 26 : 34) / k;
+    var wNeed = (maxx + padR) - (minx - padL);
+    var hNeed = (maxy + padY) - (miny - padY);
+    k = Math.max(floorK, Math.min(1.4, Math.min(availW / (wNeed || 1), availH / (hNeed || 1))));
+  }
+
+  var bx0 = minx - padL, bx1 = maxx + padR;
+  var by0 = miny - padY, by1 = maxy + padY;
   var cx = L + availW / 2, cy = T + availH / 2;
-  return {
-    k: k,
-    x: (minx + maxx) / 2 - (cx - W / 2) / k,
-    y: (miny + maxy) / 2 - (cy - H / 2) / k
-  };
+  var x = (bx0 + bx1) / 2 - (cx - W / 2) / k;
+  var y = (by0 + by1) / 2 - (cy - H / 2) / k;
+
+  // If the floor stopped us zooming out far enough, anchor to the top left
+  // rather than centring — you read from the start and pan on from there.
+  if ((bx1 - bx0) * k > availW) x = bx0 + (availW / 2) / k - (cx - W / 2) / k;
+  if ((by1 - by0) * k > availH) y = by0 + (availH / 2) / k - (cy - H / 2) / k;
+
+  return { k: k, x: x, y: y };
 }
 
 function fit() {
@@ -922,32 +1053,6 @@ function branch(a, b, w0, w1, color, alphaMul) {
   ctx.fill();
 }
 
-function drawPlate() {
-  // rings + rim ticks: a plotting surface, not a void
-  ctx.save();
-  ctx.lineWidth = 1 / cam.k;
-  var rings = [110, 200, 300, 410, 530];
-  for (var i = 0; i < rings.length; i++) {
-    ctx.beginPath();
-    ctx.arc(0, 0, rings[i], 0, Math.PI * 2);
-    ctx.strokeStyle = mix(C.rule, i === 1 ? 0.85 : 0.4);
-    ctx.setLineDash(i === 1 ? [] : [3 / cam.k, 6 / cam.k]);
-    ctx.stroke();
-  }
-  ctx.setLineDash([]);
-  ctx.strokeStyle = mix(C.rule, 0.8);
-  for (var a = 0; a < 72; a++) {
-    var th = a / 72 * Math.PI * 2;
-    var big = a % 6 === 0;
-    var r0 = 530, r1 = 530 + (big ? 9 : 4);
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(th) * r0, Math.sin(th) * r0);
-    ctx.lineTo(Math.cos(th) * r1, Math.sin(th) * r1);
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
 function draw() {
   if (!W) return;
   ctx.clearRect(0, 0, W, H);
@@ -955,8 +1060,6 @@ function draw() {
   ctx.translate(W / 2, H / 2);
   ctx.scale(cam.k, cam.k);
   ctx.translate(-cam.x, -cam.y);
-
-  drawPlate();
 
   var focus = hover || selected;
   var DIM = hover ? 0.24 : 0.72;   // hovering focuses hard; a card open only softens
@@ -1009,10 +1112,43 @@ function draw() {
       ctx.restore();
       return;
     }
+    var mode = layoutId();
     var trunk = L.b.kind === 'circle';
-    var fade = (L.b.cold ? 0.5 : 1) * dim * (trunk ? 0.5 : 1) * (L.secondary ? 0.5 : 1);
+    var fade = (L.b.cold ? 0.55 : 1) * dim * (trunk ? 0.55 : 1) * (L.secondary ? 0.5 : 1);
     var hue = L.secondary ? (C.hues[circleIndex(L.a.label)] || C.accent) : hueOf(L.b);
-    branch(L.a, L.b, trunk ? 7 : (L.secondary ? 3 : 5), trunk ? 2.8 : 1.1, hue, fade);
+
+    if (mode === 'orbit') {
+      branch(L.a, L.b, trunk ? 7 : (L.secondary ? 3 : 5), trunk ? 2.8 : 1.1, hue, fade);
+      return;
+    }
+
+    // Tree and Columns get square connectors — a diagram, not a plant
+    ctx.save();
+    ctx.lineWidth = (trunk ? 1.6 : 1.2) / cam.k;
+    ctx.strokeStyle = mix(hue, (trunk ? 0.5 : 0.62) * fade);
+    if (L.secondary) ctx.setLineDash([4 / cam.k, 4 / cam.k]);
+    ctx.beginPath();
+    if (mode === 'tree') {
+      var midX = (L.a.x + L.b.x) / 2;
+      ctx.moveTo(L.a.x + L.a.r, L.a.y);
+      ctx.lineTo(midX, L.a.y);
+      ctx.lineTo(midX, L.b.y);
+      ctx.lineTo(L.b.x - L.b.r - 2, L.b.y);
+    } else {
+      if (trunk) {                     // me down to each column head
+        ctx.moveTo(L.a.x, L.a.y + L.a.r);
+        ctx.lineTo(L.a.x, L.a.y + 34);
+        ctx.lineTo(L.b.x, L.a.y + 34);
+        ctx.lineTo(L.b.x, L.b.y - L.b.r - 2);
+      } else {                         // column head down its list
+        ctx.moveTo(L.a.x, L.a.y + L.a.r);
+        ctx.lineTo(L.a.x, L.b.y);
+        ctx.lineTo(L.b.x - L.b.r - 2, L.b.y);
+      }
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
   });
 
   nodes.forEach(function (n) {
@@ -1068,75 +1204,110 @@ function draw() {
 
   ctx.restore();
 
-  // Labels sit in screen space so they never distort with zoom. They are laid
-  // out most-important-first and a label that would land on one already placed
-  // is dropped rather than overprinted — zoom in (or hover) to get it back.
+  // Labels sit in screen space so they never distort with zoom. In Orbit they
+  // hang under the dot; in the list layouts they read to the right of it, the
+  // way a list wants to be read.
   ctx.save();
-  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.textBaseline = 'top';
 
+  var listy = layoutId() !== 'orbit';
   var jobs = nodes.slice().sort(function (a, b) { return labelRank(a) - labelRank(b); });
   var placed = [];
-  jobs.forEach(function (n) {
-    var p = toScreen(n.x, n.y);
-    if (p[0] < -140 || p[0] > W + 140 || p[1] < -60 || p[1] > H + 60) return;
-    var dim = focus && !lit[n.id] ? Math.max(DIM, 0.3) : 1;
-    var off = n.r * cam.k + 7;
-    var text = n.label, y = p[1] + off, h = 13;
 
+  jobs.forEach(function (n) {
+    if (cam.k < 0.42 && n.kind === 'person' && n !== focus && n !== selected) return;
+    var p = toScreen(n.x, n.y);
+    if (p[0] < -200 || p[0] > W + 200 || p[1] < -60 || p[1] > H + 60) return;
+    var dim = focus && !lit[n.id] ? Math.max(DIM, 0.34) : 1;
+    var text = n.label, h = 14;
+    var right = listy && n.kind !== 'me';
+
+    var above = false;
     if (n.kind === 'circle') {
-      ctx.font = '500 ' + (9 + Math.min(2.5, Math.sqrt(n.weight || 1) * 0.5)).toFixed(1) + 'px "JetBrains Mono", monospace';
+      ctx.font = '500 10px "JetBrains Mono", monospace';
       ctx.letterSpacing = '1.6px';
       text = n.label.toUpperCase();
+      above = layoutId() === 'tree';      // the branch line passes through this row
     } else if (n.kind === 'me') {
       ctx.font = '400 17px "Instrument Serif", Georgia, serif';
       ctx.letterSpacing = '0px';
-      y += 2; h = 19;
+      h = 19;
     } else {
-      var size = 11.2 + Math.min(2.6, Math.sqrt(n.strength || 0) * 0.85);
-      ctx.font = (n === focus || n.strength > 3 ? '500 ' : '400 ') + size.toFixed(1) + 'px Archivo, system-ui, sans-serif';
+      var lz = Math.min(1, Math.max(0.8, cam.k));
+      ctx.font = (n === focus ? '500 ' : '400 ') + (12 * lz).toFixed(1) + 'px Archivo, system-ui, sans-serif';
       ctx.letterSpacing = '0.2px';
-      h = Math.round(size) + 2;
+      h = Math.round(13 * lz) + 1;
     }
 
     var w = ctx.measureText(text).width + 8;
+    var x, y;
+    var radial = !listy && n.kind === 'person';
+    if (radial) {
+      var ang = n.angle || Math.atan2(n.y, n.x);
+      var ox = Math.cos(ang), oy = Math.sin(ang);
+      var off = n.r * cam.k + 9;
+      x = p[0] + ox * off;
+      y = p[1] + oy * off - h / 2;
+      if (ox > 0.3) { ctx.textAlign = 'left'; }
+      else if (ox < -0.3) { ctx.textAlign = 'right'; }
+      else { ctx.textAlign = 'center'; y = p[1] + (oy >= 0 ? off : -off - h + 2); }
+    } else if (above) {
+      ctx.textAlign = 'left';
+      x = p[0] - 2;
+      y = p[1] - n.r * cam.k - h - 3;
+    } else if (right) {
+      ctx.textAlign = 'left';
+      x = p[0] + n.r * cam.k + 8;
+      y = p[1] - h / 2 + 1;
+    } else {
+      ctx.textAlign = 'center';
+      x = p[0];
+      y = p[1] + n.r * cam.k + 7 + (n.kind === 'me' ? 2 : 0);
+    }
+
+    var align = ctx.textAlign;
+    var box = align === 'left' ? [x - 3, y - 2, w, h]
+      : align === 'right' ? [x - w + 3, y - 2, w, h]
+      : [x - w / 2, y - 2, w, h];
     var hits = function (bx) {
       return placed.some(function (q) {
         return bx[0] < q[0] + q[2] && bx[0] + bx[2] > q[0] && bx[1] < q[1] + q[3] && bx[1] + bx[3] > q[1];
       });
     };
-    // nudge a clashing label out of the way rather than hiding the person
-    var box = [p[0] - w / 2, y - 2, w, h];
+    // step a clashing label aside rather than hiding the person
     var nudges = [0, h + 1, -(h + 1), 2 * (h + 1), -2 * (h + 1), 3 * (h + 1), -3 * (h + 1)];
     for (var k = 0; k < nudges.length; k++) {
-      box = [p[0] - w / 2, y - 2 + nudges[k], w, h];
+      box[1] = y - 2 + nudges[k];
       if (!hits(box)) break;
     }
-    y = box[1] + 2;
-    placed.push(box);
+    var finalY = box[1] + 2;
+    placed.push(box.slice());
 
-    if (Math.abs(y - (p[1] + off)) > 4) {
+    if (Math.abs(finalY - y) > 4) {
       ctx.save();
       ctx.strokeStyle = mix(C.rule, 0.9 * dim);
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(p[0], p[1] + off - 1);
-      ctx.lineTo(p[0], y);
+      ctx.moveTo(p[0], p[1] + (radial ? 0 : n.r * cam.k));
+      ctx.lineTo(ctx.textAlign === 'left' ? x - 4 : ctx.textAlign === 'right' ? x + 4 : p[0], finalY + h / 2);
       ctx.stroke();
       ctx.restore();
     }
+
     ctx.fillStyle = n.kind === 'circle' ? mix(C.muted, dim)
       : n.kind === 'me' ? C.ink
       : mix(n.cold ? C.muted : C.ink, dim);
-    ctx.fillText(text, p[0], y);
+    ctx.fillText(text, x, finalY);
   });
   ctx.letterSpacing = '0px';
+  ctx.textAlign = 'center';
   ctx.restore();
 
   function labelRank(n) {
     if (n === focus || n === selected) return -2;
     if (n.kind === 'me') return -1;
     if (n.kind === 'circle') return 0;
-    return 1 + 1 / (1 + (n.strength || 0));   // busiest people keep their names
+    return 1;
   }
 }
 
@@ -1153,12 +1324,14 @@ function loop() {
   // once the springs stop after a change, bring anything that drifted off the
   // edge back into view — one movement, not a constant chase
   if (wantFit && !moving && !isEditing()) {
+    var force = wantFit === 'always';
     wantFit = false;
-    if (offscreenCount() > 0) fit();
+    if (force) fitSmooth();
+    else if (offscreenCount() > 0) fit();
   }
 }
 var needsDraw = false;
-function kick() { alpha = Math.max(alpha, 0.65); needsDraw = true; }
+
 
 /* Which circle is under the cursor, for a drop. Generous on purpose — the
    target is a small dot and fingers are not. */
@@ -1245,6 +1418,58 @@ function toast(msg, actionLabel, action) {
   toastTimer = setTimeout(function () { t.hidden = true; }, actionLabel ? 7000 : 2600);
 }
 
+/* ---- layout switcher ---- */
+
+var LAYOUT_ICONS = {
+  orbit: '<circle cx="12" cy="12" r="2.6"/><circle cx="12" cy="12" r="7.5" opacity=".45"/>' +
+         '<circle cx="19.5" cy="12" r="1.9" fill="currentColor" stroke="none"/>' +
+         '<circle cx="8" cy="5" r="1.6" fill="currentColor" stroke="none"/>' +
+         '<circle cx="6" cy="17.5" r="1.6" fill="currentColor" stroke="none"/>',
+  tree:  '<circle cx="4.5" cy="12" r="1.9" fill="currentColor" stroke="none"/>' +
+         '<path d="M6.4 12h4M10.4 12V6.5h4M10.4 12v5.5h4"/>' +
+         '<circle cx="16" cy="6.5" r="1.7" fill="currentColor" stroke="none"/>' +
+         '<circle cx="16" cy="17.5" r="1.7" fill="currentColor" stroke="none"/>',
+  columns: '<path d="M6 5.5v13M12 5.5v13M18 5.5v13" opacity=".5"/>' +
+         '<circle cx="6" cy="8" r="1.5" fill="currentColor" stroke="none"/>' +
+         '<circle cx="6" cy="13" r="1.5" fill="currentColor" stroke="none"/>' +
+         '<circle cx="12" cy="8" r="1.5" fill="currentColor" stroke="none"/>' +
+         '<circle cx="12" cy="13" r="1.5" fill="currentColor" stroke="none"/>' +
+         '<circle cx="12" cy="18" r="1.5" fill="currentColor" stroke="none"/>' +
+         '<circle cx="18" cy="8" r="1.5" fill="currentColor" stroke="none"/>'
+};
+
+function renderLayouts() {
+  var here = layoutId();
+  $('#layouts').innerHTML = LAYOUTS.map(function (l, i) {
+    return '<button data-layout="' + l.id + '"' + (l.id === here ? ' data-on="1"' : '') +
+      ' title="' + esc(l.name + ' — ' + l.hint) + ' (' + (i + 1) + ')" aria-pressed="' + (l.id === here) + '">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">' +
+      LAYOUT_ICONS[l.id] + '</svg><span>' + esc(l.name) + '</span></button>';
+  }).join('');
+}
+
+function setLayout(id, quiet) {
+  if (!LAYOUTS.some(function (l) { return l.id === id; })) return;
+  if (state.layout === id) return;
+  state.layout = id;
+  state.settingsAt = Date.now();
+  save();
+  renderLayouts();
+  computeLayout();
+  settling = true;
+  needsDraw = true;
+  wantFit = 'always';            // frame the new shape once it has stopped moving
+  if (!quiet) {
+    var l = LAYOUTS.filter(function (x) { return x.id === id; })[0];
+    toast(l.name + ' — ' + l.hint);
+  }
+}
+
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('[data-layout]');
+  if (b) setLayout(b.dataset.layout);
+});
+
 /* ---- rails ---- */
 
 function updateHint() { $('#hint').hidden = state.people.length > 0; }
@@ -1283,6 +1508,7 @@ function renderNudges() {
 }
 
 function renderAll() {
+  renderLayouts();
   rebuild(); renderStats(); renderLegend(); renderNudges(); kick();
   if (selected && selected.kind === 'person') {
     var still = state.people.filter(function (p) { return p.id === selected.id; })[0];
@@ -2298,8 +2524,13 @@ function helpModal() {
       '<p>Click any chip in the preview to fix it, or the × to drop it. Force a field outright with a colon:</p>' +
       '<div class="ex">school: Lehigh · circle: Family · role: Pastry chef</div></section>' +
     '<section><h5>The map</h5>' +
-      '<p>You are the centre. Circles branch off you; people branch off circles. Size means volume: a circle grows with the number of people in it and claims a wider fan, and a person’s dot grows with every touchpoint logged. A dot fades to an outline once it has been quiet too long — those are the ones under “Going cold”.</p>' +
-      '<p>Drag a person onto a circle to file them there, or onto another person to connect them. Let go anywhere else and the layout takes them back — nothing stays pinned. Scroll to zoom, drag the plate to pan, <kbd>T</kbd> to tidy.</p></section>' +
+      '<p>You are the centre. Circles branch off you; people branch off circles. Every dot is the same size — only colour and position carry meaning — and a dot fades to an outline once it has been quiet too long, which is what puts someone under “Going cold”.</p>' +
+      '<p>Three ways to see it, from the buttons at the top left (or <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>):</p>' +
+      '<div class="ex"><b>Orbit</b>   each circle a rosette around you\n' +
+      '<b>Tree</b>    a hierarchy reading left to right\n' +
+      '<b>Columns</b> one column per circle, names in a list</div>' +
+      '<p>Positions are worked out rather than left to settle, so nothing drifts and nothing lands on top of anything else. Switching view re-frames the map for you.</p>' +
+      '<p>Drag a person onto a circle to file them there, or onto another person to connect them. Let go anywhere else and the layout takes them back — nothing stays pinned. Scroll to zoom, drag to pan, <kbd>T</kbd> to tidy.</p></section>' +
     '<section><h5>Reshaping the map</h5>' +
       '<p>The bar takes instructions as well as notes. Anything that changes several people at once is described and counted first, and every one of them can be taken back with <kbd>⌘Z</kbd> or the Undo on the toast.</p>' +
       '<div class="ex">remove everyone but keep the categories\n' +
@@ -3114,6 +3345,9 @@ document.addEventListener('keydown', function (e) {
   if (e.key === '/') { e.preventDefault(); chat.focus(); }
   if (e.key === 'f') fit();
   if (e.key === 't') tidyMap();
+  if (e.key === '1') setLayout('orbit');
+  if (e.key === '2') setLayout('tree');
+  if (e.key === '3') setLayout('columns');
   if (e.key === '?') helpModal();
   if (e.key === 'n') { e.preventDefault(); personForm(null); }
 });
@@ -3176,11 +3410,11 @@ window.Rootwork = {
 
   readTokens();
   resize();
+  renderLayouts();
   rebuild();
   renderStats(); renderLegend(); renderNudges();
 
-  // let the springs settle before the first framing
-  for (var i = 0; i < 260; i++) tick();
+  for (var i = 0; i < 90; i++) tick();     // land on the targets before framing
   fit();
 
   var pill = document.createElement('button');

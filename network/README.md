@@ -158,6 +158,23 @@ Import also accepts. *Copy instead* is still there for pasting straight into a
 sheet. Inside the published artifact the page cannot start its own download, so
 that build asks the viewer's runtime to save the file for you.
 
+## Three ways to look at it
+
+Positions are computed, not simulated — no springs, no drift, and two dots can
+never land on top of each other, because spacing is decided up front from how
+many there are. Switching view eases every node to its new place and re-frames
+the map. The buttons sit at the top left, or press `1` `2` `3`.
+
+| view | shape |
+| --- | --- |
+| **Orbit** | you at the centre; each circle a rosette around its own hub, the hub ring widened until every rosette fits side by side |
+| **Tree** | a hierarchy reading left to right, names beside their dot |
+| **Columns** | one column per circle, alphabetical — the densest view, and the one where nothing can overlap by construction |
+
+Framing accounts for the room names need at the current zoom, and stops zooming
+out once dots would become unreadable — on a phone it settles at a legible scale
+and lets you pan instead.
+
 ## Circles
 
 A person can be in as many circles as you like. The first is their primary: it
@@ -171,9 +188,9 @@ bridges the two.
 - **Click a circle on the map** to recolour, rename, hide or delete it.
 - Circles claim room in proportion to how many people they hold, so a School of
   thirty gets the space a Family of two does not need.
-- Size carries volume: a circle's dot grows with the number of people in it and
-  its wedge widens to match; a person's dot grows with touchpoints logged, and
-  their name is set a little larger with them.
+- Every dot is the same size. Colour says which circle, position says where they
+  sit; nothing else is encoded in a dot, except that a quiet one fades to an
+  outline.
 - Nothing stays pinned. Dragging a person moves them; letting go anywhere that
   is not a circle or another person hands them back to the layout. The **tidy**
   button (or `T`) re-settles everything, and the map re-frames itself once the

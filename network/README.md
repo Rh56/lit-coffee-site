@@ -158,18 +158,24 @@ Import also accepts. *Copy instead* is still there for pasting straight into a
 sheet. Inside the published artifact the page cannot start its own download, so
 that build asks the viewer's runtime to save the file for you.
 
-## Three ways to look at it
+## Four ways to look at it
 
-Positions are computed, not simulated — no springs, no drift, and two dots can
-never land on top of each other, because spacing is decided up front from how
-many there are. Switching view eases every node to its new place and re-frames
-the map. The buttons sit at the top left, or press `1` `2` `3`.
+The buttons sit at the top left, or press `1`–`4`. Whichever view you are in, a
+coloured dot after a name marks every *other* circle that person belongs to, so
+a shared person is never hidden.
 
 | view | shape |
 | --- | --- |
-| **Orbit** | you at the centre; each circle a rosette around its own hub, the hub ring widened until every rosette fits side by side |
+| **Web** | loose and organic; every circle someone belongs to pulls on them, so a shared person settles between the two |
+| **Venn** | each circle is a field, placed so that circles sharing people overlap and circles sharing nobody do not; the shared sit in the lens |
 | **Tree** | a hierarchy reading left to right, names beside their dot |
-| **Columns** | one column per circle, alphabetical — the densest view, and the one where nothing can overlap by construction |
+| **Columns** | one column per circle, alphabetical |
+
+Web relaxes into place with a hard separation pass, so it keeps the organic feel
+without ever letting two dots touch. Venn, Tree and Columns are placed outright
+— three constraints (circles that share overlap, circles that do not stay apart,
+nothing closes over you at the centre) solved together rather than fought out by
+competing forces.
 
 Framing accounts for the room names need at the current zoom, and stops zooming
 out once dots would become unreadable — on a phone it settles at a legible scale

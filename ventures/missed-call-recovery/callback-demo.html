@@ -1,0 +1,485 @@
+<title>Eight Seconds</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@600;700;800&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* ------------------------------------------------------------------
+     Single committed palette: a dispatch console at night in steel
+     country. Cold ash carries the call that was lost; molten carries
+     the one that was caught. Temperature is the argument.
+     ------------------------------------------------------------------ */
+  :root {
+    color-scheme: dark;
+    --void:      #0a0e10;
+    --steel:     #12181b;
+    --steel-2:   #192125;
+    --rule:      #263238;
+    --rule-hot:  #4a2c16;
+    --bone:      #dde3e5;
+    --bone-dim:  #9aa7ac;
+    --ash:       #5f6f76;
+    --ash-dim:   #3a464c;
+    --molten:    #ff7a2f;
+    --ember:     #ffb06b;
+    --molten-dim:#8a3f14;
+    --warmwash:  rgba(255,122,47,.045);
+    --coldwash:  rgba(120,140,150,.028);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--void);
+    color: var(--bone);
+    font-family: Archivo, ui-sans-serif, system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 0 64px; }
+
+  .disp { font-family: "Saira Condensed", Archivo, sans-serif; font-weight: 800; text-transform: uppercase; letter-spacing: .01em; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+  .label {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .66rem; text-transform: uppercase; letter-spacing: .18em;
+    color: var(--ash);
+  }
+
+  /* ---------------- masthead ---------------- */
+  .mast { border-bottom: 1px solid var(--rule); padding-block: 30px 22px; }
+  .mast .rule-top { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+
+  .mast h1 {
+    font-family: "Saira Condensed", sans-serif; font-weight: 800;
+    font-size: clamp(2.6rem, 1.1rem + 6.4vw, 5.6rem);
+    line-height: .88; margin: 0; text-transform: uppercase;
+    letter-spacing: -0.01em; text-wrap: balance;
+  }
+  .mast h1 .cold { color: var(--ash); display: block; }
+  .mast h1 .hot  { color: var(--molten); display: block; }
+
+  .mast .sub { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; margin-top: 22px; }
+  .mast .sub p { margin: 0; max-width: 46ch; color: var(--bone-dim); font-size: .96rem; }
+  .mast .sub p b { color: var(--bone); font-weight: 600; }
+
+  .bizfield { display: flex; flex-direction: column; gap: 6px; min-width: 250px; }
+  .bizfield input {
+    font: 600 1rem/1.3 Archivo, sans-serif; color: var(--bone);
+    background: var(--steel); border: 1px solid var(--rule);
+    border-left: 3px solid var(--molten);
+    border-radius: 0; padding: 11px 13px; width: 100%;
+  }
+  .bizfield input:focus-visible { outline: 2px solid var(--molten); outline-offset: 2px; }
+
+  /* ---------------- ticker ---------------- */
+  .ticker { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--rule); }
+  .ticker div { padding: 16px 0; border-right: 1px solid var(--rule); padding-right: 18px; }
+  .ticker div:last-child { border-right: 0; }
+  .ticker b { font-family: "Saira Condensed", sans-serif; font-weight: 700; font-size: 2.1rem; line-height: 1; display: block; color: var(--ash); font-variant-numeric: tabular-nums; }
+  .ticker span { font-size: .8rem; color: var(--bone-dim); display: block; margin-top: 6px; max-width: 26ch; }
+
+  /* ---------------- the split ---------------- */
+  .split-head { display: grid; grid-template-columns: 1fr 92px 1fr; align-items: end; gap: 0; padding-top: 38px; }
+  .split-head .h { padding-bottom: 12px; }
+  .split-head .h.r { text-align: right; }
+  .split-head .h h2 { font-family: "Saira Condensed", sans-serif; font-weight: 700; text-transform: uppercase; font-size: 1.22rem; margin: 4px 0 0; letter-spacing: .04em; }
+  .split-head .cold h2 { color: var(--ash); }
+  .split-head .hot h2  { color: var(--molten); }
+  .split-head .spacer { text-align: center; padding-bottom: 14px; }
+
+  .board { display: grid; grid-template-columns: 1fr 92px 1fr; position: relative; border-top: 1px solid var(--rule); }
+  /* the shared time rail */
+  .board::before {
+    content: ""; position: absolute; top: 0; bottom: 0;
+    left: calc(50% - .5px); width: 1px; background: var(--rule);
+  }
+
+  .row { display: contents; }
+
+  .cell {
+    padding: 15px 22px; border-bottom: 1px solid var(--rule);
+    display: flex; flex-direction: column; gap: 3px; justify-content: center;
+    min-height: 74px;
+  }
+  .cell.l { background: var(--coldwash); text-align: right; align-items: flex-end; }
+  .cell.r { background: var(--warmwash); border-bottom-color: var(--rule); }
+
+  .cell .act { font-size: .95rem; font-weight: 500; line-height: 1.35; }
+  .cell .note { font-size: .8rem; line-height: 1.35; }
+
+  .cell.l .act  { color: var(--ash); }
+  .cell.l .note { color: var(--ash-dim); }
+  .cell.r .act  { color: var(--bone); }
+  .cell.r .note { color: var(--bone-dim); }
+
+  /* cold side fades as the minutes pass */
+  .cell.l[data-fade="1"] .act { color: #56656b; }
+  .cell.l[data-fade="2"] .act { color: #4a585e; }
+  .cell.l[data-fade="3"] .act { color: #3e4b50; }
+
+  .cell.r .act strong { color: var(--ember); font-weight: 600; }
+  .cell.empty { opacity: .28; }
+  .cell .dash { color: var(--ash-dim); font-size: 1.1rem; line-height: 1; }
+
+  .tick {
+    border-bottom: 1px solid var(--rule); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 2px;
+    font-family: "IBM Plex Mono", monospace; font-size: .72rem;
+    color: var(--bone-dim); background: var(--void); position: relative; z-index: 1;
+    padding: 6px 0;
+  }
+  .tick .t { font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .tick .s { font-size: .6rem; color: var(--ash-dim); }
+  .tick.mark .t { color: var(--molten); }
+
+  /* outcome */
+  .outcome { display: grid; grid-template-columns: 1fr 92px 1fr; }
+  .outcome .o { padding: 20px 22px; }
+  .outcome .o.l { text-align: right; border-top: 2px solid var(--ash-dim); }
+  .outcome .o.r { border-top: 2px solid var(--molten); background: var(--warmwash); }
+  .outcome .o .k { font-family: "IBM Plex Mono", monospace; font-size: .64rem; letter-spacing: .18em; text-transform: uppercase; color: var(--ash); }
+  .outcome .o .v { font-family: "Saira Condensed", sans-serif; font-weight: 800; font-size: clamp(1.8rem, 1.2rem + 2.2vw, 2.8rem); line-height: 1.05; text-transform: uppercase; margin-top: 4px; }
+  .outcome .o.l .v { color: var(--ash); }
+  .outcome .o.r .v { color: var(--molten); }
+  .outcome .o .d { font-size: .82rem; color: var(--bone-dim); margin-top: 5px; }
+  .outcome .mid { border-top: 1px solid var(--rule); }
+
+  /* ---------------- controls ---------------- */
+  .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding-top: 18px; }
+  .btn {
+    font-family: "IBM Plex Mono", monospace; font-size: .74rem; letter-spacing: .12em;
+    text-transform: uppercase; background: transparent; color: var(--molten);
+    border: 1px solid var(--molten-dim); border-radius: 0; padding: 11px 17px; cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+  }
+  .btn:hover { background: var(--molten); color: var(--void); border-color: var(--molten); }
+  .btn:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+  .controls .hint { font-size: .78rem; color: var(--ash); }
+
+  /* ---------------- ledger / calculator ---------------- */
+  .ledger-wrap { margin-top: 62px; border-top: 1px solid var(--rule); padding-top: 30px; }
+  .ledger-wrap > .label { display: block; margin-bottom: 6px; }
+  .ledger-wrap h2 { font-family: "Saira Condensed", sans-serif; font-weight: 800; text-transform: uppercase; font-size: clamp(1.6rem,1.1rem+1.8vw,2.3rem); margin: 0 0 24px; line-height: 1; }
+
+  .lg { display: grid; grid-template-columns: minmax(0,1.15fr) minmax(0,.85fr); gap: 0; border: 1px solid var(--rule); }
+  .dials { padding: 26px; display: flex; flex-direction: column; gap: 26px; border-right: 1px solid var(--rule); }
+  .dial label { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; margin-bottom: 10px; }
+  .dial .nm { font-size: .88rem; font-weight: 500; color: var(--bone); }
+  .dial .vv { font-family: "IBM Plex Mono", monospace; font-size: 1.1rem; color: var(--molten); font-variant-numeric: tabular-nums; }
+  .dial input[type=range] { width: 100%; accent-color: var(--molten); background: transparent; }
+  .dial .hint { font-size: .76rem; color: var(--ash); margin: 8px 0 0; line-height: 1.45; }
+
+  .tally { padding: 26px; display: flex; flex-direction: column; background: var(--steel); }
+  .tally .cap { font-family: "IBM Plex Mono", monospace; font-size: .64rem; letter-spacing: .18em; text-transform: uppercase; color: var(--ash); }
+  .tally .big {
+    font-family: "Saira Condensed", sans-serif; font-weight: 800;
+    font-size: clamp(2.6rem, 1.6rem + 4vw, 4.1rem); line-height: .95;
+    color: var(--molten); font-variant-numeric: tabular-nums; margin: 6px 0 22px;
+  }
+  .tally .lines { border-top: 1px solid var(--rule); margin-top: auto; }
+  .tally .lines div { display: flex; justify-content: space-between; gap: 14px; padding: 11px 0; border-bottom: 1px dashed var(--rule); font-size: .87rem; color: var(--bone-dim); }
+  .tally .lines div:last-child { border-bottom: 0; color: var(--bone); font-weight: 600; }
+  .tally .lines .n { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; color: var(--bone); }
+  .tally .lines .n.neg { color: var(--ash); }
+  .tally .foot { font-size: .78rem; color: var(--ash); margin: 16px 0 0; }
+  .tally .foot b { color: var(--ember); font-family: "IBM Plex Mono", monospace; }
+
+  /* ---------------- footer ---------------- */
+  .fine { margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: .78rem; color: var(--ash); max-width: 74ch; line-height: 1.6; }
+  .fine b { color: var(--bone-dim); }
+
+  /* ---------------- motion ---------------- */
+  .cell.hidden .act, .cell.hidden .note, .cell.hidden .dash { opacity: 0; }
+  .cell.show  .act, .cell.show  .note, .cell.show  .dash { animation: rise .32s ease-out both; }
+  .tick.hidden { color: var(--ash-dim); }
+  @keyframes rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .cell.show .act, .cell.show .note, .cell.show .dash { animation: none; opacity: 1; transform: none; }
+  }
+
+  /* ---------------- narrow ---------------- */
+  @media (max-width: 800px) {
+    .ticker { grid-template-columns: 1fr; }
+    .ticker div { border-right: 0; border-bottom: 1px solid var(--rule); padding-right: 0; }
+    .ticker div:last-child { border-bottom: 0; }
+
+    .split-head, .board, .outcome { grid-template-columns: 1fr; }
+    .board::before { display: none; }
+    .split-head { display: none; }
+    .m-head { display: block; padding-top: 30px; }
+    .m-head h2 { font-family: "Saira Condensed", sans-serif; font-weight: 800; text-transform: uppercase; font-size: 1.5rem; margin: 4px 0 0; line-height: 1; }
+
+    /* Each step becomes its own stacked block so the timestamp can head it. */
+    .row { display: flex; flex-direction: column; border-bottom: 1px solid var(--rule); }
+    .tick {
+      order: -1; flex-direction: row; gap: 9px; justify-content: flex-start;
+      padding: 8px 22px; background: var(--steel-2); border-bottom: 0;
+    }
+    .cell { min-height: 0; padding: 12px 22px; border-bottom: 0; }
+    .cell.l { text-align: left; align-items: flex-start; border-left: 3px solid var(--ash-dim); }
+    .cell.r { border-left: 3px solid var(--molten); }
+    .cell.empty { display: none; }
+
+    .legend { display: flex; gap: 18px; flex-wrap: wrap; padding: 12px 0 14px; }
+    .legend span { display: flex; align-items: center; gap: 7px; font-size: .78rem; color: var(--bone-dim); }
+    .legend i { width: 11px; height: 11px; display: block; flex: none; }
+    .legend .a { background: var(--ash-dim); }
+    .legend .b { background: var(--molten); }
+
+    .outcome .o.l { text-align: left; }
+    .lg { grid-template-columns: 1fr; }
+    .dials { border-right: 0; border-bottom: 1px solid var(--rule); }
+  }
+  @media (max-width: 800px) {
+    .split-head .h.hot h2 { font-size: 1rem; }
+  }
+
+  @media (min-width: 801px) {
+    .m-only { display: none; }
+  }
+</style>
+
+<div class="shell">
+
+  <header class="mast">
+    <div class="rule-top">
+      <span class="label">Missed-call recovery &mdash; demo preview</span>
+      <span class="label mono">Lehigh Valley, PA</span>
+    </div>
+
+    <h1>
+      <span class="cold">Eight seconds</span>
+      <span class="hot">or nothing.</span>
+    </h1>
+
+    <div class="sub">
+      <p>One call to <b id="bizInline">Redline Plumbing &amp; Drain</b> at 6:42 on a Tuesday. Nobody free to pick up. Below is the same call running down two tracks &mdash; the way it goes now, and the way it goes when something answers in eight seconds.</p>
+      <div class="bizfield">
+        <span class="label">Put your name on it</span>
+        <input id="bizName" type="text" value="Redline Plumbing &amp; Drain" autocomplete="off" spellcheck="false" aria-label="Your business name">
+      </div>
+    </div>
+  </header>
+
+  <section class="ticker">
+    <div><b>62%</b><span>of calls to small service businesses go unanswered</span></div>
+    <div><b>85%</b><span>of callers who hit voicemail never ring back</span></div>
+    <div><b>$1,200</b><span>what one plumbing or HVAC call is worth</span></div>
+  </section>
+
+  <section class="split-head">
+    <div class="h l cold"><span class="label">Track A</span><h2>As it goes now</h2></div>
+    <div class="spacer"><span class="label mono">Time</span></div>
+    <div class="h r hot"><span class="label">Track B</span><h2>With text-back</h2></div>
+  </section>
+
+  <div class="m-head m-only">
+    <span class="label">The same call, both ways</span>
+    <h2>One ring, two endings</h2>
+    <div class="legend">
+      <span><i class="a"></i> As it goes now</span>
+      <span><i class="b"></i> With text-back</span>
+    </div>
+  </div>
+
+  <div class="board" id="board"></div>
+
+  <section class="outcome">
+    <div class="o l">
+      <div class="k">Track A &mdash; result</div>
+      <div class="v" id="lossV">Lost &minus;$1,340</div>
+      <div class="d">No voicemail left. No name, no number, no idea it happened.</div>
+    </div>
+    <div class="mid"></div>
+    <div class="o r">
+      <div class="k">Track B &mdash; result</div>
+      <div class="v" id="winV">Booked +$1,340</div>
+      <div class="d">Ticket on the board with address, fault and a two-hour window.</div>
+    </div>
+  </section>
+
+  <div class="controls">
+    <button class="btn" id="replayBtn" type="button">&#9654;&nbsp; Run it again</button>
+    <span class="hint">Both tracks advance on the same clock.</span>
+  </div>
+
+  <section class="ledger-wrap">
+    <span class="label">The arithmetic</span>
+    <h2>What Track A costs you every month</h2>
+
+    <div class="lg">
+      <div class="dials">
+        <div class="dial">
+          <label for="missed"><span class="nm">Calls missed per week</span><span class="vv" id="missedVal">12</span></label>
+          <input type="range" id="missed" min="2" max="60" step="1" value="12">
+          <p class="hint">After hours, on a job, second line busy. Most shops guess low &mdash; your carrier log has the real number.</p>
+        </div>
+        <div class="dial">
+          <label for="job"><span class="nm">Average ticket</span><span class="vv" id="jobVal">$480</span></label>
+          <input type="range" id="job" min="100" max="3000" step="20" value="480">
+          <p class="hint">Your normal service call, not the big replacements.</p>
+        </div>
+        <div class="dial">
+          <label for="rate"><span class="nm">Share recovered</span><span class="vv" id="rateVal">15%</span></label>
+          <input type="range" id="rate" min="5" max="40" step="1" value="15">
+          <p class="hint">Held deliberately low. Roughly a third answer the text; under half of those book.</p>
+        </div>
+      </div>
+
+      <div class="tally">
+        <span class="cap">Recovered per month</span>
+        <div class="big" id="net">$3,244</div>
+        <div class="lines">
+          <div><span id="lblJobs">7.8 jobs back on the board</span><span class="n" id="gross">$3,741</span></div>
+          <div><span>Service &amp; monitoring</span><span class="n neg">&minus;$497</span></div>
+          <div><span>Net</span><span class="n" id="netRow">$3,244</span></div>
+        </div>
+        <p class="foot">Return on spend <b id="roi">7.5&times;</b> &middot; cancel any month</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="fine">
+    <b>This is a demo preview, not a live system.</b> The call, the conversation and the ticket above are an illustration of how the automation behaves &mdash; the business, the customer and the job are invented, and no real calls, messages or customer records are involved. The three figures at the top are from published 2026 reporting on missed-call rates in home services. What you'd actually recover depends on your call volume and how fast your crew works the leads.
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* Each step is one row on a shared clock. `l` is the call as it goes
+     today, `r` the same call with text-back running. Either may be null
+     when nothing happens on that track at that minute. */
+  var STEPS = [
+    {
+      t: "6:42:00", s: "PM",
+      l: { act: "Call comes in. Everyone's on a job.", note: "Line rings through to nobody." },
+      r: { act: "Call comes in. Everyone's on a job.", note: "Line rings through to nobody." }
+    },
+    {
+      t: "6:42:08", s: "+8s", mark: true,
+      l: null,
+      r: { act: "<strong>Text goes out.</strong> “This is {BIZ} — sorry we missed you, we’re on a job. What’s going on?”", note: "Sent before the phone stopped ringing." }
+    },
+    {
+      t: "6:42:24", s: "+24s",
+      l: { act: "Rings out. Voicemail picks up.", note: "She hangs up without leaving one." },
+      r: { act: "“water heater is dumping all over the garage”", note: "She answers the text instead." }
+    },
+    {
+      t: "6:44", s: "+2m", fade: 1,
+      l: { act: "Nothing.", note: "No name. No number on a pad anywhere." },
+      r: { act: "Fault and address captured.", note: "1820 Cedar Bend Dr — flagged urgent, shut-off valve walked through." }
+    },
+    {
+      t: "6:45", s: "+3m", fade: 2,
+      l: null,
+      r: { act: "<strong>Booked tonight, 8–10 PM.</strong>", note: "Dana Whitfield. $89 diagnostic, waived on repair." }
+    },
+    {
+      t: "6:47", s: "+5m", fade: 2,
+      l: { act: "She calls the next plumber on Google.", note: "Second result. Someone picks up on the third ring." },
+      r: { act: "Ticket hits the dispatch board.", note: "Whoever’s on call sees a finished job, not a missed ring." }
+    },
+    {
+      t: "7:10", s: "+28m", fade: 3,
+      l: { act: "The other shop books it.", note: "You never learn this call happened." },
+      r: { act: "Tech en route. Customer texted the ETA.", note: "She tells two neighbours about the response time." }
+    }
+  ];
+
+  var board = document.getElementById("board");
+  var bizInput = document.getElementById("bizName");
+  var bizInline = document.getElementById("bizInline");
+  var replayBtn = document.getElementById("replayBtn");
+  var timers = [];
+
+  function biz() { return bizInput.value.trim() || "your shop"; }
+
+  function cellHTML(d, side, fade) {
+    if (!d) return '<div class="cell ' + side + ' empty"><span class="dash">&mdash;</span></div>';
+    var f = (side === "l" && fade) ? ' data-fade="' + fade + '"' : "";
+    return '<div class="cell ' + side + '"' + f + '>' +
+             '<span class="act">' + d.act.replace("{BIZ}", escapeHTML(biz())) + '</span>' +
+             '<span class="note">' + d.note + '</span>' +
+           '</div>';
+  }
+
+  function escapeHTML(s) {
+    return s.replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function render() {
+    board.innerHTML = STEPS.map(function (st, i) {
+      return '<div class="row" data-i="' + i + '">' +
+        cellHTML(st.l, "l", st.fade) +
+        '<div class="tick' + (st.mark ? " mark" : "") + '"><span class="t">' + st.t + '</span><span class="s">' + st.s + '</span></div>' +
+        cellHTML(st.r, "r", 0) +
+      '</div>';
+    }).join("");
+  }
+
+  function rowCells(i) {
+    return board.querySelectorAll('[data-i="' + i + '"] .cell');
+  }
+
+  function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+
+  function play() {
+    clearTimers();
+    STEPS.forEach(function (st, i) {
+      rowCells(i).forEach(function (c) { c.classList.remove("show"); c.classList.add("hidden"); });
+    });
+    var gap = 720;
+    STEPS.forEach(function (st, i) {
+      timers.push(setTimeout(function () {
+        rowCells(i).forEach(function (c) {
+          c.classList.remove("hidden");
+          c.classList.add("show");
+        });
+      }, gap * (i + 1)));
+    });
+  }
+
+  render();
+
+  replayBtn.addEventListener("click", play);
+
+  bizInput.addEventListener("input", function () {
+    bizInline.textContent = biz();
+    render();
+  });
+
+  /* ---------------- ledger ---------------- */
+  var missed = document.getElementById("missed");
+  var job = document.getElementById("job");
+  var rate = document.getElementById("rate");
+  var FEE = 497;
+  var money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+  function recalc() {
+    var perMo = Number(missed.value) * 4.33;
+    var jobs = perMo * (Number(rate.value) / 100);
+    var gross = jobs * Number(job.value);
+    var net = gross - FEE;
+
+    document.getElementById("missedVal").textContent = missed.value;
+    document.getElementById("jobVal").textContent = money.format(Number(job.value));
+    document.getElementById("rateVal").textContent = rate.value + "%";
+
+    document.getElementById("lblJobs").textContent = jobs.toFixed(1) + " jobs back on the board";
+    document.getElementById("gross").textContent = money.format(gross);
+    document.getElementById("net").textContent = money.format(net);
+    document.getElementById("netRow").textContent = money.format(net);
+    document.getElementById("roi").textContent = (gross / FEE).toFixed(1) + "×";
+  }
+
+  [missed, job, rate].forEach(function (el) { el.addEventListener("input", recalc); });
+  recalc();
+})();
+</script>

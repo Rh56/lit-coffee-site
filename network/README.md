@@ -158,28 +158,33 @@ Import also accepts. *Copy instead* is still there for pasting straight into a
 sheet. Inside the published artifact the page cannot start its own download, so
 that build asks the viewer's runtime to save the file for you.
 
-## Four ways to look at it
+## Seven ways to look at it
 
-The buttons sit at the top left, or press `1`–`4`. Whichever view you are in, a
-coloured dot after a name marks every *other* circle that person belongs to, so
-a shared person is never hidden.
+The buttons sit at the top left, or press the number keys. Wherever a name
+appears, a coloured dot after it marks every *other* circle that person belongs
+to, so a shared person is never hidden.
 
 | view | shape |
 | --- | --- |
-| **Web** | loose and organic; every circle someone belongs to pulls on them, so a shared person settles between the two |
-| **Venn** | each circle is a field, placed so that circles sharing people overlap and circles sharing nobody do not; the shared sit in the lens |
-| **Tree** | a hierarchy reading left to right, names beside their dot |
-| **Columns** | one column per circle, alphabetical |
+| **Web** | organic, but tidied: tight clusters, each circle held in its own quarter |
+| **Classic** | the original springs and charge, left to find their own shape |
+| **Venn** | each circle a field, overlapping only where people are genuinely shared |
+| **Arc** | everyone on one ring, grouped by circle, ties crossing the middle |
+| **Grid** | a block per circle, wrapping into sub-columns rather than growing endlessly tall |
+| **Pulse** | distance from you is time since you last spoke; rings marked at a month, three months, a year |
+| **Stars** | ties drive the layout, so people who introduced each other gather |
 
-Web relaxes into place with a hard separation pass, so it keeps the organic feel
-without ever letting two dots touch. Venn, Tree and Columns are placed outright
-— three constraints (circles that share overlap, circles that do not stay apart,
-nothing closes over you at the centre) solved together rather than fought out by
-competing forces.
+Web, Classic and Stars relax into place — one solver, three sets of forces.
+Venn, Arc, Grid and Pulse are placed outright.
 
-Framing accounts for the room names need at the current zoom, and stops zooming
-out once dots would become unreadable — on a phone it settles at a legible scale
-and lets you pan instead.
+### Staying readable when it grows
+
+Names are rationed once there are more of them than will fit: you, the circles,
+whatever is selected or hovered, anything matching the search, then the people
+you spoke to most recently. Everyone else stays a dot until you hover them or
+search their name — a search match is ringed on the map, not just listed.
+Framing holds a legible zoom rather than shrinking to fit everything, and at 120
+people across 8 circles every view still settles with no two dots touching.
 
 ## Circles
 
@@ -225,6 +230,10 @@ the same way, lower case and all: *"swarthmore alumn, did her MBA at Wharton"*
 files both with the right levels.
 
 ## Editing a card
+
+Touchpoints are logged from the card too — *+ log a touchpoint* under History
+takes the kind, the date and what happened, and lifts the takeaway out of the
+text the same way the chat bar does.
 
 Every value on a person's card is edited in place — click it and type, including
 the name. Empty fields read *add*; *+ another field* takes anything the standard

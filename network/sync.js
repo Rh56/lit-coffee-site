@@ -130,7 +130,6 @@ function merge(a, b) {
     // settings are a set: whichever device changed them last wins outright,
     // rather than blending two people's palettes into one
     colors: ((b.settingsAt || 0) > (a.settingsAt || 0) ? b.colors : a.colors) || {},
-    coldDays: ((b.settingsAt || 0) > (a.settingsAt || 0) ? b.coldDays : a.coldDays) || 90,
     layout: ((b.settingsAt || 0) > (a.settingsAt || 0) ? b.layout : a.layout) || 'orbit',
     settingsAt: Math.max(a.settingsAt || 0, b.settingsAt || 0),
     seq: Math.max(a.seq || 1, b.seq || 1),

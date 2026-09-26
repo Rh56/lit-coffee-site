@@ -255,8 +255,8 @@ The chat bar reads plain sentences — see **How to talk to it** in the app for
 the full list. It also takes instructions that reshape the map (`remove everyone
 but keep the categories`, `merge Industry into Vendors`, `rename Neighbors to
 Bethlehem`, `create a category called Vendors`, `add Ada to Vendors`) and ones
-that change how it looks or behaves (`make Work green`, `hide Family`, `mark
-people cold after 30 days`, `switch to light mode`, `call me Ben`). Anything
+that change how it looks or behaves (`make Work green`, `hide Family`,
+`switch to light mode`, `call me Ben`). Anything
 touching more than one person is described and counted before it runs, and
 every change can be taken back with ⌘Z, the Undo on the toast, or `/undo`. Beyond logging a touchpoint it understands direct edits
 (`her location is Bethlehem`, `change his email to …`, `remove her phone`),

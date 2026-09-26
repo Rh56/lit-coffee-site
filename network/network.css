@@ -948,3 +948,17 @@ dd:hover .jump, .jump:focus-visible{ opacity:1; }
   outline:none; color-scheme:inherit;
 }
 .logrow .btn{ padding:5px 10px; font-size:12px; }
+
+/* ---------- reordering someone's circles ---------- */
+
+.cchip[draggable="true"]{ cursor:grab; }
+.cchip.dragging{ opacity:.45; }
+.cchip.over{ box-shadow:inset 2px 0 0 var(--accent); }
+.cchip .up{
+  padding:3px 2px 3px 5px; color:var(--faint); font-size:13px; line-height:1;
+}
+.cchip .up:hover{ color:var(--accent); }
+.cchip .lbl i{
+  font-family:var(--mono); font-style:normal; font-size:8.5px; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--hue); margin-left:6px; opacity:.85;
+}

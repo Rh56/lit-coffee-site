@@ -2096,8 +2096,12 @@ function openDossier(node) {
       '<div class="d-sec"><h4>Filed under</h4>' +
         chiprow('Circles',
           circlesOf(p).map(function (c, i) {
-            return '<span class="cchip' + (i === 0 ? ' primary' : '') + '" style="--hue:var(--h' + circleIndex(c) + ')">' +
-              '<button class="lbl" data-primary="' + esc(c) + '" title="' + (i === 0 ? 'Their main circle' : 'Make this their main circle') + '">' + esc(c) + '</button>' +
+            return '<span class="cchip' + (i === 0 ? ' primary' : '') + '" draggable="true" data-ci="' + i + '" ' +
+              'style="--hue:var(--h' + circleIndex(c) + ')">' +
+              (i === 0 ? '' : '<button class="up" data-up="' + i + '" title="Move ahead" aria-label="Move ' + esc(c) + ' ahead">‹</button>') +
+              '<button class="lbl" data-primary="' + esc(c) + '" title="' +
+                (i === 0 ? 'Their main circle — this is where they sit on the map' : 'Make this their main circle') + '">' +
+                esc(c) + (i === 0 ? '<i>main</i>' : '') + '</button>' +
               '<button class="x" data-leave="' + esc(c) + '" aria-label="Remove from ' + esc(c) + '">&times;</button></span>';
           }).join('') +
           '<span class="cchip add"><button data-addcircle aria-label="Add to a circle">+ circle</button></span>') +
@@ -2274,6 +2278,10 @@ $('#dossier').addEventListener('click', function (e) {
     p.tags.splice(+t.dataset.rmtag, 1); touch(p); save(); renderAll(); return;
   }
   if (t.dataset.primary) { joinCircle(p, t.dataset.primary, true); save(); renderAll(); return; }
+  if (t.dataset.up !== undefined && t.hasAttribute('data-up')) {
+    moveCircle(p, +t.dataset.up, +t.dataset.up - 1);
+    return;
+  }
   if (t.dataset.leave) {
     leaveCircle(p, t.dataset.leave);
     save(); renderAll(); return;
@@ -2498,6 +2506,60 @@ function colorPicker(anchor, circle) {
     });
   }, 0);
 }
+
+/* The order of someone's circles is not decoration: the first one is where
+   they sit on the map and which colour their dot takes. */
+function moveCircle(p, from, to) {
+  var list = circlesOf(p).slice();
+  if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return;
+  list.splice(to, 0, list.splice(from, 1)[0]);
+  p.circles = list;
+  touch(p);
+  save();
+  renderAll();
+  toast(list[0] + ' is ' + p.name + "'s main circle");
+}
+
+(function () {
+  var dragFrom = null;
+  var d = $('#dossier');
+
+  d.addEventListener('dragstart', function (e) {
+    var chip = e.target.closest('.cchip[data-ci]');
+    if (!chip) return;
+    dragFrom = +chip.dataset.ci;
+    chip.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', String(dragFrom)); } catch (err) { }
+  });
+
+  d.addEventListener('dragover', function (e) {
+    var chip = e.target.closest('.cchip[data-ci]');
+    if (dragFrom === null || !chip) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    d.querySelectorAll('.cchip.over').forEach(function (c) { c.classList.remove('over'); });
+    chip.classList.add('over');
+  });
+
+  d.addEventListener('drop', function (e) {
+    var chip = e.target.closest('.cchip[data-ci]');
+    if (dragFrom === null || !chip) return;
+    e.preventDefault();
+    var to = +chip.dataset.ci;
+    var p = selected && selected.ref;
+    var from = dragFrom;
+    dragFrom = null;
+    if (p) moveCircle(p, from, to);
+  });
+
+  d.addEventListener('dragend', function () {
+    dragFrom = null;
+    d.querySelectorAll('.cchip.over, .cchip.dragging').forEach(function (c) {
+      c.classList.remove('over'); c.classList.remove('dragging');
+    });
+  });
+})();
 
 $('#dossier').addEventListener('keydown', function (e) {
   var box = e.target.closest('.notebox');
@@ -3087,7 +3149,9 @@ function helpModal() {
       'tidy the map</div>' +
       '<p>Colours can also be set by clicking the dot beside a circle in the list at the lower left.</p></section>' +
     '<section><h5>Circles</h5>' +
-      '<p>Someone can be in as many as you like. <b>Drag a person onto a circle</b> to file them there — it becomes their main one, which is the colour their dot takes. Their card lists every circle they are in: click one to promote it, × to take them out, <em>+ circle</em> to add another.</p>' +
+      '<p>Someone can be in as many as you like, and <b>the order matters</b>: the first is their <em>main</em> circle — the one they are filed under and the colour their dot takes. On their card, drag the chips to reorder them, press <b>‹</b> to move one ahead, or click a chip to make it main outright. × takes them out, <em>+ circle</em> adds another.</p>' +
+      '<p>In Grid, Arc, Pulse and Venn a person sits with their main circle. In Web, Classic and Stars every circle they are in pulls on them, so they settle between — nearest the main one.</p>' +
+      '<p><b>Drag a person onto a circle</b> on the map to file them there; that circle becomes their main one.</p>' +
       '<p><b>Click a circle on the map</b> to recolour, rename, hide or delete it. The button beside <em>Add person</em> makes a new one, and an empty circle stays as a branch until you delete it — which is what makes “remove everyone but keep the categories” worth saying.</p></section>' +
     '<section><h5>Schools, tags, connections</h5>' +
       '<p>Type a school and press <kbd>↵</kbd> — it lands as a chip, and the level next to it cycles between undergrad, grad and unset when you click it. Saying “<em>swarthmore undergrad</em>” or “<em>wharton mba</em>” sets the level as you type, in the bar or in the chip.</p>' +

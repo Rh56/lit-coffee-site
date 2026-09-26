@@ -194,8 +194,12 @@ lighter branches, so someone who is both a neighbour and a supplier visibly
 bridges the two.
 
 - **Drag a person onto a circle** to file them there — it becomes their primary.
-- Their card lists every circle: click one to promote it, `×` to leave, *+
-  circle* to add another.
+- Their card lists every circle, **in order** — the first is their *main* one,
+  which decides where they are filed and what colour their dot is. Drag the
+  chips to reorder, press `‹` to move one ahead, or click a chip to make it
+  main. `×` leaves, *+ circle* adds another.
+- Grid, Arc, Pulse and Venn place a person with their main circle. Web, Classic
+  and Stars let every circle pull, so they settle between — nearest the main.
 - **Click a circle on the map** to recolour, rename, hide or delete it.
 - Circles claim room in proportion to how many people they hold, so a School of
   thirty gets the space a Family of two does not need.

@@ -656,17 +656,23 @@ var nodes = [], links = [], byId = {};
    Switching layout animates for free, because only the targets change. */
 
 var LAYOUTS = [
-  { id: 'web',     name: 'Web',     hint: 'Loose and organic — people sit between the circles they belong to' },
+  { id: 'web',     name: 'Web',     hint: 'Tidied organic — tight clusters, each circle keeping to its own quarter' },
+  { id: 'classic', name: 'Classic', hint: 'The original springs, left to find their own shape' },
   { id: 'venn',    name: 'Venn',    hint: 'Each circle a field; anyone in two sits where they overlap' },
-  { id: 'tree',    name: 'Tree',    hint: 'A hierarchy reading left to right' },
-  { id: 'columns', name: 'Columns', hint: 'One column per circle, names in a list' }
+  { id: 'arc',     name: 'Arc',     hint: 'Everyone on one ring, grouped by circle, connections crossing the middle' },
+  { id: 'grid',    name: 'Grid',    hint: 'A block per circle, names in tidy rows' },
+  { id: 'pulse',   name: 'Pulse',   hint: 'Placed by how long since you spoke — the quietest drift outwards' },
+  { id: 'stars',   name: 'Stars',   hint: 'Led by who introduced whom, so connected people cluster' }
 ];
 
 function layoutId() {
-  var id = state.layout === 'orbit' ? 'web' : state.layout;      // the old name
+  var id = state.layout === 'orbit' ? 'web'
+    : (state.layout === 'tree' || state.layout === 'columns') ? 'grid'   // retired
+    : state.layout;
   return LAYOUTS.some(function (l) { return l.id === id; }) ? id : 'web';
 }
-function isLoose() { return layoutId() === 'web'; }
+var LOOSE = { web: 1, classic: 1, stars: 1 };
+function isLoose() { return !!LOOSE[layoutId()]; }
 
 var R_PERSON = 6, R_HUB = 9, R_ME = 13;
 
@@ -766,10 +772,12 @@ function computeLayout() {
   });
   var loose = nodes.filter(function (n) { return n.kind === 'person' && n.parent === me; });
 
-  if (mode === 'tree') return layoutTree(me, hubs, loose);
-  if (mode === 'columns') return layoutColumns(me, hubs, loose);
+  hubs.forEach(function (h) { h.arc = null; h.field = null; });
   if (mode === 'venn') return layoutVenn(me, hubs, loose);
-  return seedLoose(me, hubs, loose);          // web settles itself
+  if (mode === 'arc') return layoutArc(me, hubs, loose);
+  if (mode === 'grid') return layoutGrid(me, hubs, loose);
+  if (mode === 'pulse') return layoutPulse(me, hubs, loose);
+  return seedLoose(me, hubs, loose);          // web, classic and stars settle themselves
 }
 
 /* Web and Venn are relaxed rather than placed, so they only need a sensible
@@ -945,51 +953,117 @@ function layoutVenn(me, hubs, loose) {
   });
 }
 
-/* Tree — depth left to right, leaves stacked. */
-function layoutTree(me, hubs, loose) {
-  var ROW = 34, COL = 268;
-  var groups = hubs.slice().sort(function (a, b) { return b.members.length - a.members.length; });
-  if (loose.length) groups.push({ synthetic: true, members: loose });
-
-  var y = 0;
-  groups.forEach(function (g, gi) {
-    if (gi) y += ROW * 0.7;
-    var first = y;
-    if (!g.members.length) y += ROW;
-    g.members.forEach(function (n) {
-      // a shared person is drawn under their first circle only; the pips
-      // beside their name say where else they live
-      if (n.parent !== g && !g.synthetic) return;
-      n.tx = COL * 2; n.ty = y; y += ROW;
-    });
-    var last = y - ROW;
-    if (!g.synthetic) { g.tx = COL; g.ty = g.members.length ? (first + last) / 2 : first; }
-  });
-
-  var all = nodes.filter(function (n) { return n !== me; });
-  var mid = all.length ? all.reduce(function (a, n) { return a + n.ty; }, 0) / all.length : 0;
-  nodes.forEach(function (n) { n.ty -= mid; });
+/* Arc — everyone on one ring, grouped by circle, so the connections between
+   people cross the middle where you can actually see them. */
+function layoutArc(me, hubs, loose) {
   me.tx = 0; me.ty = 0;
+  var groups = hubs.filter(function (g) { return g.members.length; });
+  if (loose.length) groups.push({ synthetic: true, members: loose });
+  var total = groups.reduce(function (n, g) { return n + g.members.length; }, 0);
+  if (!total) return;
+
+  var STEP = 40;                                     // world units per person
+  var R = Math.max(300, (total * STEP + groups.length * 70) / (Math.PI * 2));
+  var gap = (70 / R);                                // a breath between groups
+  var span = (Math.PI * 2 - gap * groups.length) / total;
+  var cursor = -Math.PI / 2 + gap / 2;
+
+  groups.forEach(function (g) {
+    var start = cursor;
+    g.members.forEach(function (n, i) {
+      var a = start + span * (i + 0.5);
+      n.tx = Math.cos(a) * R;
+      n.ty = Math.sin(a) * R;
+      n.angle = a;
+    });
+    var mid = start + span * g.members.length / 2;
+    if (!g.synthetic) {
+      g.angle = mid;
+      g.arc = { r: R, from: start, to: start + span * g.members.length };
+      g.tx = Math.cos(mid) * (R + 74);
+      g.ty = Math.sin(mid) * (R + 74);
+    }
+    cursor = start + span * g.members.length + gap;
+  });
+  hubs.forEach(function (g) {
+    if (!g.members.length) { g.tx = 0; g.ty = R + 74; g.arc = null; }
+  });
 }
 
-/* Columns — one column per circle, alphabetical. */
-function layoutColumns(me, hubs, loose) {
-  var COLW = 214, ROW = 30, HEAD = 58;
-  var groups = hubs.slice();
+/* Grid — a block per circle, names in rows. The tidiest way to read a lot of
+   people at once, and blocks wrap rather than marching off the side. */
+function layoutGrid(me, hubs, loose) {
+  var COL = 196, ROW = 30, HEAD = 46, GAPX = 40, GAPY = 46;
+  var groups = hubs.slice().sort(function (a, b) { return b.members.length - a.members.length; });
   if (loose.length) groups.push({ synthetic: true, members: loose });
   if (!groups.length) { me.tx = 0; me.ty = 0; return; }
 
-  var width = (groups.length - 1) * COLW;
-  groups.forEach(function (g, gi) {
-    var x = gi * COLW - width / 2;
-    if (!g.synthetic) { g.tx = x; g.ty = 0; }
-    var row = 0;
-    g.members.forEach(function (n) {
-      if (n.parent !== g && !g.synthetic) return;
-      n.tx = x; n.ty = HEAD + row * ROW; row++;
+  var MAXROWS = 14;
+  var perRow = Math.max(1, Math.round(Math.sqrt(groups.length * 1.5)));
+  var x = 0, y = 0, rowTall = 0, col = 0, widest = 0;
+
+  groups.forEach(function (g) {
+    var own = g.members.filter(function (n) { return n.parent === g || g.synthetic; });
+    var subCols = Math.max(1, Math.ceil(own.length / MAXROWS));
+    var rows = Math.ceil(own.length / subCols) || 1;
+    var blockW = COL * subCols;
+    if (col >= perRow) { col = 0; x = 0; y += rowTall + GAPY; rowTall = 0; }
+    if (!g.synthetic) { g.tx = x; g.ty = y; }
+    own.forEach(function (n, i) {
+      n.tx = x + Math.floor(i / rows) * COL;
+      n.ty = y + HEAD + (i % rows) * ROW;
     });
+    rowTall = Math.max(rowTall, HEAD + rows * ROW);
+    widest = Math.max(widest, x + blockW);
+    x += blockW + GAPX; col++;
   });
-  me.tx = 0; me.ty = -96;
+
+  var bottom = y + rowTall;
+  nodes.forEach(function (n) { n.tx -= widest / 2; n.ty -= bottom / 2; });
+  me.tx = -widest / 2 - 150; me.ty = -bottom / 2 - 20;
+}
+
+/* Pulse — distance from you is time since you last spoke. The people drifting
+   to the edge are the ones going quiet, which is the whole point of the map. */
+function layoutPulse(me, hubs, loose) {
+  me.tx = 0; me.ty = 0;
+  var people = nodes.filter(function (n) { return n.kind === 'person'; });
+  if (!people.length) return;
+
+  var groups = hubs.filter(function (g) { return g.members.length; });
+  if (loose.length) groups.push({ synthetic: true, members: loose });
+
+  var ringFor = function (n) {
+    if (!n.ref || !n.ref.log.length) return 640;       // never spoken
+    var days = daysSince(lastTouch(n.ref));
+    return 170 + Math.min(470, Math.log10(Math.max(1, days) + 1) * 215);
+  };
+
+  var weights = groups.map(function (g) { return Math.max(1, g.members.length); });
+  var total = weights.reduce(function (a, b) { return a + b; }, 0);
+  var cursor = -Math.PI / 2;
+
+  groups.forEach(function (g, gi) {
+    var span = (weights[gi] / total) * Math.PI * 2;
+    var inner = cursor + span * 0.08, usable = span * 0.84;
+    cursor += span;
+    var sorted = g.members.slice().sort(function (a, b) { return ringFor(a) - ringFor(b); });
+    var lanes = Math.max(1, Math.ceil(sorted.length / 9));
+    sorted.forEach(function (n, i) {
+      var a = inner + (sorted.length > 1 ? usable * (i / (sorted.length - 1)) : usable / 2);
+      var r = ringFor(n) + (i % lanes) * 30;         // a lane each, so none collide
+      n.tx = Math.cos(a) * r;
+      n.ty = Math.sin(a) * r;
+      n.angle = a;
+    });
+    if (!g.synthetic) {
+      var mid = inner + usable / 2;
+      g.angle = mid;
+      g.tx = Math.cos(mid) * 120;
+      g.ty = Math.sin(mid) * 120;
+    }
+  });
+  hubs.forEach(function (g) { if (!g.members.length) { g.tx = 0; g.ty = 120; } });
 }
 
 /* ---------------------------------------------------------------- motion --
@@ -1019,22 +1093,37 @@ function easeToTargets() {
   return moving;
 }
 
+/* The three relaxed views share one solver; what differs is what pulls.
+
+   web     — tight clusters, each circle held in its own quarter of the map,
+             with a hard separation pass that always wins
+   classic — the original springs and charge, left to find their own shape
+   stars   — led by who introduced whom, so connected people gather */
 function relax() {
-  var venn = false;
+  var mode = layoutId();
   var me = byId['me'];
   var i, j, a, b, dx, dy, d, f;
 
-  var SPRING_TRUNK = venn ? 250 : 195;
-  var SPRING_MEMBER = venn ? 66 : 104;
-  var SEP_PERSON = venn ? 50 : 62;         // hard minimum between two people
-  var SEP_HUB = venn ? 104 : 96;
+  var P = mode === 'classic'
+    ? { trunk: 195, member: 104, kTrunk: 0.022, kMember: 0.038, kTie: 0,
+        charge: 1900, damp: 0.84, sep: 0, sector: 0, decay: 0.988 }
+    : mode === 'stars'
+    ? { trunk: 300, member: 150, kTrunk: 0.012, kMember: 0.016, kTie: 0.09,
+        charge: 2400, damp: 0.8, sep: 58, sector: 0, decay: 0.98 }
+    : { trunk: 215, member: 84, kTrunk: 0.04, kMember: 0.075, kTie: 0,
+        charge: 1250, damp: 0.79, sep: 62, sector: 0.05, decay: 0.978 };
 
   for (i = 0; i < links.length; i++) {
     var L = links[i];
-    if (L.tie) continue;                   // ties are drawn, they do not pull
     a = L.a; b = L.b;
-    var len = L.trunk ? SPRING_TRUNK : SPRING_MEMBER;
-    var k = L.trunk ? 0.035 : (L.secondary ? 0.05 : 0.06);
+    var len, k;
+    if (L.tie) {
+      if (!P.kTie) continue;
+      len = 96; k = P.kTie;
+    } else {
+      len = L.trunk ? P.trunk : P.member;
+      k = L.trunk ? P.kTrunk : (L.secondary ? P.kMember * 0.8 : P.kMember);
+    }
     dx = b.x - a.x; dy = b.y - a.y;
     d = Math.sqrt(dx * dx + dy * dy) || 0.01;
     f = (d - len) * k * heat;
@@ -1043,7 +1132,6 @@ function relax() {
     a.vx += dx * 0.4; a.vy += dy * 0.4;
   }
 
-  // gentle mutual repulsion so branches spread instead of stacking
   for (i = 0; i < nodes.length; i++) {
     a = nodes[i];
     for (j = i + 1; j < nodes.length; j++) {
@@ -1052,42 +1140,52 @@ function relax() {
       var d2 = dx * dx + dy * dy;
       if (d2 > 90000 || d2 < 0.01) continue;
       d = Math.sqrt(d2);
-      f = Math.min(2.6, (a.kind === 'circle' || b.kind === 'circle' ? 2800 : 1500) / d2) * heat;
+      var q = (a.kind === 'circle' || b.kind === 'circle') ? P.charge * 1.8 : P.charge;
+      f = Math.min(2.6, q / d2) * heat;
       dx = dx / d * f; dy = dy / d * f;
       a.vx -= dx; a.vy -= dy; b.vx += dx; b.vy += dy;
     }
+  }
+
+  // Web only: hold each circle on the ray it was seeded on. Branches that stay
+  // in their own quarter stop the whole thing reading as a tangle.
+  if (P.sector) {
+    nodes.forEach(function (n) {
+      if (n.kind !== 'circle' || n.seedX === undefined) return;
+      n.vx += (n.seedX - n.x) * P.sector * heat;
+      n.vy += (n.seedY - n.y) * P.sector * heat;
+    });
   }
 
   for (i = 0; i < nodes.length; i++) {
     a = nodes[i];
     if (a === me) { a.x = 0; a.y = 0; a.vx = a.vy = 0; continue; }
     if (a.fx !== null && a.fx !== undefined) { a.x = a.fx; a.y = a.fy; a.vx = a.vy = 0; continue; }
-    a.vx *= 0.8; a.vy *= 0.8;
+    a.vx *= P.damp; a.vy *= P.damp;
     a.x += Math.max(-14, Math.min(14, a.vx));
     a.y += Math.max(-14, Math.min(14, a.vy));
   }
 
-  // Hard separation, run last so it always wins: this is what guarantees no
-  // two dots ever sit on top of each other, which the old springs never did.
-  for (var pass = 0; pass < 3; pass++) {
-    for (i = 0; i < nodes.length; i++) {
-      a = nodes[i];
-      for (j = i + 1; j < nodes.length; j++) {
-        b = nodes[j];
-        var min = (a.kind === 'circle' || b.kind === 'circle') ? SEP_HUB
-          : (a.kind === 'me' || b.kind === 'me') ? SEP_HUB : SEP_PERSON;
-        dx = b.x - a.x; dy = b.y - a.y;
-        d = Math.sqrt(dx * dx + dy * dy) || 0.01;
-        if (d >= min) continue;
-        var push = (min - d) / 2;
-        dx = dx / d * push; dy = dy / d * push;
-        if (a !== me && (a.fx === null || a.fx === undefined)) { a.x -= dx; a.y -= dy; }
-        if (b !== me && (b.fx === null || b.fx === undefined)) { b.x += dx; b.y += dy; }
+  if (P.sep) {
+    for (var pass = 0; pass < 3; pass++) {
+      for (i = 0; i < nodes.length; i++) {
+        a = nodes[i];
+        for (j = i + 1; j < nodes.length; j++) {
+          b = nodes[j];
+          var min = (a.kind === 'person' && b.kind === 'person') ? P.sep : 96;
+          dx = b.x - a.x; dy = b.y - a.y;
+          d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+          if (d >= min) continue;
+          var push = (min - d) / 2;
+          dx = dx / d * push; dy = dy / d * push;
+          if (a !== me && (a.fx === null || a.fx === undefined)) { a.x -= dx; a.y -= dy; }
+          if (b !== me && (b.fx === null || b.fx === undefined)) { b.x += dx; b.y += dy; }
+        }
       }
     }
   }
 
-  heat *= 0.978;
+  heat *= P.decay;
   if (heat < 0.03) { settling = false; heat = 0; return false; }
   return true;
 }
@@ -1101,6 +1199,7 @@ var ctx = canvas.getContext('2d');
 var cam = { x: 0, y: 0, k: 1 };
 var W = 0, H = 0, dpr = 1;
 var hover = null, selected = null, dragging = null, panning = null, moved = false, dropTarget = null;
+var searchTerm = '';
 var C = {};
 
 function readTokens() {
@@ -1152,7 +1251,8 @@ function fitTarget() {
   var wide = W > 880;
   var L = wide ? 244 : 34, R = (selected && wide ? 400 : 34), T = 16, B = wide ? 132 : 150;
   var availW = Math.max(120, W - L - R), availH = Math.max(120, H - T - B);
-  var floorK = W < 620 ? 0.52 : 0.34;      // legible beats complete
+  var many = nodes.length > 70;
+  var floorK = W < 620 ? 0.52 : (many ? 0.46 : 0.34);   // legible beats complete
   var listy = layoutId() !== 'orbit';
 
   // Names live in screen space, so the room they need depends on the zoom —
@@ -1287,6 +1387,54 @@ function drawFields() {
   });
 }
 
+function drawRims() {
+  nodes.forEach(function (h) {
+    if (h.kind !== 'circle' || !h.arc) return;
+    ctx.save();
+    ctx.lineWidth = 15 / cam.k;
+    ctx.lineCap = 'butt';
+    ctx.strokeStyle = mix(C.hues[h.ci] || C.accent, 0.3);
+    ctx.beginPath();
+    ctx.arc(0, 0, h.arc.r, h.arc.from, h.arc.to);
+    ctx.stroke();
+    ctx.restore();
+  });
+}
+
+/* Pulse measures distance in time, so the rings are labelled in time. */
+function drawPulseRings() {
+  var marks = [[30, '1 month'], [90, '3 months'], [365, '1 year']];
+  ctx.save();
+  ctx.lineWidth = 1 / cam.k;
+  ctx.setLineDash([3 / cam.k, 7 / cam.k]);
+  marks.forEach(function (m) {
+    var r = 170 + Math.min(470, Math.log10(m[0] + 1) * 215);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.strokeStyle = mix(C.rule, 0.85);
+    ctx.stroke();
+  });
+  ctx.restore();
+
+  ctx.save();
+  ctx.setLineDash([]);
+  ctx.textAlign = 'center';
+  ctx.font = '500 9.5px "JetBrains Mono", monospace';
+  marks.forEach(function (m) {
+    var r = 170 + Math.min(470, Math.log10(m[0] + 1) * 215);
+    var p = toScreen(0, -r);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.lineWidth = 3.4; ctx.lineJoin = 'round';
+    ctx.strokeStyle = mix(C.ground, 0.92);
+    ctx.strokeText(m[1], p[0], p[1] - 7);
+    ctx.fillStyle = mix(C.faint, 0.95);
+    ctx.fillText(m[1], p[0], p[1] - 7);
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
 function draw() {
   if (!W) return;
   ctx.clearRect(0, 0, W, H);
@@ -1295,7 +1443,10 @@ function draw() {
   ctx.scale(cam.k, cam.k);
   ctx.translate(-cam.x, -cam.y);
 
-  if (layoutId() === 'venn') drawFields();
+  var lay = layoutId();
+  if (lay === 'venn') drawFields();
+  if (lay === 'arc') drawRims();
+  if (lay === 'pulse') drawPulseRings();
 
   var focus = hover || selected;
   var DIM = hover ? 0.24 : 0.72;   // hovering focuses hard; a card open only softens
@@ -1321,9 +1472,10 @@ function draw() {
       var cx = (from.x + to.x) / 2 - dy * 0.12, cy = (from.y + to.y) / 2 + dx * 0.12;
 
       ctx.save();
-      ctx.setLineDash([5 / cam.k, 4 / cam.k]);
-      ctx.lineWidth = 1.1 / cam.k;
-      ctx.strokeStyle = mix(C.ink, 0.42 * dim);
+      var starry = layoutId() === 'stars';
+      ctx.setLineDash(starry ? [] : [5 / cam.k, 4 / cam.k]);
+      ctx.lineWidth = (starry ? 1.7 : 1.1) / cam.k;
+      ctx.strokeStyle = mix(C.ink, (starry ? 0.6 : 0.42) * dim);
       ctx.beginPath();
       ctx.moveTo(from.x, from.y);
       ctx.quadraticCurveTo(cx, cy, to.x, to.y);
@@ -1356,7 +1508,33 @@ function draw() {
     var hue = L.secondary ? (C.hues[circleIndex(L.a.label)] || C.accent) : hueOf(L.b);
 
     if (isLoose()) {
-      branch(L.a, L.b, trunk ? 7 : (L.secondary ? 3 : 5), trunk ? 2.8 : 1.1, hue, fade * (mode === 'venn' ? 0.5 : 1));
+      var soft = mode === 'stars' ? 0.42 : 1;
+      branch(L.a, L.b, trunk ? 7 : (L.secondary ? 3 : 5), trunk ? 2.8 : 1.1, hue, fade * soft);
+      return;
+    }
+
+    if (mode === 'arc') {
+      if (!trunk) return;                       // the rim band carries the group
+      ctx.save();
+      ctx.lineWidth = 1.1 / cam.k;
+      ctx.strokeStyle = mix(hue, 0.3 * fade);
+      ctx.beginPath();
+      ctx.moveTo(L.a.x, L.a.y);
+      ctx.lineTo(L.b.x, L.b.y);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    if (mode === 'pulse') {                     // a spoke, straight out from you
+      ctx.save();
+      ctx.lineWidth = (trunk ? 1.6 : 1) / cam.k;
+      ctx.strokeStyle = mix(hue, (trunk ? 0.45 : 0.36) * fade);
+      ctx.beginPath();
+      ctx.moveTo(L.a.x, L.a.y);
+      ctx.lineTo(L.b.x, L.b.y);
+      ctx.stroke();
+      ctx.restore();
       return;
     }
 
@@ -1429,6 +1607,10 @@ function draw() {
         ctx.lineWidth = 1.4 / cam.k; ctx.setLineDash([4 / cam.k, 3 / cam.k]);
         ctx.strokeStyle = mix(col, 0.95); ctx.stroke(); ctx.setLineDash([]);
       }
+      if (n.hit) {
+        ctx.beginPath(); ctx.arc(n.x, n.y, r + 7, 0, Math.PI * 2);
+        ctx.lineWidth = 2 / cam.k; ctx.strokeStyle = mix(C.accent, 0.9); ctx.stroke();
+      }
       if (selected === n) {
         ctx.beginPath(); ctx.arc(n.x, n.y, r + 5, 0, Math.PI * 2);
         ctx.lineWidth = 1.2 / cam.k; ctx.strokeStyle = C.ink; ctx.stroke();
@@ -1448,12 +1630,33 @@ function draw() {
   ctx.save();
   ctx.textBaseline = 'top';
 
-  var listy = layoutId() !== 'orbit';
+  var listy = false;
   var jobs = nodes.slice().sort(function (a, b) { return labelRank(a) - labelRank(b); });
   var placed = [];
 
+  /* With a few dozen people every name fits. With three hundred it cannot, and
+     printing them anyway is how a map turns to mush. Past the budget only the
+     ones that earn it are named — you, the circles, whatever is focused or
+     searched, and then the most recently spoken to. The rest are a dot until
+     you hover or search them, and hovering names the whole cluster. */
+  var budget = Math.max(28, Math.round((W * H) / 26000));
+  var namedCount = 0;
+
+  if (searchTerm) {
+    nodes.forEach(function (n) {
+      n.hit = n.kind === 'person' && n.label.toLowerCase().indexOf(searchTerm) >= 0;
+    });
+  } else if (nodes.length && nodes[0].hit !== undefined) {
+    nodes.forEach(function (n) { n.hit = false; });
+  }
+
   jobs.forEach(function (n) {
     if (cam.k < 0.42 && n.kind === 'person' && n !== focus && n !== selected) return;
+    if (n.kind === 'person') {
+      var must = n === focus || n === selected || lit[n.id] || n.hit;
+      if (!must && namedCount >= budget) return;
+      namedCount++;
+    }
     var p = toScreen(n.x, n.y);
     if (p[0] < -200 || p[0] > W + 200 || p[1] < -60 || p[1] > H + 60) return;
     var dim = focus && !lit[n.id] ? Math.max(DIM, 0.34) : 1;
@@ -1532,6 +1735,13 @@ function draw() {
       ctx.restore();
     }
 
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3.4;
+    ctx.strokeStyle = mix(C.ground, 0.92);
+    ctx.strokeText(text, x, finalY);
+    ctx.restore();
+
     ctx.fillStyle = n.kind === 'circle' ? mix(C.muted, dim)
       : n.kind === 'me' ? C.ink
       : mix(n.cold ? C.muted : C.ink, dim);
@@ -1556,10 +1766,13 @@ function draw() {
   ctx.restore();
 
   function labelRank(n) {
-    if (n === focus || n === selected) return -2;
-    if (n.kind === 'me') return -1;
-    if (n.kind === 'circle') return 0;
-    return 1;
+    if (n === focus || n === selected) return -3;
+    if (n.kind === 'me') return -2;
+    if (n.kind === 'circle') return -1;
+    if (n.hit) return 0;                              // a search match
+    if (focus && lit[n.id]) return 0.5;               // in the focused cluster
+    var t = n.ref ? lastTouch(n.ref) : 0;
+    return 2 + 1 / (1 + Math.max(0, daysSince(t)) / 30);
   }
 }
 
@@ -1681,6 +1894,28 @@ var LAYOUT_ICONS = {
          '<circle cx="18.8" cy="17.4" r="1.7" fill="currentColor" stroke="none"/>',
   venn:  '<circle cx="9" cy="12" r="5.6"/><circle cx="15" cy="12" r="5.6"/>' +
          '<circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>',
+  classic: '<path d="M12 12c-4-2-6-5-4.5-7.5M12 12c4.5-1 7 1 6.5 4M12 12c-1 4-4 5.5-6 4"/>' +
+         '<circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/>' +
+         '<circle cx="6.8" cy="4" r="1.5" fill="currentColor" stroke="none"/>' +
+         '<circle cx="19" cy="16.6" r="1.5" fill="currentColor" stroke="none"/>' +
+         '<circle cx="5.6" cy="16.5" r="1.5" fill="currentColor" stroke="none"/>',
+  arc:   '<circle cx="12" cy="12" r="7.6" opacity=".5"/>' +
+         '<path d="M6.6 6.6C11 11 13 13 17.4 17.4M17.4 6.6C13 11 11 13 6.6 17.4" opacity=".8"/>' +
+         '<circle cx="6.6" cy="6.6" r="1.5" fill="currentColor" stroke="none"/>' +
+         '<circle cx="17.4" cy="6.6" r="1.5" fill="currentColor" stroke="none"/>' +
+         '<circle cx="6.6" cy="17.4" r="1.5" fill="currentColor" stroke="none"/>' +
+         '<circle cx="17.4" cy="17.4" r="1.5" fill="currentColor" stroke="none"/>',
+  grid:  '<rect x="4" y="4.5" width="7" height="6" rx="1.2"/><rect x="13" y="4.5" width="7" height="6" rx="1.2"/>' +
+         '<rect x="4" y="13.5" width="7" height="6" rx="1.2"/><rect x="13" y="13.5" width="7" height="6" rx="1.2"/>',
+  pulse: '<circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>' +
+         '<circle cx="12" cy="12" r="5.4" opacity=".65"/><circle cx="12" cy="12" r="8.8" opacity=".35"/>' +
+         '<circle cx="18.4" cy="8.4" r="1.4" fill="currentColor" stroke="none"/>' +
+         '<circle cx="7" cy="15.4" r="1.4" fill="currentColor" stroke="none"/>',
+  stars: '<path d="M7 7l5 2.5L17.5 6M7 7l1.5 6M8.5 13l6 4M17.5 6l-3 11" opacity=".55"/>' +
+         '<circle cx="7" cy="7" r="1.6" fill="currentColor" stroke="none"/>' +
+         '<circle cx="17.5" cy="6" r="1.6" fill="currentColor" stroke="none"/>' +
+         '<circle cx="8.5" cy="13" r="1.6" fill="currentColor" stroke="none"/>' +
+         '<circle cx="14.5" cy="17" r="1.6" fill="currentColor" stroke="none"/>',
   tree:  '<circle cx="4.5" cy="12" r="1.9" fill="currentColor" stroke="none"/>' +
          '<path d="M6.4 12h4M10.4 12V6.5h4M10.4 12v5.5h4"/>' +
          '<circle cx="16" cy="6.5" r="1.7" fill="currentColor" stroke="none"/>' +
@@ -1895,6 +2130,21 @@ function openDossier(node) {
       '</div>' +
 
       '<div class="d-sec"><h4>History</h4>' +
+        '<div class="logger" id="logger" hidden>' +
+          '<div class="chanrow">' +
+            ['talk', 'zoom', 'call', 'coffee', 'meal', 'event', 'email', 'message', 'met', 'note']
+              .map(function (c, i) {
+                return '<button class="chan' + (i === 0 ? ' on' : '') + '" data-chan="' + c + '">' + c + '</button>';
+              }).join('') +
+          '</div>' +
+          '<textarea id="log-text" rows="2" placeholder="What happened?" aria-label="What happened"></textarea>' +
+          '<div class="logrow">' +
+            '<input type="date" id="log-date" aria-label="When">' +
+            '<button class="btn primary" id="log-save">Add</button>' +
+            '<button class="btn" id="log-cancel">Cancel</button>' +
+          '</div>' +
+        '</div>' +
+        '<button class="addfield" id="log-open">+ log a touchpoint</button>' +
         (p.log.length ? '<div class="log">' + p.log.map(function (e) {
           return '<div class="entry">' +
             '<button class="del" data-dellog="' + e.id + '" title="Delete entry">&times;</button>' +
@@ -1915,7 +2165,6 @@ function openDossier(node) {
       '</div></div>' +
 
       '<div class="d-actions">' +
-        '<button class="btn" data-log="' + p.id + '">Log a touchpoint</button>' +
         '<button class="btn quiet" data-del="' + p.id + '" style="margin-left:auto">Delete</button>' +
       '</div>' +
     '</div>';
@@ -2054,7 +2303,36 @@ $('#dossier').addEventListener('click', function (e) {
     vv.addEventListener('blur', function () { setTimeout(commit, 120); });
     return;
   }
-  if (t.dataset.log) { $('#chat').value = 'Talked with ' + p.name + ' — '; $('#chat').focus(); return; }
+  if (t.dataset.log || t.id === 'log-open') {
+    var box = $('#logger');
+    box.hidden = false;
+    $('#log-open').hidden = true;
+    var dt = $('#log-date');
+    if (!dt.value) dt.value = new Date().toISOString().slice(0, 10);
+    $('#log-text').focus();
+    return;
+  }
+  if (t.classList.contains('chan')) {
+    $('#logger').querySelectorAll('.chan').forEach(function (c) { c.classList.remove('on'); });
+    t.classList.add('on');
+    return;
+  }
+  if (t.id === 'log-cancel') { openDossier(selected); return; }
+  if (t.id === 'log-save') {
+    var text = clean($('#log-text').value);
+    if (!text) { $('#log-text').focus(); return; }
+    var chan = ($('#logger').querySelector('.chan.on') || {}).dataset;
+    var when = Date.parse($('#log-date').value + 'T12:00:00') || Date.now();
+    var learned = '';
+    var lm = /\b(?:learned|found out|turns out|told me|mentioned|she said|he said|they said)\s+(?:that\s+)?(.{4,})/i.exec(text);
+    if (lm) learned = clean(lm[1].split(/\.\s+/)[0]).replace(/^(?:about|that)\s+/i, '').slice(0, 180);
+    p.log.unshift({ id: uid(), at: when, channel: (chan && chan.chan) || 'note', text: text, learned: learned });
+    touch(p);
+    lastSubject = p;
+    save(); renderAll(); openDossier(selected);
+    toast('Logged · ' + p.name);
+    return;
+  }
   if (t.dataset.del) {
     if (!confirm('Delete ' + p.name + ' and their history?')) return;
     forget(p);
@@ -2781,11 +3059,14 @@ function helpModal() {
       '<div class="ex">school: Lehigh · circle: Family · role: Pastry chef</div></section>' +
     '<section><h5>The map</h5>' +
       '<p>You are the centre. Circles branch off you; people branch off circles. Every dot is the same size — only colour and position carry meaning — and a dot fades to an outline once it has been quiet too long, which is what puts someone under “Going cold”.</p>' +
-      '<p>Four ways to see it, from the buttons at the top left (or <kbd>1</kbd>–<kbd>4</kbd>):</p>' +
-      '<div class="ex"><b>Web</b>     loose and organic — someone in two circles sits between them\n' +
+      '<p>Seven ways to see it, from the buttons at the top left (or the number keys):</p>' +
+      '<div class="ex"><b>Web</b>     tidied organic — each circle keeps to its own quarter\n' +
+      '<b>Classic</b> the original springs, left to find their own shape\n' +
       '<b>Venn</b>    each circle a field; anyone in two sits in the overlap\n' +
-      '<b>Tree</b>    a hierarchy reading left to right\n' +
-      '<b>Columns</b> one column per circle, names in a list</div>' +
+      '<b>Arc</b>     everyone on one ring, connections crossing the middle\n' +
+      '<b>Grid</b>    a block per circle, names in tidy rows\n' +
+      '<b>Pulse</b>   distance from you is time since you last spoke\n' +
+      '<b>Stars</b>   led by who introduced whom, so connected people cluster</div>' +
       '<p>Wherever a name appears, a coloured dot after it marks every other circle that person is in — so a shared person is never hidden, whichever view you are in. Switching view re-frames the map for you.</p>' +
       '<p>Drag a person onto a circle to file them there, or onto another person to connect them. Let go anywhere else and the layout takes them back — nothing stays pinned. Scroll to zoom, drag to pan, <kbd>T</kbd> to tidy.</p></section>' +
     '<section><h5>Reshaping the map</h5>' +
@@ -2811,9 +3092,12 @@ function helpModal() {
     '<section><h5>Schools, tags, connections</h5>' +
       '<p>Type a school and press <kbd>↵</kbd> — it lands as a chip, and the level next to it cycles between undergrad, grad and unset when you click it. Saying “<em>swarthmore undergrad</em>” or “<em>wharton mba</em>” sets the level as you type, in the bar or in the chip.</p>' +
       '<p><b>Connections</b> record who put you onto whom, drawn as a dashed arrow pointing from the person who made the introduction to the person you met. <b>Drag one person onto another</b> to join them; the toast offers to flip the direction if you had it the other way round. The bar understands it too — “<em>Marcus introduced me to Rae Kim</em>”, “<em>got her info from Ada</em>”, “<em>met Lila through Priya</em>” — and the Connections row on a card takes a name directly.</p>' +
-      '<p><b>Notes</b> sit under the history on every card — write one and press <kbd>↵</kbd>. Click an existing note to edit it.</p></section>' +
+      '<p><b>Notes</b> sit under the history on every card — write one and press <kbd>↵</kbd>. Click an existing note to edit it.</p>' +
+      '<p><b>Touchpoints</b> can be logged straight from a card: <em>+ log a touchpoint</em> under History gives you the kind, the date and what happened, without going near the bar at the bottom.</p></section>' +
     '<section><h5>When the map gets messy</h5>' +
       '<p>The <b>tidy</b> button (top right, or <kbd>T</kbd>) lets go of everyone you have dragged into place and lets the whole thing settle again. Circles claim room in proportion to how many people they hold, so a School of thirty gets the space it needs.</p></section>' +
+    '<section><h5>When the map gets big</h5>' +
+      '<p>Past a few dozen people not every name can be printed without the map turning to mush, so names are rationed: you, the circles, whatever is selected or hovered, anything matching the search, and then the people you spoke to most recently. The rest stay as dots — hover one, or type a name in the search box, and it is named and ringed on the map.</p></section>' +
     '<section><h5>Fixing a card</h5>' +
       '<p>Click any value on someone’s card and type over it — the name at the top too. Empty fields say <em>add</em>; click to fill them. <em>+ another field</em> at the bottom takes anything the standard ones do not cover.</p></section>' +
     '<section><h5>Commands</h5>' +
@@ -3308,6 +3592,8 @@ chat.addEventListener('keydown', function (e) {
 var search = $('#search'), results = $('#results');
 function runSearch() {
   var q = search.value.trim().toLowerCase();
+  searchTerm = q;
+  needsDraw = true;
   if (!q) { results.innerHTML = ''; return; }
   var hits = state.people.filter(function (p) {
     return [p.name, p.profession, p.company, schoolsOf(p).map(function (x) { return x.name; }).join(' '),
@@ -3602,9 +3888,8 @@ document.addEventListener('keydown', function (e) {
   if (e.key === '/') { e.preventDefault(); chat.focus(); }
   if (e.key === 'f') fit();
   if (e.key === 't') tidyMap();
-  if (e.key === '1') setLayout('orbit');
-  if (e.key === '2') setLayout('tree');
-  if (e.key === '3') setLayout('columns');
+  var numbered = LAYOUTS[parseInt(e.key, 10) - 1];
+  if (numbered && /^[1-9]$/.test(e.key)) setLayout(numbered.id);
   if (e.key === '?') helpModal();
   if (e.key === 'n') { e.preventDefault(); personForm(null); }
 });

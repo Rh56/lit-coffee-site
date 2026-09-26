@@ -903,14 +903,14 @@ dd:hover .jump, .jump:focus-visible{ opacity:1; }
   backdrop-filter:blur(8px);
 }
 .layouts button{
-  display:flex; flex-direction:column; align-items:center; gap:3px;
-  width:58px; padding:7px 4px 6px;
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+  width:54px; padding:5px 4px 4px;
   border-radius:2px; color:var(--muted);
   transition:color .14s, background .14s;
 }
-.layouts button svg{ width:19px; height:19px; display:block; }
+.layouts button svg{ width:17px; height:17px; display:block; }
 .layouts button span{
-  font-family:var(--mono); font-size:8.5px; letter-spacing:.1em; text-transform:uppercase;
+  font-family:var(--mono); font-size:8px; letter-spacing:.08em; text-transform:uppercase;
 }
 .layouts button:hover{ color:var(--ink); background:var(--panel-2); }
 .layouts button[data-on="1"]{ color:var(--accent); background:var(--panel-2); }
@@ -920,3 +920,31 @@ dd:hover .jump, .jump:focus-visible{ opacity:1; }
   .layouts button{ width:46px; }
   .layouts button span{ display:none; }
 }
+
+/* ---------- logging from the card ---------- */
+
+.logger{
+  display:flex; flex-direction:column; gap:7px;
+  padding:10px; margin-bottom:12px;
+  border:1px solid var(--rule); border-left:2px solid var(--accent);
+  border-radius:var(--r); background:var(--panel-2);
+}
+.chanrow{ display:flex; flex-wrap:wrap; gap:4px; }
+.chan{
+  font-family:var(--mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--muted); border:1px solid var(--rule); border-radius:2px; padding:3px 6px;
+}
+.chan:hover{ color:var(--ink); }
+.chan.on{ color:var(--accent); border-color:var(--accent); }
+.logger textarea{
+  width:100%; resize:vertical; background:var(--field); border:1px solid var(--rule);
+  border-radius:var(--r); padding:7px 9px; font-size:13px; line-height:1.5; outline:none;
+}
+.logger textarea:focus{ border-color:var(--accent); }
+.logrow{ display:flex; align-items:center; gap:6px; }
+.logrow input[type="date"]{
+  flex:1; min-width:0; background:var(--field); border:1px solid var(--rule);
+  border-radius:var(--r); padding:5px 7px; font-size:12.5px; font-family:var(--mono);
+  outline:none; color-scheme:inherit;
+}
+.logrow .btn{ padding:5px 10px; font-size:12px; }

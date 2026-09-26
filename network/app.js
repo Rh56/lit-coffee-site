@@ -10,10 +10,9 @@
 
 var KEY = 'rootwork.v1';
 var DAY = 86400000;
-var COLD_DAYS = 90;
 
-var state = { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, circleTombstones: {}, coldDays: 90, layout: 'orbit', settingsAt: 0, meUpdated: 0, demo: false, seq: 1 };
-var DEFAULTS = function () { return { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, circleTombstones: {}, coldDays: 90, layout: 'orbit', settingsAt: 0, meUpdated: 0, demo: false, seq: 1 }; };
+var state = { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, circleTombstones: {}, layout: 'orbit', settingsAt: 0, meUpdated: 0, demo: false, seq: 1 };
+var DEFAULTS = function () { return { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, circleTombstones: {}, layout: 'orbit', settingsAt: 0, meUpdated: 0, demo: false, seq: 1 }; };
 var applyingRemote = false;
 var pendingRemote = null;
 
@@ -21,10 +20,15 @@ var pendingRemote = null;
    would destroy. Sync waits for this to clear. */
 function isEditing() {
   var el = document.activeElement;
-  if (!el || el === document.body) return false;
-  if (el.matches && el.matches('.inplace, .chipinput, .notebox, .newfield input, .cpick input')) return true;
-  if (el.closest && el.closest('#scrim')) return true;      // a dialog is open
-  return false;
+  if (!el || el === document.body || !el.closest) return false;
+  if (el.closest('#scrim')) return true;                    // a dialog is open
+  var typing = /^(input|textarea|select)$/i.test(el.tagName) || el.isContentEditable;
+  if (!typing) return false;
+  // anything typed inside a panel we rebuild wholesale: the card, the touchpoint
+  // composer, an inline field editor. Checking the container rather than a list
+  // of classes means a new control here is covered the day it is added.
+  if (el.closest('#dossier, .logger, .cpick, .newfield')) return true;
+  return !!(el.matches && el.matches('.inplace, .chipinput, .notebox'));
 }
 
 function uid() { return 'p' + (state.seq++) + Math.random().toString(36).slice(2, 6); }
@@ -136,11 +140,10 @@ function lastTouch(p) {
   return t;
 }
 function daysSince(t) { return Math.floor((Date.now() - t) / DAY); }
-function coldAfter() { return state.coldDays || COLD_DAYS; }
-function isCold(p) { return p.log.length > 0 && daysSince(lastTouch(p)) > coldAfter(); }
+/* Only a follow-up you actually asked for counts as due. Nobody goes cold on
+   their own here. */
 function nudgeDue(p) {
-  if (p.followUp && p.followUp.date && p.followUp.date <= Date.now() + DAY) return true;
-  return isCold(p);
+  return !!(p.followUp && p.followUp.date && p.followUp.date <= Date.now() + DAY);
 }
 
 /* Where a person hangs. First one is their primary — it colours their dot and
@@ -708,7 +711,6 @@ function rebuild() {
     n.circles = mine;
     n.hues = mine.map(circleIndex);
     n.strength = p.log.length;
-    n.cold = isCold(p);
     if (parent.members) parent.members.push(n);
     links.push({ a: parent, b: n });
     // every other circle they belong to pulls on them too, which is what makes
@@ -1504,7 +1506,7 @@ function draw() {
     var trunk = L.b.kind === 'circle';
     if (mode === 'venn') return;                // the fields say it, lines only clutter
     if (!isLoose() && L.secondary) return;      // the pips beside the name say it
-    var fade = (L.b.cold ? 0.55 : 1) * dim * (trunk ? 0.55 : 1) * (L.secondary ? 0.5 : 1);
+    var fade = dim * (trunk ? 0.55 : 1) * (L.secondary ? 0.5 : 1);
     var hue = L.secondary ? (C.hues[circleIndex(L.a.label)] || C.accent) : hueOf(L.b);
 
     if (isLoose()) {
@@ -1594,12 +1596,8 @@ function draw() {
       ctx.strokeStyle = mix(col, 0.85 * dim); ctx.stroke();
     } else {
       ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = mix(col, (n.cold ? 0.14 : 0.92) * dim);
+      ctx.fillStyle = mix(col, 0.92 * dim);
       ctx.fill();
-      if (n.cold) {
-        ctx.lineWidth = 1.3 / cam.k;
-        ctx.strokeStyle = mix(col, 0.7 * dim); ctx.stroke();
-      }
       if (dropTarget === n) {
         ctx.beginPath(); ctx.arc(n.x, n.y, r + 12, 0, Math.PI * 2);
         ctx.fillStyle = mix(col, 0.14); ctx.fill();
@@ -1744,7 +1742,7 @@ function draw() {
 
     ctx.fillStyle = n.kind === 'circle' ? mix(C.muted, dim)
       : n.kind === 'me' ? C.ink
-      : mix(n.cold ? C.muted : C.ink, dim);
+      : mix(C.ink, dim);
     ctx.fillText(text, x, finalY);
 
     // a dot per extra circle, so a shared person is obvious in any view
@@ -1966,13 +1964,13 @@ document.addEventListener('click', function (e) {
 function updateHint() { $('#hint').hidden = state.people.length > 0; }
 
 function renderStats() {
-  var cold = state.people.filter(nudgeDue).length;
+  var due = state.people.filter(nudgeDue).length;
   var logs = state.people.reduce(function (a, p) { return a + p.log.length; }, 0);
   $('#stats').innerHTML =
     '<span><b>' + state.people.length + '</b> people</span>' +
     '<span><b>' + circleList().length + '</b> circles</span>' +
     '<span><b>' + logs + '</b> touchpoints</span>' +
-    (cold ? '<span class="cold"><b>' + cold + '</b> to nudge</span>' : '');
+    (due ? '<span class="due"><b>' + due + '</b> to follow up</span>' : '');
 }
 
 function renderLegend() {
@@ -1991,11 +1989,10 @@ function renderNudges() {
   var due = state.people.filter(nudgeDue).sort(function (a, b) { return lastTouch(a) - lastTouch(b); });
   $('#nudge-count').textContent = due.length || '';
   $('#nudges').innerHTML = due.slice(0, 12).map(function (p) {
-    var why = (p.followUp && p.followUp.date <= Date.now() + DAY)
-      ? 'follow-up due' : 'last touch ' + ago(lastTouch(p));
+    var why = 'follow-up due · last touch ' + (p.log.length ? ago(lastTouch(p)) : 'never');
     return '<button data-goto="' + p.id + '"><span class="n1">' + esc(p.name) + '</span><br>' +
       '<span class="n2">' + esc(why) + '</span></button>';
-  }).join('') || '<div class="empty">Everyone is warm. Nice.</div>';
+  }).join('') || '<div class="empty">No follow-ups due.</div>';
 }
 
 function renderAll() {
@@ -2038,6 +2035,11 @@ function editInPlace(el, current, multiline, done) {
   });
 }
 
+/* What is half-typed into the touchpoint composer. Kept outside the card so a
+   re-render — a sync pull, a relayout — rebuilds it instead of wiping it. */
+var logDraft = null;
+function draftFor(id) { return (logDraft && logDraft.pid === id) ? logDraft : null; }
+
 function openDossier(node) {
   var p = node && node.ref;
   if (!p || node.kind !== 'person') return;
@@ -2045,6 +2047,10 @@ function openDossier(node) {
   var d = $('#dossier');
   var col = 'var(--h' + circleIndex(primaryCircle(p)) + ')';
   var lt = lastTouch(p);
+  var dr = draftFor(p.id);
+  // if the rebuild lands mid-sentence, put the cursor back where it was
+  var was = document.activeElement;
+  var caret = (dr && was && was.id === 'log-text') ? was.selectionStart : -1;
 
   function row(k, field, v, href) {
     var body = v ? esc(v) : '<span class="add">add</span>';
@@ -2134,21 +2140,23 @@ function openDossier(node) {
       '</div>' +
 
       '<div class="d-sec"><h4>History</h4>' +
-        '<div class="logger" id="logger" hidden>' +
+        '<div class="logger" id="logger"' + (dr ? '' : ' hidden') + '>' +
           '<div class="chanrow">' +
             ['talk', 'zoom', 'call', 'coffee', 'meal', 'event', 'email', 'message', 'met', 'note']
               .map(function (c, i) {
-                return '<button class="chan' + (i === 0 ? ' on' : '') + '" data-chan="' + c + '">' + c + '</button>';
+                var on = dr ? dr.chan === c : i === 0;
+                return '<button class="chan' + (on ? ' on' : '') + '" data-chan="' + c + '">' + c + '</button>';
               }).join('') +
           '</div>' +
-          '<textarea id="log-text" rows="2" placeholder="What happened?" aria-label="What happened"></textarea>' +
+          '<textarea id="log-text" rows="2" placeholder="What happened?" aria-label="What happened">' +
+            (dr ? esc(dr.text) : '') + '</textarea>' +
           '<div class="logrow">' +
-            '<input type="date" id="log-date" aria-label="When">' +
+            '<input type="date" id="log-date" aria-label="When" value="' + (dr ? esc(dr.date) : '') + '">' +
             '<button class="btn primary" id="log-save">Add</button>' +
             '<button class="btn" id="log-cancel">Cancel</button>' +
           '</div>' +
         '</div>' +
-        '<button class="addfield" id="log-open">+ log a touchpoint</button>' +
+        '<button class="addfield" id="log-open"' + (dr ? ' hidden' : '') + '>+ log a touchpoint</button>' +
         (p.log.length ? '<div class="log">' + p.log.map(function (e) {
           return '<div class="entry">' +
             '<button class="del" data-dellog="' + e.id + '" title="Delete entry">&times;</button>' +
@@ -2173,6 +2181,15 @@ function openDossier(node) {
       '</div>' +
     '</div>';
 
+  var lx = d.querySelector('#log-text');
+  var ld = d.querySelector('#log-date');
+  if (lx) lx.addEventListener('input', function () { if (logDraft) logDraft.text = lx.value; });
+  if (ld) ld.addEventListener('change', function () { if (logDraft) logDraft.date = ld.value; });
+  if (caret >= 0 && lx) {
+    lx.focus();
+    try { lx.setSelectionRange(caret, caret); } catch (e) { }
+  }
+
   var nb = d.querySelector('.notebox');
   if (nb) nb.addEventListener('input', function () {
     nb.style.height = 'auto';
@@ -2195,6 +2212,7 @@ function openDossier(node) {
 
 function closeDossier() {
   selected = null;
+  logDraft = null;
   var d = $('#dossier');
   d.classList.remove('open');
   $('#stage').classList.remove('panel-open');
@@ -2312,20 +2330,25 @@ $('#dossier').addEventListener('click', function (e) {
     return;
   }
   if (t.dataset.log || t.id === 'log-open') {
-    var box = $('#logger');
-    box.hidden = false;
-    $('#log-open').hidden = true;
     var dt = $('#log-date');
-    if (!dt.value) dt.value = new Date().toISOString().slice(0, 10);
+    logDraft = {
+      pid: p.id, text: $('#log-text').value, chan: 'talk',
+      date: dt.value || new Date().toISOString().slice(0, 10)
+    };
+    $('#logger').hidden = false;
+    $('#log-open').hidden = true;
+    dt.value = logDraft.date;
     $('#log-text').focus();
     return;
   }
   if (t.classList.contains('chan')) {
     $('#logger').querySelectorAll('.chan').forEach(function (c) { c.classList.remove('on'); });
     t.classList.add('on');
+    if (logDraft) logDraft.chan = t.dataset.chan;
+    $('#log-text').focus();           // straight back to the sentence
     return;
   }
-  if (t.id === 'log-cancel') { openDossier(selected); return; }
+  if (t.id === 'log-cancel') { logDraft = null; openDossier(selected); return; }
   if (t.id === 'log-save') {
     var text = clean($('#log-text').value);
     if (!text) { $('#log-text').focus(); return; }
@@ -2335,6 +2358,7 @@ $('#dossier').addEventListener('click', function (e) {
     var lm = /\b(?:learned|found out|turns out|told me|mentioned|she said|he said|they said)\s+(?:that\s+)?(.{4,})/i.exec(text);
     if (lm) learned = clean(lm[1].split(/\.\s+/)[0]).replace(/^(?:about|that)\s+/i, '').slice(0, 180);
     p.log.unshift({ id: uid(), at: when, channel: (chan && chan.chan) || 'note', text: text, learned: learned });
+    logDraft = null;
     touch(p);
     lastSubject = p;
     save(); renderAll(); openDossier(selected);
@@ -3120,7 +3144,7 @@ function helpModal() {
       '<p>Click any chip in the preview to fix it, or the × to drop it. Force a field outright with a colon:</p>' +
       '<div class="ex">school: Lehigh · circle: Family · role: Pastry chef</div></section>' +
     '<section><h5>The map</h5>' +
-      '<p>You are the centre. Circles branch off you; people branch off circles. Every dot is the same size — only colour and position carry meaning — and a dot fades to an outline once it has been quiet too long, which is what puts someone under “Going cold”.</p>' +
+      '<p>You are the centre. Circles branch off you; people branch off circles. Every dot is the same size — only colour and position carry meaning.</p>' +
       '<p>Seven ways to see it, from the buttons at the top left (or the number keys):</p>' +
       '<div class="ex"><b>Web</b>     tidied organic — each circle keeps to its own quarter\n' +
       '<b>Classic</b> the original springs, left to find their own shape\n' +
@@ -3144,7 +3168,6 @@ function helpModal() {
     '<section><h5>Look and settings</h5>' +
       '<div class="ex">make Work green             ·  turn School gold\n' +
       'hide Family                 ·  show everything\n' +
-      'mark people cold after 30 days\n' +
       'switch to light mode        ·  call me Ben Greenberg\n' +
       'tidy the map</div>' +
       '<p>Colours can also be set by clicking the dot beside a circle in the list at the lower left.</p></section>' +
@@ -3339,18 +3362,6 @@ function structural(text) {
       summary: target + ' turns ' + m[2].toLowerCase(),
       quiet: true,
       run: function () { setCircleColor(target, hue); }
-    };
-  }
-
-  // how long before someone counts as cold
-  if ((m = /(?:cold|nudge|stale|quiet|remind)\b[^.]*?\b(?:after|at|past|over)\s+(\d{1,3})\s*(day|week|month)s?\b/i.exec(t))
-      || (m = /(?:mark|call|treat)\b[^.]*?\bcold\b[^.]*?(\d{1,3})\s*(day|week|month)s?/i.exec(t))) {
-    var mult = m[2].toLowerCase() === 'week' ? 7 : m[2].toLowerCase() === 'month' ? 30 : 1;
-    var days = Math.max(1, parseInt(m[1], 10) * mult);
-    return {
-      summary: 'Going cold after ' + days + ' days',
-      quiet: true,
-      run: function () { state.coldDays = days; state.settingsAt = Date.now(); }
     };
   }
 

@@ -276,26 +276,9 @@ function setCircleColor(name, idx) {
 var hidden = {};   // circle name -> true when filtered out
 var lastSubject = null;  // who the last entry was about, so pronouns have a referent
 
-/* ---------------------------------------------------------------- parse -- */
-
-var CHANNELS = [
-  ['zoom', /\b(zoom(?:ed)?|video ?call|google meet|meet call|teams call|facetime|hangout)\b/i],
-  ['call', /\b(call(?:ed)?|phone|rang|voicemail)\b/i],
-  ['talk', /\b(chat(?:ted|ting)?|talk(?:ed|ing)?|spoke|speaking|conversation|catch(?:ing)? up|caught up|met up|sat down|hung out|checked in)\b/i],
-  ['coffee', /\b(coffee|tea|drinks?|beer|breakfast)\b/i],
-  ['meal', /\b(lunch|dinner|brunch|supper)\b/i],
-  ['event', /\b(conference|meetup|panel|summit|wedding|party|networking|mixer|workshop|class)\b/i],
-  ['email', /\b(emailed|email(?:ed)? (?:with|from|to)|sent (?:her|him|them) an email|replied)\b/i],
-  ['message', /\b(texted|dm(?:ed|d)?|slack(?:ed)?|whatsapp|linkedin message|messaged)\b/i],
-  ['intro', /\b(introduced|intro(?:'d| to)|connected me|referred)\b/i],
-  ['met', /\b(met|saw|ran into|bumped into|sat next to|dropped by|stopped by)\b/i]
-];
-
-var LOWER_STOP = /^(my|the|a|an|his|her|their|them|him|some|someone|everyone|about|dinner|lunch|coffee|drinks|breakfast|him|us|it|that|this|there|here|today|yesterday|tonight|again|both|new|old|guy|girl|friend|mom|dad|work)$/i;
-var STOPNAMES = /^(I|We|My|The|A|An|He|She|They|Her|His|Their|Today|Yesterday|Just|Had|Got|Met|Talked|Spoke|Chatted|Saw|Zoom|Call|Coffee|Lunch|Dinner|Email|Last|This|Next|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|October|November|December)$/;
-
-var HONORIFIC = /^(?:dr|mr|mrs|ms|mx|prof|professor|rev|fr|sr|sir|dame)\.?\s+/i;
-var NAME = "(?:(?:Dr|Mr|Mrs|Ms|Mx|Prof|Rev|Fr|Sir)\\.?\\s+)?[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’\\-]+(?:\\s+(?:van|von|de|del|della|da|di|la|le|bin|al)\\s+[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’\\-]+|\\s[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’\\-]+){0,2}";
+/* ------------------------------------------------------------ text bits -- */
+/* What is left of the sentence parser: the two tidying helpers the card
+   editors still lean on. */
 
 function clean(s) {
   return (s || '').replace(/\s+/g, ' ')
@@ -311,51 +294,7 @@ function titleCase(s) {
   }).join(' ');
 }
 
-function titleish(s) {
-  s = clean(s);
-  return s.replace(/^(the|a|an|named|called)\s+/i, '');
-}
 
-function relativeDate(text) {
-  var now = new Date(); now.setHours(12, 0, 0, 0);
-  var m;
-  if (/\byesterday\b/i.test(text)) return now.getTime() - DAY;
-  if (/\bthis morning|today|just now|tonight\b/i.test(text)) return now.getTime();
-  if (/\blast night\b/i.test(text)) return now.getTime() - DAY;
-  if (/\bthe other day\b/i.test(text)) return now.getTime() - 3 * DAY;
-  if (/\b(?:over|during)\s+the\s+weekend\b/i.test(text)) {
-    var back = (now.getDay() + 1) % 7 || 7;          // the Saturday just gone
-    return now.getTime() - back * DAY;
-  }
-  if ((m = /\b(?:like\s+|about\s+|maybe\s+|roughly\s+)?(\d{1,3}|a|an|one|two|three|four|five|six|seven|eight|nine|ten|a couple(?: of)?|couple(?: of)?|a few|few)\s+(day|week|month|year)s?\s+ago\b/i.exec(text))) {
-    var words = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7,
-      eight: 8, nine: 9, ten: 10, 'a couple': 2, 'a couple of': 2, couple: 2, 'couple of': 2, 'a few': 3, few: 3 };
-    var key = m[1].toLowerCase();
-    var n = words[key] !== undefined ? words[key] : (parseInt(m[1], 10) || 1);
-    var unit = m[2].toLowerCase();
-    var mult = unit === 'day' ? 1 : unit === 'week' ? 7 : unit === 'month' ? 30 : 365;
-    return now.getTime() - n * mult * DAY;
-  }
-  if (/\blast week\b/i.test(text)) return now.getTime() - 7 * DAY;
-  if (/\blast month\b/i.test(text)) return now.getTime() - 30 * DAY;
-  if ((m = /\blast (mon|tues|wednes|thurs|fri|satur|sun)day\b/i.exec(text))) {
-    var target = ['sun', 'mon', 'tues', 'wednes', 'thurs', 'fri', 'satur'].indexOf(m[1].toLowerCase());
-    var d = now.getDay(), back = (d - target + 7) % 7 || 7;
-    return now.getTime() - back * DAY;
-  }
-  if ((m = /\bon (\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/.exec(text))) {
-    var yr = m[3] ? (m[3].length === 2 ? 2000 + (+m[3]) : +m[3]) : now.getFullYear();
-    return new Date(yr, (+m[1]) - 1, +m[2], 12).getTime();
-  }
-  if ((m = /\b(?:on\s+)?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})\b/i.exec(text))) {
-    var mo = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
-      .indexOf(m[1].toLowerCase().slice(0, 3));
-    var dt = new Date(now.getFullYear(), mo, +m[2], 12);
-    if (dt.getTime() - now.getTime() > 200 * DAY) dt.setFullYear(dt.getFullYear() - 1);
-    return dt.getTime();
-  }
-  return now.getTime();
-}
 
 
 function findPerson(name) {
@@ -370,297 +309,6 @@ function findPerson(name) {
   if (first.length === 1 && n.split(' ').length === 1) return first[0];
   var starts = state.people.filter(function (p) { return p.name.toLowerCase().indexOf(n) === 0; });
   return starts.length === 1 ? starts[0] : null;
-}
-
-/* Field names people actually type, and what they mean here. */
-var SETTABLE = {
-  email: 'email', 'e-mail': 'email', mail: 'email', phone: 'phone', number: 'phone',
-  cell: 'phone', mobile: 'phone', school: 'school', college: 'school', university: 'school',
-  role: 'profession', title: 'profession', job: 'profession', profession: 'profession',
-  company: 'company', employer: 'company', work: 'company', workplace: 'company',
-  location: 'location', city: 'location', address: 'location', circle: 'circle',
-  group: 'circle', name: 'name'
-};
-var SET_WORDS = Object.keys(SETTABLE).join('|');
-var CLEARABLE = /^(e-?mail|mail|phone|number|school|company|employer|role|title|profession|job|location|city)$/i;
-
-/* Turns a sentence into a draft: which person, which fields, what happened.
-
-   Order matters more than cleverness here. Anything stated outright — "her
-   location is Bethlehem", "his favourite coffee is a cortado" — is taken and
-   CUT OUT of the sentence first, so a proper noun sitting in a value can no
-   longer be mistaken for the person's name further down. */
-function parse(raw) {
-  var text = clean(raw);
-  var out = { name: '', person: null, patch: {}, custom: {}, clears: [], tags: [], schools: [], via: null, viaName: '', entry: null };
-  var work = ' ' + text + ' ';
-  var m;
-
-  function endClause(v) {                    // "a.name@example.com" survives; a new sentence does not
-    return clean(String(v).replace(/\.\s+\S[\s\S]*$/, '').replace(/[.,;]+$/, ''));
-  }
-
-  function take(field, value, force) {
-    value = titleish(value);
-    if (!value) return;
-    if (!out.patch[field] || force) out.patch[field] = value;
-  }
-
-  // 1. explicit "key: value"
-  var KEYMAP = Object.assign({}, SETTABLE, { tag: 'tags', note: 'note' });
-  work = work.replace(/\b(\w[\w-]*)\s*:\s*([^,;\n]+)/g, function (all, k, v) {
-    var f = KEYMAP[k.toLowerCase()];
-    if (!f || f === 'tags' || f === 'note') return all;
-    out.patch[f] = titleish(endClause(v));
-    if (f === 'circle') out.circleForced = true;
-    return ' ';
-  });
-
-  // 2. tags
-  work = work.replace(/#([\w’'-]+)/g, function (all, t) { out.tags.push(t); return ' '; });
-
-  // 3. "set her school to Lehigh", "his email is x@y.com", "change the company to Merck"
-  var setRe = new RegExp('\\b(?:add|set|change|update|make|correct|fix)?\\s*(?:her|his|their|the|my)?\\s*\\b(' + SET_WORDS + ')\\b\\s*(?:is|are|was|as|to|=)\\s+([^;,\\n]{2,70}?)(?=\\s+and\\s+(?:her|his|their)\\b|\\.\\s|$)', 'gi');
-  work = work.replace(setRe, function (all, k, v) {
-    var f = SETTABLE[k.toLowerCase()];
-    if (!f) return all;
-    out.patch[f] = titleish(endClause(v));
-    if (f === 'circle') out.circleForced = true;
-    return ' ';
-  });
-
-  // 4. "remove her phone"
-  work = work.replace(/\b(?:remove|clear|delete|forget|drop)\s+(?:her|his|their|the|my)?\s*\b([\w-]+)\b/gi, function (all, k) {
-    if (!CLEARABLE.test(k)) return all;
-    var f = SETTABLE[k.toLowerCase().replace('e-mail', 'email')];
-    if (f) { out.clears.push(f); return ' '; }
-    return all;
-  });
-
-  // 5. anything else stated as "her X is Y" becomes a labelled line on the card
-  var customRe = /(?:^|[.;,]\s*|\s)(?:her|his|their)\s+([a-z][a-z ]{2,22}?)\s+(?:is|are|was|were)\s+([^;\n]{2,70}?)(?=\s+and\s+(?:her|his|their)\b|\.\s|;|$)/gi;
-  work = work.replace(customRe, function (all, k, v) {
-    var key = clean(k).toLowerCase();
-    if (SETTABLE[key.replace(/\s+/g, '')] || /^(name|number)$/.test(key)) return all;
-    out.custom[key] = titleish(endClause(v));
-    return ' ';
-  });
-
-  // 6. contacts
-  if ((m = /[\w.+-]+@[\w-]+\.[\w.-]+/.exec(work))) { take('email', m[0]); work = work.replace(m[0], ' '); }
-  if ((m = /(\+?\d[\d\-.() ]{8,}\d)/.exec(work))) {
-    var digits = m[1].replace(/\D/g, '');
-    if (digits.length >= 10 && digits.length <= 15) { take('phone', m[1]); work = work.replace(m[1], ' '); }
-  }
-
-  // 7b. who connected us — found before the name hunt, and cut out of the
-  //     sentence, so the person who made the introduction is not mistaken for
-  //     the person you met.
-  var VIA = null;
-  var introRe = new RegExp('(' + NAME + ')\\s+(?:introduced|connected|referred|put)\\s+(?:me\\s+)?(?:to|with|onto|in touch with)\\s+(' + NAME + ')');
-  var introM = introRe.exec(work);
-  var introSubject = '';
-  if (introM) {
-    VIA = introM[1];
-    introSubject = clean(introM[2]);
-    work = work.replace(introM[1], ' ');
-  }
-  if (!VIA) {
-    var viaRe = new RegExp('\\b(?:through|via|introduced by|intro(?:\'d)?\\s+by|referred by|thanks to|friend of|courtesy of)\\s+(' + NAME + ')');
-    if ((m = viaRe.exec(work))) { VIA = m[1]; work = work.replace(m[0], ' '); }
-  }
-  if (!VIA) {
-    var gotRe = new RegExp('\\bgot\\s+(?:[\\w\'’ ]{0,28}?)(?:info|number|email|contact|details)\\s+from\\s+(' + NAME + ')');
-    if ((m = gotRe.exec(work))) {
-      VIA = m[1];
-      // strip only the "from <name>" tail; the subject may be sitting in front of it
-      work = work.replace(m[0].slice(m[0].toLowerCase().lastIndexOf('from')), ' ');
-    }
-  }
-  if (VIA) {
-    var viaClean = clean(VIA).replace(HONORIFIC, '');
-    var viaPerson = findPerson(viaClean);
-    if (viaPerson) out.via = viaPerson; else out.viaName = viaClean;
-  }
-
-  // 8. who this is about
-  var TRIGGER = '(?:[Ww]ith|w\\/|[Tt]o|[Ff]rom|[Mm]et|[Ss]aw|[Cc]alled|[Ee]mailed|[Tt]exted|[Aa]bout|[Ff]or)';
-  var nm = new RegExp('\\b' + TRIGGER + '\\s+(' + NAME + ')');
-  if ((m = nm.exec(work)) && !STOPNAMES.test(m[1].split(' ')[0])) out.name = m[1];
-
-  // people type their friends in lower case: "talked with josh donaldson"
-  if (!out.name && (m = new RegExp('\\b' + TRIGGER + "\\s+([a-zà-ÿ'’-]{2,}(?:\\s+[a-zà-ÿ'’-]{2,}){0,2})").exec(work))) {
-    var bits = m[1].split(/\s+/);
-    while (bits.length && LOWER_STOP.test(bits[0])) bits.shift();
-    while (bits.length && LOWER_STOP.test(bits[bits.length - 1])) bits.pop();
-    if (bits.length >= 2 || (bits.length === 1 && findPerson(bits[0]))) out.name = titleCase(bits.join(' '));
-  }
-
-  if (!out.name && (m = new RegExp('^\\s*(' + NAME + ')').exec(work)) && !STOPNAMES.test(m[1].split(' ')[0])) out.name = m[1];
-  if (!out.name) {
-    var all = work.match(new RegExp(NAME, 'g')) || [];
-    for (var i = 0; i < all.length; i++) {
-      // "Met Rae Kim" — drop the leading word rather than the whole match
-      var parts = all[i].split(' ');
-      while (parts.length && STOPNAMES.test(parts[0])) parts.shift();
-      if (parts.length) { out.name = parts.join(' '); break; }
-    }
-  }
-
-  if (!out.name) {
-    var words = text.toLowerCase().match(/[a-zà-ÿ']{2,}/g) || [];
-    for (var w = 0; w < words.length; w++) {
-      var byWord = state.people.filter(function (p) { return p.name.toLowerCase() === words[w]; });
-      if (byWord.length === 1) { out.name = byWord[0].name; break; }
-    }
-  }
-  if (introSubject) out.name = introSubject;
-  if (out.patch.name) { out.name = out.patch.name; delete out.patch.name; }
-  out.name = clean(out.name).replace(/[’']s$/, '').replace(HONORIFIC, '');
-  out.person = findPerson(out.name);
-  if (out.via && out.person && out.via.id === out.person.id) out.via = null;
-  if (out.viaName && out.name && out.viaName.toLowerCase() === out.name.toLowerCase()) out.viaName = '';
-
-  /* "she went to Rutgers", typed right after logging someone — or while their
-     dossier is open — is about them, not about a stranger. */
-  var pronounLed = /^\s*(?:she|he|they|her|his|their|him|them)\b/i.test(text);
-  if (!out.person && /\b(she|he|they|her|his|their|them|him)\b/i.test(text)) {
-    var referent = (selected && selected.ref) || lastSubject;
-    if (referent && !out.name) {
-      out.person = referent; out.name = referent.name; out.byPronoun = true;
-    }
-  }
-
-  var body = out.name ? work.split(out.name).join(' ') : work;
-
-  // 9. schools — several, each possibly undergrad or graduate. People write
-  //    them in lower case as often as not, so casing is restored on the way in.
-  var SCHOOL_NAME = "[\\w'’.&-]+(?:\\s+[\\w'’.&-]+){0,3}";
-  var seenSchool = {};
-  function noteSchool(name, hay) {
-    name = titleCase(clean(name).replace(/\s+(?:for|in|on|as|with|and)$/i, ''));
-    if (!name || name.length < 2) return;
-    if (seenSchool[name.toLowerCase()]) return;
-    seenSchool[name.toLowerCase()] = 1;
-    addSchool(out.schools, name, degreeIn(hay));
-  }
-
-  var sre = new RegExp('\\b(?:went to|studied at|graduated from|attended|was at|alum(?:n|ni|na|nus)?\\s+of|did (?:her|his|their) (?:mba|ph\\.?d|masters?|jd|md|mfa|degree|doctorate|undergrad) at|got (?:her|his|their) (?:mba|ph\\.?d|masters?|jd|md|mfa|degree|doctorate) (?:at|from))\\s+(' + SCHOOL_NAME + ')([^.;\\n]{0,28})', 'gi');
-  while ((m = sre.exec(body))) noteSchool(m[1], m[0] + ' ' + (m[2] || ''));
-
-  var are = new RegExp('\\b(' + SCHOOL_NAME + ')\\s+(?:alumn?[ai]?|alumnus|alumna|grad(?:uate)?|undergrad)\\b', 'gi');
-  while ((m = are.exec(body))) noteSchool(m[1], m[0]);
-
-  // "her MBA at Wharton", "law school at Penn"
-  var gre = new RegExp('\\b(mba|ph\\.?d|masters?|jd|md|mfa|grad school|law school|med school|business school)\\s+(?:at|from)\\s+(' + SCHOOL_NAME + ')', 'gi');
-  while ((m = gre.exec(body))) noteSchool(m[2], m[0]);
-
-  out.schools.forEach(function (sc) { body = body.split(new RegExp(sc.name, 'i')).join(' '); });
-
-  // 10. what they do, and where.
-  //     Kept deliberately tight: a loose pattern here used to swallow half the
-  //     sentence ("a chat with who works at …") and file it as a profession.
-  var JOBBY = /\b(with|who|that|which|and|but|chat|call|meeting|zoom|coffee|lunch|dinner|drinks|conference|about|from|had)\b/i;
-  // a role may be several words, but never runs on through a preposition
-  var STOPW = "(?!at\\b|for\\b|with\\b|in\\b|of\\b|from\\b|to\\b|and\\b|who\\b|that\\b)";
-  var ROLE = "((?:[a-z][\\w/&.’'-]*)(?:\\s+" + STOPW + "[a-z][\\w/&.’'-]*){0,3})";
-
-  function takeRole(v) {
-    v = titleish(v).replace(/\s+(?:at|for|with|in|of|from|to|and)$/i, '');
-    if (!v || v.length < 3 || JOBBY.test(v)) return false;
-    take('profession', v);
-    return true;
-  }
-
-  if (!out.patch.profession && (m = new RegExp('\\b(?:is|was|works|she.s|he.s|they.re)\\s+(?:as\\s+)?(?:a|an|the)\\s+' + ROLE + '\\s+(?:at|for|with)\\s+([A-Z][\\w&.\'’-]*(?:\\s+[A-Z][\\w&.\'’-]*){0,2})').exec(body))) {
-    if (takeRole(m[1])) take('company', m[2]);
-  }
-  if (!out.patch.profession && (m = new RegExp("\\b(?:is|was|she's|he's|they's|they're|works as)\\s+(?:a|an|the)\\s+" + ROLE).exec(body))) {
-    takeRole(m[1]);
-  }
-  if (!out.patch.profession && (m = new RegExp('\\b(?:runs|owns|manages|leads|teaches|bakes|makes)\\s+(?:a|an|the)\\s+' + ROLE).exec(body))) {
-    var whole = clean(m[0]);
-    if (!JOBBY.test(m[1])) take('profession', whole);
-  }
-  if (!out.patch.company && (m = /\b(?:works? (?:at|for)|working (?:at|for)|is (?:at|with)|joined|started at|now at|over at|founded|employed (?:at|by))\s+([A-Z][\w&.'’-]*(?:\s+[A-Z][\w&.'’-]*){0,2})/.exec(body))) {
-    take('company', m[1]);
-  }
-  if (!out.patch.location && (m = /\b(?:lives in|living in|based in|moved to|is in|located in|out of|home in)\s+([A-Z][\w.'’-]*(?:[\s,]+[A-Z][\w.'’-]*){0,2})/.exec(body))) {
-    take('location', m[1]);
-  }
-
-  // 12. the takeaway
-  if ((m = /\b(?:learned|found out|turns out|apparently|note that|she (?:said|mentioned)|he (?:said|mentioned)|they (?:said|mentioned)|told me)\s+(?:that\s+)?(.{4,})/i.exec(work))) {
-    out.learned = clean(m[1].split(/\.\s+|;\s+|\s+\|\s+/)[0])
-      .replace(/^(?:about|that|how|why|of)\s+/i, '').slice(0, 180);
-  }
-
-  if (!out.learned && (m = /(?:^|,\s*|—\s*)(?:she|he|they)\s+((?:has|have|had|is|was|just|recently|now|wants|needs|works|runs|might|will|would|left|joined|started|moved)\b.{3,140})/i.exec(text))) {
-    out.learned = clean(m[1].split(/\.\s+/)[0]).slice(0, 180);
-  }
-
-  // 13. how and when
-  var channel = '';
-  for (var c = 0; c < CHANNELS.length; c++) { if (CHANNELS[c][1].test(text)) { channel = CHANNELS[c][0]; break; } }
-  out.entry = { channel: channel || 'note', at: relativeDate(text), text: text, learned: out.learned || '' };
-
-  // 14. which circle it sprouts from
-  if (!out.patch.circle) {
-    var known = circleList().map(function (x) { return x.name.toLowerCase(); });
-    for (var t = 0; t < out.tags.length; t++) {
-      if (known.indexOf(out.tags[t].toLowerCase()) >= 0) { out.patch.circle = out.tags[t]; break; }
-    }
-  }
-  if (!out.patch.circle && !out.person) {
-    if (out.patch.company) out.patch.circle = 'Work';
-    else if (out.schools.length) out.patch.circle = 'School';
-  }
-  if (out.patch.circle) out.patch.circle = out.patch.circle.charAt(0).toUpperCase() + out.patch.circle.slice(1);
-
-  Object.keys(out.patch).forEach(function (k) { if (!out.patch[k]) delete out.patch[k]; });
-
-  /* A bare fact is an edit to the card, not something that happened. */
-  var happened = !!channel || /\b(learned|found out|turns out|told me|mentioned|saw|ran into|introduced|reached out|heard|had a|met)\b/i.test(text);
-  if (!happened && (Object.keys(out.patch).length || Object.keys(out.custom).length || out.clears.length)) out.entry = null;
-
-  return out;
-}
-
-/* Applies a confirmed draft. Returns the person it landed on. */
-function commit(draft) {
-  var p = draft.person;
-  if (!p) { p = blankPerson(draft.name || 'Unnamed'); state.people.push(p); }
-  Object.keys(draft.patch).forEach(function (k) {
-    if (k === 'circle') {
-      if (p.circles && p.circles.length && !draft.circleForced) return;
-      joinCircle(p, draft.patch.circle, true);
-      return;
-    }
-    p[k] = draft.patch[k];
-  });
-  (draft.schools || []).forEach(function (sc) { addSchool(p.schools, sc.name, sc.level); });
-  if (draft.via || draft.viaName) {
-    var source = draft.via;
-    if (!source && draft.viaName) {
-      source = findPerson(draft.viaName);
-      if (!source) { source = blankPerson(draft.viaName); state.people.push(source); }
-    }
-    if (source) tie(p, source.id, 'intro');
-  }
-  (draft.clears || []).forEach(function (k) { p[k] = ''; });
-  if (draft.custom && Object.keys(draft.custom).length) {
-    p.custom = p.custom || {};
-    Object.keys(draft.custom).forEach(function (k) { p.custom[k] = draft.custom[k]; });
-  }
-  (draft.tags || []).forEach(function (t) { if (p.tags.indexOf(t) < 0) p.tags.push(t); });
-  if (draft.entry && draft.entry.text) {
-    p.log.unshift({ id: uid(), at: draft.entry.at, channel: draft.entry.channel, text: draft.entry.text, learned: draft.entry.learned || '' });
-  }
-  circlesOf(p).forEach(circleIndex);
-  p.updated = Date.now();
-  lastSubject = p;
-  save();
-  return p;
 }
 
 /* --------------------------------------------------------------- layout -- */
@@ -1259,7 +907,7 @@ function tidyMap() {
 }
 
 /* Where the camera has to sit for everything to be visible, given the rail,
-   the chat dock and whatever panel is open. */
+   the notepad and whatever panel is open. */
 function fitTarget() {
   if (!nodes.length) return null;
   var minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
@@ -2594,12 +2242,9 @@ function circleMenu(node) {
     box.remove();
     if (act === 'hide') { hidden[circle] = true; renderAll(); toast('Hid ' + circle, 'Show', function () { delete hidden[circle]; renderAll(); }); }
     if (act === 'delete') {
-      pendingPlan = {
-        summary: 'Delete the ' + circle + ' circle',
-        detail: n ? plural(n, 'person', 'people') + ' stay on the map, just no longer filed there.' : 'Nobody is in it.',
-        run: function () { membersOf(circle).forEach(function (x) { leaveCircle(x, circle); }); dropCircle(circle); }
-      };
-      renderPlan();
+      confirmAction('Delete the ' + circle + ' circle',
+        n ? plural(n, 'person', 'people') + ' stay on the map, just no longer filed there.' : 'Nobody is in it.',
+        function () { membersOf(circle).forEach(function (x) { leaveCircle(x, circle); }); dropCircle(circle); });
     }
     if (act === 'rename') {
       var wrap = document.createElement('div');
@@ -2788,6 +2433,19 @@ function modal(title, sub, body, footer) {
   return s.querySelector('.modal');
 }
 function closeModal() { $('#scrim').hidden = true; $('#scrim').innerHTML = ''; }
+
+/* Anything destructive says what it will do and how much of it, and can be
+   taken back from the toast. */
+function confirmAction(summary, detail, run) {
+  modal(summary, 'This cannot be undone from the map alone', '<p class="blank">' + esc(detail) + '</p>',
+    '<button class="btn primary" id="do-it">Do it</button><button class="btn" data-close>Cancel</button>');
+  $('#do-it').addEventListener('click', function () {
+    snapshot(summary);
+    run();
+    closeModal(); save(); renderAll();
+    toast(summary, 'Undo', undo);
+  });
+}
 $('#scrim').addEventListener('click', function (e) {
   if (e.target === e.currentTarget || e.target.closest('[data-close]')) closeModal();
 });
@@ -3286,16 +2944,6 @@ function undo() {
 
 var CWORD = '(?:circle|category|group|list|bucket)';
 
-function matchCircle(name) {
-  name = clean(String(name || '')).replace(/^(the|a|an)\s+/i, '')
-    .replace(new RegExp('\\s+' + CWORD + 's?$', 'i'), '');
-  if (!name) return '';
-  var all = circleList().map(function (c) { return c.name; });
-  var exact = all.filter(function (c) { return c.toLowerCase() === name.toLowerCase(); })[0];
-  if (exact) return exact;
-  var starts = all.filter(function (c) { return c.toLowerCase().indexOf(name.toLowerCase()) === 0; });
-  return starts.length === 1 ? starts[0] : '';
-}
 
 function membersOf(name) {
   return state.people.filter(function (p) { return inCircle(p, name); });
@@ -3305,180 +2953,6 @@ function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one +
 
 /* Returns a plan — {summary, detail, run} — or null if this is not a
    structural instruction at all. */
-function structural(text) {
-  var t = ' ' + clean(text) + ' ';
-  var m, c, c2;
-  var wipeWord = '(?:remove|delete|clear|wipe|drop|erase|get rid of)';
-
-  // everyone out of a named circle
-  if ((m = new RegExp(wipeWord + '\\s+(?:all\\s+)?(?:everyone|everybody|all (?:the )?people|all contacts)\\s+(?:in|from|under)\\s+(?:the\\s+)?(.+?)\\s*$', 'i').exec(t))
-      && (c = matchCircle(m[1]))) {
-    var doomed = membersOf(c);
-    return {
-      summary: 'Delete ' + plural(doomed.length, 'person', 'people') + ' in ' + c,
-      detail: doomed.length ? doomed.slice(0, 6).map(function (p) { return p.name; }).join(', ') +
-        (doomed.length > 6 ? ' and ' + (doomed.length - 6) + ' more' : '') : 'Nobody is in it.',
-      run: function () { doomed.forEach(forget); }
-    };
-  }
-
-  // empty a circle but keep the people
-  if ((m = /(?:empty|clear out|unfile|take everyone out of)\s+(?:the\s+)?(.+?)\s*$/i.exec(t)) && (c = matchCircle(m[1]))) {
-    var mem = membersOf(c);
-    return {
-      summary: 'Take ' + plural(mem.length, 'person', 'people') + ' out of ' + c,
-      detail: 'They stay on the map. The circle stays too, empty.',
-      run: function () { mem.forEach(function (p) { leaveCircle(p, c); }); circleIndex(c); }
-    };
-  }
-
-  // everyone, everywhere
-  if (new RegExp(wipeWord + '\\s+(?:all\\s+)?(?:everyone|everybody|all (?:the )?people|all (?:my )?contacts)\\b', 'i').test(t)) {
-    var keep = /\b(keep|keeping|but keep|leave|retain|save)\b[^.]*\b(circle|categor|group|structure|branch)/i.test(t);
-    var n = state.people.length, cn = circleList().length;
-    return {
-      summary: 'Delete all ' + plural(n, 'person', 'people') + (keep ? ', keep the ' + plural(cn, 'circle') : ' and their circles'),
-      detail: keep ? 'The circles stay as empty branches, ready to be filled again.'
-                   : 'Everything goes except you.',
-      run: function () {
-        state.people.slice().forEach(forget);
-        if (!keep) state.circles = [];
-      }
-    };
-  }
-
-  // the whole thing
-  if (/(?:delete|remove|clear|wipe|erase)\s+(?:everything|the (?:whole|entire) map|it all)\b|\bstart over\b|\bstart from scratch\b/i.test(t)) {
-    return {
-      summary: 'Erase the whole map',
-      detail: plural(state.people.length, 'person', 'people') + ' and ' + plural(circleList().length, 'circle') + ' — everything but you.',
-      run: function () { state.people.slice().forEach(forget); state.circles = []; }
-    };
-  }
-
-  // rename
-  if ((m = new RegExp('rename\\s+(?:the\\s+)?(.+?)\\s+' + CWORD + '?\\s*to\\s+(.+?)\\s*$', 'i').exec(t)) && (c = matchCircle(m[1]))) {
-    var to = clean(m[2]).replace(new RegExp('^' + CWORD + '\\s+', 'i'), '');
-    var n2 = membersOf(c).length;
-    return {
-      summary: 'Rename ' + c + ' to ' + to,
-      detail: plural(n2, 'person', 'people') + ' move across with it.',
-      run: function () { renameCircle(c, to); }
-    };
-  }
-
-  // merge
-  if ((m = /(?:merge|fold|combine)\s+(?:the\s+)?(.+?)\s+(?:in)?to\s+(?:the\s+)?(.+?)\s*$/i.exec(t))
-      && (c = matchCircle(m[1])) && (c2 = matchCircle(m[2]))) {
-    return {
-      summary: 'Merge ' + c + ' into ' + c2,
-      detail: plural(membersOf(c).length, 'person', 'people') + ' from ' + c + ' join ' + c2 + '. ' + c + ' disappears.',
-      run: function () {
-        membersOf(c).forEach(function (p) {
-          var wasPrimary = primaryCircle(p) === c;
-          leaveCircle(p, c);
-          joinCircle(p, c2, wasPrimary);
-        });
-        dropCircle(c);
-      }
-    };
-  }
-
-  // move everyone across
-  if ((m = /move\s+(?:everyone|everybody|them all|all)\s+(?:from|in|out of)\s+(?:the\s+)?(.+?)\s+(?:in)?to\s+(?:the\s+)?(.+?)\s*$/i.exec(t))
-      && (c = matchCircle(m[1]))) {
-    var target = matchCircle(m[2]) || clean(m[2]).replace(new RegExp('\\s*' + CWORD + '$', 'i'), '');
-    var movers = membersOf(c);
-    return {
-      summary: 'Move ' + plural(movers.length, 'person', 'people') + ' from ' + c + ' to ' + target,
-      detail: c + ' stays, empty.',
-      run: function () {
-        movers.forEach(function (p) { leaveCircle(p, c); joinCircle(p, target, true); });
-        circleIndex(c);
-      }
-    };
-  }
-
-  // delete a circle
-  if ((m = new RegExp(wipeWord + '\\s+(?:the\\s+)?(.+?)\\s*(?:' + CWORD + ')\\s*$', 'i').exec(t)) && (c = matchCircle(m[1]))) {
-    var held = membersOf(c).length;
-    return {
-      summary: 'Delete the ' + c + ' circle',
-      detail: held ? plural(held, 'person', 'people') + ' stay on the map, just no longer filed there.' : 'Nobody is in it.',
-      run: function () { membersOf(c).forEach(function (p) { leaveCircle(p, c); }); dropCircle(c); }
-    };
-  }
-
-  // make one
-  if ((m = new RegExp('(?:create|add|make|new|start)\\s+(?:a\\s+|an\\s+)?(?:new\\s+)?' + CWORD + '\\s*(?:called|named|for)?\\s*(.+?)\\s*$', 'i').exec(t))) {
-    var fresh = clean(m[1]).replace(/^["“']|["”']$/g, '');
-    if (fresh) return {
-      summary: 'Add a circle called ' + fresh,
-      detail: 'It starts empty. Drag people onto it, or say “add Dana to ' + fresh + '”.',
-      run: function () { reviveCircle(fresh); circleIndex(fresh); }
-    };
-  }
-
-  // colour
-  if ((m = new RegExp('(?:make|colou?r|recolou?r|paint|set|turn|change)\\s+(?:the\\s+)?(.+?)\\s*(?:' + CWORD + ')?\\s*(?:colou?r\\s*)?(?:to\\s+|as\\s+)?\\b(' + Object.keys(COLOR_WORDS).join('|') + ')\\b', 'i').exec(t))) {
-    var target = matchCircle(m[1]);
-    var hue = COLOR_WORDS[m[2].toLowerCase()];
-    if (target && hue) return {
-      summary: target + ' turns ' + m[2].toLowerCase(),
-      quiet: true,
-      run: function () { setCircleColor(target, hue); }
-    };
-  }
-
-
-
-  // showing and hiding branches
-  if ((m = /^\s*(?:hide|mute|collapse)\s+(?:the\s+)?(.+?)\s*$/i.exec(t)) && (c = matchCircle(m[1]))) {
-    return { summary: 'Hide ' + c, quiet: true, run: function () { hidden[c] = true; } };
-  }
-  if (/^\s*(?:show|unhide|reveal)\s+(?:everything|all|all circles|all categories)\s*$/i.test(t)) {
-    return { summary: 'Show every circle', quiet: true, run: function () { hidden = {}; } };
-  }
-  if ((m = /^\s*(?:show|unhide|reveal)\s+(?:the\s+)?(.+?)\s*$/i.exec(t)) && (c = matchCircle(m[1]))) {
-    return { summary: 'Show ' + c, quiet: true, run: function () { delete hidden[c]; } };
-  }
-
-  // odds and ends people reach for
-  if (/^\s*(?:tidy|fit|centre|center|reset the view|zoom to fit)\b/i.test(t)) {
-    return { summary: 'Tidied the map', quiet: true, run: function () { tidyMap(); } };
-  }
-  if (/^\s*(?:call me|i am|i'm|my name is)\s+(.+?)\s*$/i.test(t)) {
-    var mine = clean(/^\s*(?:call me|i am|i'm|my name is)\s+(.+?)\s*$/i.exec(t)[1]);
-    return {
-      summary: 'You are ' + mine, quiet: true,
-      run: function () { state.me.name = mine; state.meUpdated = Date.now(); }
-    };
-  }
-
-  // one person in or out
-  if ((m = /(?:add|put|file|move)\s+(.+?)\s+(?:in|into|under|to)\s+(?:the\s+)?(.+?)\s*$/i.exec(t))) {
-    var who = findPerson(clean(m[1]));
-    var dest = matchCircle(m[2]) || clean(m[2]).replace(new RegExp('\\s*' + CWORD + '$', 'i'), '');
-    if (who && dest) return {
-      summary: who.name + ' joins ' + dest,
-      detail: circlesOf(who).length ? 'Already in ' + circlesOf(who).join(', ') + '.' : 'Their first circle.',
-      quiet: true,
-      run: function () { joinCircle(who, dest, false); }
-    };
-  }
-  if ((m = /(?:remove|take|drop|pull)\s+(.+?)\s+(?:out of|from|off)\s+(?:the\s+)?(.+?)\s*$/i.exec(t))) {
-    var who2 = findPerson(clean(m[1]));
-    var from = matchCircle(m[2]);
-    if (who2 && from && inCircle(who2, from)) return {
-      summary: who2.name + ' leaves ' + from,
-      detail: 'They stay on the map.',
-      quiet: true,
-      run: function () { leaveCircle(who2, from); }
-    };
-  }
-
-  return null;
-}
 
 function renameCircle(from, to) {
   to = clean(to);
@@ -3511,211 +2985,6 @@ function dropCircle(name) {
   });
   delete hidden[name];
 }
-
-/* ---- chat + preview ---- */
-
-var draft = null, pendingPlan = null;
-var FIELD_LABEL = {
-  email: 'email', phone: 'phone', profession: 'role', company: 'company', school: 'school',
-  location: 'lives in', circle: 'circle', howMet: 'met via', name: 'name'
-};
-
-function renderPlan() {
-  var slot = $('#preview-slot');
-  if (!pendingPlan) { slot.innerHTML = ''; return; }
-  slot.innerHTML = '<div class="preview danger">' +
-    '<div class="head"><span>about to change the map</span>' +
-      '<span class="who">' + esc(pendingPlan.summary) + '</span></div>' +
-    '<p class="plandetail">' + esc(pendingPlan.detail || '') + '</p>' +
-    '<div class="actions"><button class="btn primary" data-doplan>Do it</button>' +
-      '<button class="btn" data-discard>Cancel</button>' +
-      '<span class="hintkey"><kbd>Enter</kbd> to run · <kbd>Esc</kbd> to cancel</span></div></div>';
-}
-
-function runPlan() {
-  if (!pendingPlan) return;
-  var plan = pendingPlan;
-  pendingPlan = null;
-  snapshot(plan.summary);
-  plan.run();
-  save(); closeDossier(); renderPlan(); renderAll(); fit();
-  toast(plan.summary, 'Undo', undo);
-}
-
-function renderPreview() {
-  var slot = $('#preview-slot');
-  if (!draft) { slot.innerHTML = ''; return; }
-  var chips = Object.keys(draft.patch).map(function (k) {
-    return '<span class="chip' + (draft.person && draft.person[k] !== draft.patch[k] ? ' new' : '') + '">' +
-      '<span class="k">' + (FIELD_LABEL[k] || k) + '</span>' +
-      '<span class="v" data-editk="' + k + '" tabindex="0" role="button">' + esc(draft.patch[k]) + '</span>' +
-      '<button data-dropk="' + k + '" aria-label="Drop ' + k + '">&times;</button></span>';
-  });
-  if (draft.via || draft.viaName) {
-    chips.push('<span class="chip new"><span class="k">via</span><span class="v">' +
-      esc(draft.via ? draft.via.name : draft.viaName) + '</span>' +
-      '<button data-dropvia aria-label="Drop the connection">&times;</button></span>');
-  }
-  (draft.schools || []).forEach(function (sc) {
-    chips.push('<span class="chip new"><span class="k">school</span><span class="v">' +
-      esc(sc.name) + (sc.level ? ' · ' + sc.level : '') + '</span>' +
-      '<button data-dropschool="' + esc(sc.name) + '" aria-label="Drop ' + esc(sc.name) + '">&times;</button></span>');
-  });
-  Object.keys(draft.custom || {}).forEach(function (k) {
-    chips.push('<span class="chip new"><span class="k">' + esc(k) + '</span>' +
-      '<span class="v" data-editc="' + esc(k) + '" tabindex="0" role="button">' + esc(draft.custom[k]) + '</span>' +
-      '<button data-dropc="' + esc(k) + '" aria-label="Drop ' + esc(k) + '">&times;</button></span>');
-  });
-  (draft.clears || []).forEach(function (k) {
-    chips.push('<span class="chip clear"><span class="k">clear</span><span class="v">' + esc(k) + '</span>' +
-      '<button data-dropclear="' + esc(k) + '" aria-label="Keep ' + esc(k) + '">&times;</button></span>');
-  });
-  if (draft.entry && draft.entry.channel) {
-    chips.unshift('<span class="chip"><span class="k">' + esc(CHANNEL_LABEL[draft.entry.channel]) + '</span>' +
-      '<span class="v">' + fmtDate(draft.entry.at) + '</span></span>');
-  }
-  if (draft.entry && draft.entry.learned) {
-    chips.push('<span class="chip"><span class="k">learned</span><span class="v">' + esc(draft.entry.learned) + '</span>' +
-      '<button data-droplearned aria-label="Drop takeaway">&times;</button></span>');
-  }
-  draft.tags.forEach(function (t) { chips.push('<span class="chip"><span class="v">#' + esc(t) + '</span></span>'); });
-
-  slot.innerHTML = '<div class="preview">' +
-    '<div class="head"><span>' + (draft.person ? (draft.byPronoun ? 'about' : 'updating') : 'new person') + '</span>' +
-      '<span class="who" data-editname tabindex="0" role="button">' + esc(draft.name || 'Unnamed') + '</span>' +
-      '<span class="tag">' + (draft.person
-        ? (draft.entry ? draft.person.log.length + ' prior touchpoints' : 'card edit — nothing logged')
-        : 'sprouting from ' + esc(draft.patch.circle || 'Unsorted')) + '</span></div>' +
-    '<div class="chips">' + chips.join('') + '</div>' +
-    '<div class="actions"><button class="btn primary" data-confirm>Add to map</button>' +
-      '<button class="btn" data-discard>Discard</button>' +
-      '<span class="hintkey"><kbd>Enter</kbd> to keep · <kbd>Esc</kbd> to drop</span></div></div>';
-}
-
-function editChip(el, current, done) {
-  var input = document.createElement('input');
-  input.value = current;
-  input.style.cssText = 'font:inherit;background:var(--field);border:1px solid var(--accent);border-radius:2px;padding:0 4px;width:' +
-    Math.max(70, Math.min(260, current.length * 8 + 20)) + 'px';
-  el.replaceWith(input);
-  input.focus(); input.select();
-  var finish = function () { done(input.value.trim()); renderPreview(); };
-  input.addEventListener('blur', finish);
-  input.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-    if (e.key === 'Escape') { e.stopPropagation(); renderPreview(); }
-  });
-}
-
-$('#preview-slot').addEventListener('click', function (e) {
-  var t = e.target;
-  if (t.closest('[data-doplan]')) return runPlan();
-  if (pendingPlan && t.closest('[data-discard]')) { pendingPlan = null; renderPlan(); return; }
-  if (!draft) return;
-  if (t.closest('[data-confirm]')) return confirmDraft();
-  if (t.closest('[data-discard]')) { draft = null; pendingPlan = null; renderPreview(); renderPlan(); return; }
-  if (t.dataset.dropk) { delete draft.patch[t.dataset.dropk]; renderPreview(); return; }
-  if (t.dataset.dropc) { delete draft.custom[t.dataset.dropc]; renderPreview(); return; }
-  if (t.hasAttribute && t.hasAttribute('data-dropvia')) { draft.via = null; draft.viaName = ''; renderPreview(); return; }
-  if (t.dataset.dropschool) {
-    draft.schools = draft.schools.filter(function (x) { return x.name !== t.dataset.dropschool; });
-    renderPreview(); return;
-  }
-  if (t.dataset.dropclear) {
-    draft.clears = draft.clears.filter(function (k) { return k !== t.dataset.dropclear; });
-    renderPreview(); return;
-  }
-  if (t.dataset.editc) {
-    var ck = t.dataset.editc;
-    return editChip(t, draft.custom[ck], function (v) {
-      if (v) draft.custom[ck] = v; else delete draft.custom[ck];
-    });
-  }
-  if (t.hasAttribute && t.hasAttribute('data-droplearned')) { draft.entry.learned = ''; renderPreview(); return; }
-  if (t.dataset.editk) {
-    var k = t.dataset.editk;
-    return editChip(t, draft.patch[k], function (v) {
-      if (v) { draft.patch[k] = v; if (k === 'circle') draft.circleForced = true; }
-      else delete draft.patch[k];
-    });
-  }
-  if (t.hasAttribute && t.hasAttribute('data-editname')) {
-    return editChip(t, draft.name, function (v) {
-      draft.name = v; draft.person = findPerson(v);
-    });
-  }
-});
-
-function confirmDraft() {
-  if (!draft) return;
-  if (!draft.name) { toast('Who was it? Click the name to set it.'); return; }
-  var p = commit(draft);
-  draft = null; renderPreview(); renderAll();
-  var n = byId[p.id];
-  if (n) { openDossier(n); }
-  toast('Logged · ' + p.name);
-}
-
-var chat = $('#chat');
-if (window.innerWidth < 880) chat.placeholder = 'Coffee with Ada yesterday — she has capacity in Q2';
-function autosize() { chat.style.height = 'auto'; chat.style.height = Math.min(130, chat.scrollHeight) + 'px'; }
-chat.addEventListener('input', autosize);
-
-$('#chatform').addEventListener('submit', function (e) {
-  e.preventDefault();
-  var v = chat.value.trim();
-  if (!v) {
-    if (pendingPlan) return runPlan();
-    if (draft) confirmDraft();
-    return;
-  }
-
-  if (v[0] === '/') {
-    var cmd = v.slice(1).split(' ')[0].toLowerCase(), rest = v.slice(cmd.length + 2).trim();
-    chat.value = ''; autosize();
-    if (cmd === 'import') return importModal();
-    if (cmd === 'export') return exportModal();
-    if (cmd === 'me') {
-      if (rest) { state.me.name = rest; state.meUpdated = Date.now(); save(); renderAll(); toast('You are ' + rest); }
-      else toast('Try: /me Ben Fisher');
-      return;
-    }
-    if (cmd === 'sample') { toggleSample(); return; }
-    if (cmd === 'undo') { undo(); return; }
-    toast('Unknown command.');
-    return;
-  }
-
-  var plan = structural(v);
-  if (plan) {
-    chat.value = ''; autosize();
-    draft = null; renderPreview();
-    if (plan.quiet) {                    // small, obvious moves just happen
-      snapshot(plan.summary);
-      plan.run();
-      save(); renderAll();
-      toast(plan.summary, 'Undo', undo);
-      return;
-    }
-    pendingPlan = plan;
-    renderPlan();
-    return;
-  }
-
-  draft = parse(v);
-  chat.value = ''; autosize();
-  pendingPlan = null; renderPlan();
-  renderPreview();
-  if (!draft.name) toast('Could not find a name — click “Unnamed” to set it.');
-});
-
-chat.addEventListener('keydown', function (e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#chatform').requestSubmit(); }
-  if (e.key === 'Escape') {
-    if (pendingPlan) { pendingPlan = null; renderPlan(); }
-    if (draft) { draft = null; renderPreview(); }
-  }
-});
 
 /* ---- search ---- */
 
@@ -3952,9 +3221,161 @@ function toggleSample() {
 
 function syncSampleBtn() { /* the sample lives behind /sample now */ }
 
+/* ---- typefaces ----
+   The whole look turns on these three faces, so they are a setting rather
+   than a decision baked into the stylesheet: a pairing sets the display face
+   for names, the typed face for anything the archive filed, and the working
+   face for the chrome. Chosen live, remembered, and the canvas re-reads its
+   tokens so labels change with everything else. */
+
+/* Pairings, not fonts: a display face with real character, a typed face for
+   anything filed, and a clean body face underneath. Each carries its own
+   weights, because a face that needs 500 to hold a colour band is not the
+   same face that wants 400 at 68px. */
+var FONTS = [
+  { id: 'archive',  name: 'Archive',     note: 'didone + typewriter',
+    display: 'Bodoni Moda', typed: 'Courier Prime', ui: 'Satoshi', dw: 400, db: 500, bw: 400 },
+  { id: 'plate',    name: 'Plate',       note: 'where this started',
+    display: 'Instrument Serif', typed: 'JetBrains Mono', ui: 'Manrope', dw: 400, db: 400, bw: 400 },
+  { id: 'lora',     name: 'Lora',        note: 'bookish + clean',
+    display: 'Lora', typed: 'IBM Plex Mono', ui: 'Satoshi', dw: 500, db: 600, bw: 400 },
+  { id: 'garamond', name: 'Garamond',    note: 'old style, quiet',
+    display: 'EB Garamond', typed: 'Courier Prime', ui: 'Manrope', dw: 500, db: 600, bw: 400 },
+  { id: 'editorial',name: 'Editorial',   note: 'magazine serif',
+    display: 'Playfair Display', typed: 'IBM Plex Mono', ui: 'Urbanist', dw: 400, db: 600, bw: 400 },
+  { id: 'fraunces', name: 'Fraunces',    note: 'warm and odd',
+    display: 'Fraunces', typed: 'Courier Prime', ui: 'Urbanist', dw: 400, db: 600, bw: 400 },
+  { id: 'cormorant',name: 'Cormorant',   note: 'high fashion',
+    display: 'Cormorant Garamond', typed: 'Courier Prime', ui: 'Jost', dw: 500, db: 600, bw: 400 },
+  { id: 'syne',     name: 'Syne',        note: 'gallery poster',
+    display: 'Syne', typed: 'Space Mono', ui: 'Satoshi', dw: 600, db: 700, bw: 400 },
+  { id: 'space',    name: 'Space',       note: 'grotesk throughout',
+    display: 'Space Grotesk', typed: 'Space Mono', ui: 'Manrope', dw: 500, db: 600, bw: 400 },
+  { id: 'terminal', name: 'Terminal',    note: 'mono head, clean body',
+    display: 'JetBrains Mono', typed: 'JetBrains Mono', ui: 'Satoshi', dw: 500, db: 600, bw: 400 },
+  { id: 'baskerville', name: 'Baskerville', note: 'printed page',
+    display: 'Libre Baskerville', typed: 'IBM Plex Mono', ui: 'Manrope', dw: 400, db: 700, bw: 400 },
+  { id: 'swiss',    name: 'Swiss',       note: 'neutral and tight',
+    display: 'Urbanist', typed: 'IBM Plex Mono', ui: 'Urbanist', dw: 600, db: 700, bw: 400 }
+];
+
+/* Satoshi is not on Google Fonts; it comes from Fontshare. */
+var FONTSHARE = { Satoshi: 'satoshi' };
+
+var FONT_KEY = 'rootwork.type';
+var fontsLoaded = false;
+
+/* Every family in one request, asked for once, the first time the picker
+   opens — so each row can be previewed in its own face. */
+function loadAllFonts() {
+  if (fontsLoaded) return;
+  fontsLoaded = true;
+  var google = {}, share = {};
+  FONTS.forEach(function (f) {
+    [f.display, f.typed, f.ui].forEach(function (n) {
+      if (FONTSHARE[n]) share[n] = 1; else google[n] = 1;
+    });
+  });
+  var names = Object.keys(google);
+  if (names.length) {
+    var q = names.map(function (n) {
+      return 'family=' + n.replace(/ /g, '+') + ':ital,wght@0,400;0,500;0,600;0,700;1,400';
+    }).join('&');
+    var link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?' + q + '&display=swap';
+    document.head.appendChild(link);
+  }
+  var fs = Object.keys(share);
+  if (fs.length) {
+    var l2 = document.createElement('link');
+    l2.rel = 'stylesheet';
+    l2.href = 'https://api.fontshare.com/v2/css?' +
+      fs.map(function (n) { return 'f[]=' + FONTSHARE[n] + '@400,500,700'; }).join('&') + '&display=swap';
+    document.head.appendChild(l2);
+  }
+}
+
+function fontById(id) {
+  return FONTS.filter(function (f) { return f.id === id; })[0] || FONTS[0];
+}
+
+function applyFont(id, remember) {
+  var f = fontById(id);
+  loadAllFonts();                                   // whatever is chosen has to exist
+  var r = document.documentElement.style;
+  r.setProperty('--display', '"' + f.display + '", Georgia, serif');
+  r.setProperty('--typed', '"' + f.typed + '", "Courier New", ui-monospace, monospace');
+  r.setProperty('--ui', '"' + f.ui + '", system-ui, -apple-system, sans-serif');
+  r.setProperty('--mono', '"' + f.typed + '", ui-monospace, monospace');
+  r.setProperty('--wd', String(f.dw));              // big display type
+  r.setProperty('--wd-b', String(f.db));            // display type that must hold its own
+  r.setProperty('--wb', String(f.bw));              // body
+  document.documentElement.setAttribute('data-type', f.id);
+  if (remember !== false) { try { localStorage.setItem(FONT_KEY, f.id); } catch (e) { } }
+  // the canvas paints its own labels, so it has to be told
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () { readTokens(); needsDraw = true; });
+  }
+  setTimeout(function () { readTokens(); needsDraw = true; }, 60);
+}
+
+function currentFont() {
+  var id = 'archive';
+  try { id = localStorage.getItem(FONT_KEY) || id; } catch (e) { }
+  return fontById(id).id;
+}
+
+function typePicker(anchorEl) {
+  loadAllFonts();
+  var old = document.getElementById('cpick');
+  if (old) old.remove();
+  var now = currentFont();
+  var box = document.createElement('div');
+  box.id = 'cpick';
+  box.className = 'cpick types';
+  box.innerHTML = '<div class="ptitle">Typeface</div>' +
+    FONTS.map(function (f) {
+      return '<button data-font="' + f.id + '"' + (f.id === now ? ' data-on="1"' : '') + '>' +
+        '<span class="tname" style="font-family:\'' + f.display + '\', Georgia, serif">' + esc(f.name) + '</span>' +
+        '<span class="tnote" style="font-family:\'' + f.typed + '\', monospace">' + esc(f.note) + '</span>' +
+      '</button>';
+    }).join('');
+  document.body.appendChild(box);
+
+  var r = anchorEl.getBoundingClientRect();
+  box.style.left = Math.min(window.innerWidth - box.offsetWidth - 10, Math.max(10, r.right - box.offsetWidth)) + 'px';
+  box.style.top = Math.min(window.innerHeight - box.offsetHeight - 10, r.bottom + 6) + 'px';
+
+  var was = now;
+  box.addEventListener('pointerover', function (e) {     // try it on by hovering
+    var b = e.target.closest('[data-font]');
+    if (b) applyFont(b.dataset.font, false);
+  });
+  box.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-font]');
+    if (!b) return;
+    was = b.dataset.font;
+    applyFont(was, true);
+    box.querySelectorAll('[data-font]').forEach(function (x) {
+      x.toggleAttribute('data-on', x.dataset.font === was);
+    });
+    toast('Type: ' + fontById(was).name);
+  });
+  setTimeout(function () {
+    document.addEventListener('pointerdown', function off(e) {
+      if (box.contains(e.target)) return;
+      applyFont(was, true);                                // put back whatever was chosen
+      box.remove();
+      document.removeEventListener('pointerdown', off);
+    });
+  }, 0);
+}
+
 /* ---- wiring ---- */
 
 $('#btn-add').addEventListener('click', function () { personForm(null); });
+$('#btn-type').addEventListener('click', function (e) { typePicker(e.currentTarget); });
 $('#btn-newcircle').addEventListener('click', function (e) {
   circlePicker(e.currentTarget.closest('button'), function (name) {
     if (!name) return;
@@ -3981,23 +3402,15 @@ document.addEventListener('keydown', function (e) {
   if (document.body.classList.contains('archived')) return;   // the archive has the keyboard
   if (e.key === 'Escape') {
     if (!$('#scrim').hidden) return closeModal();
-    if (pendingPlan) { pendingPlan = null; return renderPlan(); }
-    if (draft) { draft = null; return renderPreview(); }
     if (selected) return closeDossier();
   }
   var el = document.activeElement;
   var typing = /^(INPUT|TEXTAREA)$/.test(el.tagName);
-  if (e.key === 'Enter' && !typing && (pendingPlan || draft)) {
-    e.preventDefault();
-    if (pendingPlan) runPlan(); else confirmDraft();
-    return;
-  }
-  // an empty chat bar has nothing of its own to undo, so the map gets the key
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && (!typing || (el === chat && !chat.value))) {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !typing) {
     e.preventDefault(); undo(); return;
   }
   if (typing) return;
-  if (e.key === '/') { e.preventDefault(); chat.focus(); }
+  if (e.key === '/') { e.preventDefault(); $('#search').focus(); }
   if (e.key === 'f') fit();
   if (e.key === 't') tidyMap();
   var numbered = LAYOUTS[parseInt(e.key, 10) - 1];
@@ -4055,7 +3468,7 @@ window.Rootwork = {
     },
     save: function () { save(); renderAll(); }
   },
-  parse: parse,                                 // exposed for tests
+  loadSample: toggleSample,                     // exposed for tests, not the interface
   nodeScreen: function (id) {
     var n = byId[id] || nodes.filter(function (x) { return x.label === id; })[0];
     if (!n) return null;
@@ -4068,6 +3481,7 @@ window.Rootwork = {
 /* ---- go ---- */
 
 (function init() {
+  applyFont(currentFont(), false);
   load();
 
   readTokens();
@@ -4100,7 +3514,6 @@ window.Rootwork = {
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     navigator.serviceWorker.register('sw.js').catch(function () { });
   }
-  setTimeout(function () { chat.focus(); }, 300);
 })();
 
 })();

@@ -68,7 +68,7 @@
 .crumb .here{ color:var(--ink-2); }
 
 .arc-title{
-  font-family:var(--display); font-weight:400;
+  font-family:var(--display); font-weight:var(--wd);
   font-size:clamp(40px, 6.4vw, 68px); line-height:1.02;
   letter-spacing:.005em; margin:10px 0 0; color:var(--ink);
   text-wrap:balance;
@@ -117,7 +117,7 @@
   width:var(--tab-w, 208px);
   padding:0 18px;
   color:#fff;
-  font-family:var(--display); font-weight:500; font-size:17px; letter-spacing:.012em;
+  font-family:var(--display); font-weight:var(--wd-b); font-size:17px; letter-spacing:.012em;
   line-height:var(--tab-h);
   text-align:center;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
@@ -188,7 +188,7 @@
 @keyframes liftin{ to{ opacity:1; transform:none; } }
 .entry-row:hover{ background:rgba(255,255,255,.1); padding-left:8px; }
 .entry-row .who{
-  font-family:var(--display); font-weight:500; font-size:20px; line-height:1.2;
+  font-family:var(--display); font-weight:var(--wd-b); font-size:20px; line-height:1.2;
   display:flex; align-items:baseline; gap:9px; min-width:0;
 }
 .entry-row .who span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -227,7 +227,7 @@
   background:rgba(255,255,255,.26);
 }
 .file .tab{
-  display:block; height:var(--tab-h); width:var(--tab-w, 208px);
+  display:block; height:var(--tab-h); width:var(--tab-w, 208px); font-weight:var(--wd-b);
   margin-left:var(--tab-x);
   background:var(--hue); color:#fff;
   font-family:var(--display); font-size:17px; line-height:var(--tab-h); text-align:center;
@@ -272,7 +272,7 @@
 
 .sheet h4{
   margin:0 0 3px;
-  font-family:var(--display); font-weight:400; font-size:27px; line-height:1.1;
+  font-family:var(--display); font-weight:var(--wd); font-size:27px; line-height:1.1;
   font-style:italic; letter-spacing:.005em;
 }
 .sheet .stamped{
@@ -380,7 +380,7 @@
 .arc-empty{
   display:flex; flex-direction:column; gap:8px;
   padding:60px 0;
-  font-family:var(--display); font-size:28px; color:var(--ink-2);
+  font-family:var(--display); font-weight:var(--wd); font-size:28px; color:var(--ink-2);
 }
 .arc-empty span{
   font-family:var(--typed); font-size:10.5px; letter-spacing:.12em; text-transform:uppercase;
@@ -459,7 +459,7 @@
 }
 .rcard .rback .rno{ color:var(--faint); }
 .rcard h3{
-  margin:8px 0 2px; font-family:var(--display); font-weight:400;
+  margin:8px 0 2px; font-family:var(--display); font-weight:var(--wd);
   font-size:34px; line-height:1.04; letter-spacing:.005em;
 }
 .rcard .rrole{
@@ -578,7 +578,7 @@
   box-shadow:0 2px 4px -2px rgba(0,0,0,.6);
 }
 .lsheet h4{
-  margin:0; font-family:var(--display); font-weight:400; font-size:20px; line-height:1.12;
+  margin:0; font-family:var(--display); font-weight:var(--wd-b); font-size:20px; line-height:1.12;
 }
 .lsheet .lrole{
   display:block; margin-top:2px;
@@ -673,7 +673,7 @@
 }
 .ix-n{ font-family:var(--typed); font-size:9.5px; letter-spacing:.14em; color:var(--faint); }
 .ix-name{
-  font-family:var(--display); font-size:21px; line-height:1.1;
+  font-family:var(--display); font-weight:var(--wd-b); font-size:21px; line-height:1.1;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 .ix-fact, .ix-where{
@@ -739,7 +739,7 @@
   color:var(--hue, var(--accent));
 }
 .sb-name{
-  margin:14px 0 0; font-family:var(--display); font-weight:400;
+  margin:14px 0 0; font-family:var(--display); font-weight:var(--wd);
   font-size:clamp(46px, 8.4vw, 104px); line-height:.94; letter-spacing:.004em;
   color:var(--ink);
 }
@@ -830,7 +830,7 @@
   border-bottom:1px solid rgba(255,255,255,.18);
 }
 .ch-band h3{
-  margin:0; font-family:var(--display); font-weight:400; font-size:28px; color:#fff;
+  margin:0; font-family:var(--display); font-weight:var(--wd-b); font-size:28px; color:#fff;
 }
 .ch-band header span{
   margin-left:auto; font-family:var(--typed); font-size:9px; letter-spacing:.2em;
@@ -845,7 +845,7 @@
 }
 .ch-t{
   display:block;
-  font-family:var(--display); font-weight:500; font-size:clamp(26px, 3.4vw, 40px); line-height:1.06;
+  font-family:var(--display); font-weight:var(--wd-b); font-size:clamp(26px, 3.4vw, 40px); line-height:1.06;
   color:rgba(255,255,255,.92);
   transition:color .2s var(--ease), transform .3s var(--ease), text-shadow .3s var(--ease);
 }
@@ -892,7 +892,7 @@
   color:rgba(255,255,255,.66);
 }
 .ch-pane h3{
-  margin:8px 0 2px; font-family:var(--display); font-weight:400; font-size:34px;
+  margin:8px 0 2px; font-family:var(--display); font-weight:var(--wd); font-size:34px;
   line-height:1.05; color:#fff;
 }
 .ch-role{
@@ -986,7 +986,7 @@
 }
 .fprev-in{ padding:16px 14px; }
 .fprev-in h4{
-  margin:10px 0 2px; font-family:var(--display); font-weight:400; font-size:26px; line-height:1.1;
+  margin:10px 0 2px; font-family:var(--display); font-weight:var(--wd); font-size:26px; line-height:1.1;
   color:var(--ink);
 }
 .fkind{

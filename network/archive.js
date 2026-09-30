@@ -257,17 +257,21 @@ function newId(prefix) {
   return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 }
 
+function circleChips(p) {
+  return '<div class="ed-chips" data-chips="circles" data-for="' + p.id + '">' + circleChipsIn(p) + '</div>';
+}
 function circlesBlock(p) {
-  return '<div class="ed-row"><span class="ed-label">Filed under</span>' +
-    '<div class="ed-chips">' +
+  return '<div class="ed-row"><span class="ed-label">Filed under</span>' + circleChips(p) + '</div>';
+}
+function circleChipsIn(p) {
+  return '' +
       L.circlesOf(p).map(function (c, i) {
         return '<span class="ed-chip' + (i === 0 ? ' main' : '') + '" style="--hue:' + hueOfGroup(c) + '">' +
           '<span>' + esc(c) + '</span>' +
           '<button data-act="uncircle" data-for="' + p.id + '" data-val="' + esc(c) + '" ' +
             'aria-label="Take out of ' + esc(c) + '">' + DASH.replace(DASH, '\u00d7') + '</button></span>';
       }).join('') +
-      '<button class="ed-add" data-act="circle" data-for="' + p.id + '">+ circle</button>' +
-    '</div></div>';
+      '<button class="ed-add" data-act="circle" data-for="' + p.id + '">+ circle</button>';
 }
 
 function notesBlock(p) {
@@ -300,9 +304,14 @@ function logBlock(p) {
 
 /* Schools are a list with a degree on each: the name edits where it sits, the
    degree is a pick, and "+ school" takes "Wharton MBA" in one go. */
+function schoolChips(p) {
+  return '<div class="ed-chips" data-chips="schools" data-for="' + p.id + '">' + schoolChipsIn(p) + '</div>';
+}
 function schoolsBlock(p) {
-  return '<div class="ed-row"><span class="ed-label">Schools</span>' +
-    '<div class="ed-chips">' +
+  return '<div class="ed-row"><span class="ed-label">Schools</span>' + schoolChips(p) + '</div>';
+}
+function schoolChipsIn(p) {
+  return '' +
       L.schoolsOf(p).map(function (s, i) {
         return '<span class="ed-chip school">' +
           '<span class="ed-name" data-act="school" data-for="' + p.id + '" data-idx="' + i + '" tabindex="0" role="button"' +
@@ -312,31 +321,34 @@ function schoolsBlock(p) {
           '<button data-act="unschool" data-for="' + p.id + '" data-idx="' + i + '" ' +
             'aria-label="Remove ' + esc(s.name) + '">×</button></span>';
       }).join('') +
-      '<button class="ed-add" data-act="addschool" data-for="' + p.id + '">+ school</button>' +
-    '</div></div>';
+      '<button class="ed-add" data-act="addschool" data-for="' + p.id + '">+ school</button>';
 }
 
-function schoolLine(p) {
-  return L.schoolsOf(p).map(function (s) { return s.name + (s.level ? ' (' + s.level + ')' : ''); }).join(', ');
-}
-function schoolSpan(p) {
-  var line = schoolLine(p);
-  return '<span data-schools="' + p.id + '">' + (line ? esc(line) : '<span class="none">' + DASH + '</span>') + '</span>';
-}
+/* Circles and schools are edited in the facts themselves; what a surface has
+   no room for up top comes below, and only that. */
+var BLOCKS = { circles: circlesBlock, schools: schoolsBlock, notes: notesBlock, log: logBlock };
 
-function blocksOf(p) { return circlesBlock(p) + schoolsBlock(p) + notesBlock(p) + logBlock(p); }
-
-function editorBlocks(p) {
-  return '<div class="editor" data-blocks="' + p.id + '">' + blocksOf(p) + '</div>';
+function blocksOf(p, parts) {
+  return parts.split(' ').map(function (k) { return BLOCKS[k](p); }).join('');
 }
 
+function editorBlocks(p, parts) {
+  parts = parts || 'notes log';
+  return '<div class="editor" data-blocks="' + p.id + '" data-parts="' + parts + '">' + blocksOf(p, parts) + '</div>';
+}
+
+/* Every place a person's record shows, redrawn in place after an edit. */
 function refreshBlocks(p) {
-  var host = root.querySelector('[data-blocks="' + cssEsc(p.id) + '"]');
-  if (host) host.innerHTML = blocksOf(p);
-  // the read-only school lines elsewhere on the same screen follow along
-  Array.prototype.forEach.call(root.querySelectorAll('[data-schools="' + cssEsc(p.id) + '"]'), function (n) {
-    var line = schoolLine(p);
-    n.innerHTML = line ? esc(line) : '<span class="none">' + DASH + '</span>';
+  var id = cssEsc(p.id);
+  Array.prototype.forEach.call(root.querySelectorAll('[data-blocks="' + id + '"]'), function (host) {
+    host.innerHTML = blocksOf(p, host.dataset.parts);
+  });
+  Array.prototype.forEach.call(root.querySelectorAll('[data-chips][data-for="' + id + '"]'), function (host) {
+    host.innerHTML = host.dataset.chips === 'schools' ? schoolChipsIn(p) : circleChipsIn(p);
+  });
+  Array.prototype.forEach.call(root.querySelectorAll('[data-sheets="' + id + '"]'), function (host) {
+    host.classList.add('quiet');            // the sheets were dealt once already
+    host.innerHTML = fileSheets(p, 1);
   });
 }
 
@@ -404,7 +416,7 @@ function editorAction(btn) {
     p.notes.push({ id: newId('n'), t: '' });
     commitPerson(p);
     refreshBlocks(p);
-    var last = root.querySelectorAll('[data-blocks="' + cssEsc(p.id) + '"] [data-act="note"]');
+    var last = root.querySelectorAll('[data-act="note"][data-for="' + cssEsc(p.id) + '"]');
     if (last.length) last[last.length - 1].click();
     return true;
   }
@@ -414,7 +426,7 @@ function editorAction(btn) {
     p.log.unshift({ id: newId('e'), at: Date.now(), channel: 'note', text: '', learned: '' });
     commitPerson(p);
     refreshBlocks(p);
-    var first = root.querySelector('[data-blocks="' + cssEsc(p.id) + '"] [data-act="log"]');
+    var first = root.querySelector('[data-act="log"][data-for="' + cssEsc(p.id) + '"]');
     if (first) first.click();
     return true;
   }
@@ -507,7 +519,7 @@ function schoolField(btn, p) {
     closed = true;
     schoolsChanged(p);
     // straight back into a fresh field for the next one
-    var again = root.querySelector('[data-blocks="' + cssEsc(p.id) + '"] [data-act="addschool"]');
+    var again = root.querySelector('[data-act="addschool"][data-for="' + cssEsc(p.id) + '"]');
     if (again) schoolField(again, p);
   });
   box.addEventListener('blur', function () { close(true); });
@@ -974,8 +986,8 @@ function drawFile(host) {
     ['Email', p.email, 'email'], ['Phone', p.phone, 'phone'],
     ['Profession', p.profession, 'profession'], ['Company', p.company, 'company'],
     ['Location', p.location, 'location'],
-    ['Schools', '', '', schoolSpan(p)],
-    ['Filed under', L.circlesOf(p).join(' · ')]
+    ['Schools', '', '', schoolChips(p)],
+    ['Filed under', '', '', circleChips(p)]
   ];
   Object.keys(p.custom || {}).forEach(function (k) { facts.push([k, p.custom[k]]); });
   var ties = L.tiesOf(p);
@@ -1000,29 +1012,15 @@ function drawFile(host) {
     '</div>'
   ];
 
-  (p.notes || []).forEach(function (n) {
-    sheets.push('<div class="sheet slip" style="--d:' + (d++) + '"><p>' + esc(n.t) + '</p></div>');
-  });
-
-  if (p.log.length) {
-    p.log.forEach(function (e, i) {
-      sheets.push('<div class="sheet entry" style="--d:' + (d++) + ';--r:' + (i % 2 ? '.3' : '-.25') + 'deg">' +
-        '<div class="margin">' + esc(L.channelLabel(e.channel)) + '<br>' + esc(L.fmtDate(e.at)) + '</div>' +
-        '<div><p>' + esc(e.text) + '</p>' +
-          (e.learned ? '<div class="learned">' + esc(e.learned) + '</div>' : '') +
-        '</div></div>');
-    });
-  } else {
-    sheets.push('<div class="sheet blank" style="--d:' + (d++) + '">No touchpoints on file</div>');
-  }
 
   file.innerHTML =
     '<div class="tab">' + esc(home) + '</div>' +
     '<div class="jacket">' +
       (extra.length ? '<div class="edge">' + extra.map(function (c) {
         return '<span style="--c:' + hueVar(c) + '">' + esc(c) + '</span>'; }).join('') + '</div>' : '') +
-      '<div class="sheets">' + sheets.join('') + '</div>' +
-      editorBlocks(p) +
+      '<div class="sheets">' + sheets.join('') +
+        '<div class="sheets-live" data-sheets="' + p.id + '">' + fileSheets(p, d) + '</div>' +
+      '</div>' +
       '<div class="acts">' +
         '<button class="btn" data-edit="' + p.id + '">Open the card</button>' +
         '<button class="btn" data-back>Back to the drawer</button>' +
@@ -1035,6 +1033,37 @@ function drawFile(host) {
     if (b) return editCard(b.dataset.edit);
     if (e.target.closest('[data-back]')) back();
   });
+}
+
+/* The notes and touchpoints in a file, each one edited on its own sheet:
+   click the words to change them, x to throw the sheet away. */
+function fileSheets(p, d) {
+  var out = [];
+  var x = function (act, id, what) {
+    return '<button class="sheet-x" data-act="' + act + '" data-for="' + p.id + '" data-id="' + esc(id) +
+      '" aria-label="Delete ' + what + '">\u00d7</button>';
+  };
+  (p.notes || []).forEach(function (n) {
+    out.push('<div class="sheet slip" style="--d:' + (d++) + '">' +
+      '<p class="ed-text" data-act="note" data-for="' + p.id + '" data-id="' + esc(n.id) + '" tabindex="0" role="button"' +
+        ' title="Click to edit">' + esc(n.t) + '</p>' + x('delnote', n.id, 'note') + '</div>');
+  });
+  if (p.log.length) {
+    p.log.forEach(function (e, i) {
+      out.push('<div class="sheet entry" style="--d:' + (d++) + ';--r:' + (i % 2 ? '.3' : '-.25') + 'deg">' +
+        '<div class="margin">' + esc(L.channelLabel(e.channel)) + '<br>' + esc(L.fmtDate(e.at)) + '</div>' +
+        '<div><p class="ed-text" data-act="log" data-for="' + p.id + '" data-id="' + esc(e.id) + '" tabindex="0" role="button"' +
+          ' title="Click to edit">' + esc(e.text) + '</p>' +
+          (e.learned ? '<div class="learned">' + esc(e.learned) + '</div>' : '') +
+        '</div>' + x('dellog', e.id, 'touchpoint') + '</div>');
+    });
+  } else {
+    out.push('<div class="sheet blank" style="--d:' + (d++) + '">No touchpoints on file</div>');
+  }
+  out.push('<div class="sheet-adds" style="--d:' + d + '">' +
+    '<button class="ed-add" data-act="addnote" data-for="' + p.id + '">+ note</button>' +
+    '<button class="ed-add" data-act="addlog" data-for="' + p.id + '">+ touchpoint</button></div>');
+  return out.join('');
 }
 
 function emptyState(host, text) {
@@ -1191,7 +1220,8 @@ function drawChroma(host) {
         '<dt>Email</dt><dd class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +
         '<dt>Phone</dt><dd class="edit"' + editableAttrs(p, 'phone') + '>' + esc(p.phone || '—') + '</dd>' +
         '<dt>Location</dt><dd class="edit"' + editableAttrs(p, 'location') + '>' + esc(p.location || '—') + '</dd>' +
-        '<dt>School</dt><dd>' + schoolSpan(p) + '</dd>' +
+        '<dt>School</dt><dd>' + schoolChips(p) + '</dd>' +
+        '<dt>Filed</dt><dd>' + circleChips(p) + '</dd>' +
         '<dt>Last</dt><dd>' + esc(p.log.length ? L.ago(L.lastTouch(p)) : 'no touchpoints') + '</dd>' +
       '</dl>' +
       editorBlocks(p) +
@@ -1445,12 +1475,12 @@ function drawFinder(host) {
       '<dl>' +
         '<dt style="--i:0">Kind</dt><dd style="--i:0">Rootwork entry</dd>' +
         '<dt style="--i:1">Size</dt><dd style="--i:1">' + esc(sizeOf(p)) + '</dd>' +
-        '<dt style="--i:2">Filed</dt><dd style="--i:2">' + esc(L.circlesOf(p).join(', ')) + '</dd>' +
+        '<dt style="--i:2">Filed</dt><dd style="--i:2">' + circleChips(p) + '</dd>' +
         '<dt style="--i:3">Company</dt><dd style="--i:3" class="edit"' + editableAttrs(p, 'company') + '>' + esc(p.company || '—') + '</dd>' +
         '<dt style="--i:4">Email</dt><dd style="--i:4" class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +
         '<dt style="--i:5">Phone</dt><dd style="--i:5" class="edit"' + editableAttrs(p, 'phone') + '>' + esc(p.phone || '—') + '</dd>' +
         '<dt style="--i:6">Location</dt><dd style="--i:6" class="edit"' + editableAttrs(p, 'location') + '>' + esc(p.location || '—') + '</dd>' +
-        '<dt style="--i:7">School</dt><dd style="--i:7">' + schoolSpan(p) + '</dd>' +
+        '<dt style="--i:7">School</dt><dd style="--i:7">' + schoolChips(p) + '</dd>' +
         '<dt style="--i:8">Opened</dt><dd style="--i:8">' + esc(p.log.length ? L.fmtDate(L.lastTouch(p)) : 'never') + '</dd>' +
         '<dt style="--i:9">Entries</dt><dd style="--i:9">' + p.log.length + '</dd>' +
       '</dl>' +

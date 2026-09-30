@@ -1024,6 +1024,7 @@ dd.edit{ display:block; }
 .arc-body.still .folder,
 .arc-body.still .entry-row,
 .arc-body.still .sheet,
+.arc-body.still .sheet-adds,
 .arc-body.still .ix-row,
 .arc-body.still .ch-band,
 .arc-body.still .ch-name,
@@ -1353,4 +1354,49 @@ dd.edit{ display:block; }
   .fprev-in .fic.big svg, .fprev-in::after, .ed-chip.school, .arc-pick{ animation:none !important; }
   .fw{ opacity:1; transform:none; }
   .finder, .fic .flap, .fw-pill{ transition:none; }
+}
+
+/* ---------- editing on the paper itself ---------- */
+
+.sheets-live{ display:contents; }
+/* after an edit the sheets are redrawn, not dealt again */
+.sheets-live.quiet .sheet, .sheets-live.quiet .sheet-adds{
+  animation:none; opacity:1; transform:rotate(var(--r, 0deg));
+}
+
+/* chips typed onto the index card take its ink */
+.sheet.card .facts dd .ed-chips{ gap:5px; }
+.sheet.card .ed-chip{ font-family:var(--ui); font-size:12px; color:#241f19; }
+.sheet.card .ed-chip.school{ border-color:rgba(40,30,18,.28); }
+.sheet.card .ed-chip.main{ background:color-mix(in srgb, var(--hue) 30%, #fdfbf5); }
+.sheet.card .ed-deg{ background:rgba(40,30,18,.09); }
+.sheet.card .ed-deg.none{ border-color:rgba(40,30,18,.3); }
+.sheet.card .ed-add{ color:#6b5c46; border-color:rgba(80,62,34,.38); }
+.sheet .ed-text:hover{ background:rgba(40,30,18,.07); }
+.sheet .ed-text{ cursor:text; }
+
+/* a sheet's own x, there when you are on it */
+.sheet-x{
+  position:absolute; top:8px; right:10px; z-index:1;
+  width:22px; height:22px; border-radius:50%;
+  font-size:15px; line-height:1; color:#6b5c46;
+  opacity:0; transition:opacity var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.sheet:hover .sheet-x, .sheet-x:focus-visible{ opacity:.7; }
+.sheet-x:hover{ opacity:1; background:rgba(40,30,18,.1); }
+@media (hover:none){ .sheet-x{ opacity:.5; } }
+
+.sheet-adds{
+  display:flex; gap:8px;
+  opacity:0; animation:fan .52s var(--ease) forwards;
+  animation-delay:calc(var(--d, 0) * 55ms + 140ms);
+}
+.file .sheet-adds .ed-add{ color:#fff; border-color:rgba(255,255,255,.45); }
+
+/* chips inside the Desktop and Chroma fact lists */
+.fprev-in dd .ed-chips, .ch-pane dd .ed-chips{ gap:4px; }
+.fprev-in dd .ed-chip, .ch-pane dd .ed-chip{ font-family:var(--ui); }
+
+@media (prefers-reduced-motion:reduce){
+  .sheet-adds{ animation:none; opacity:1; }
 }

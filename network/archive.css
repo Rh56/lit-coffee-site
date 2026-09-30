@@ -1200,3 +1200,157 @@ dd.edit{ display:block; }
 .fw-modes button{ transition:color var(--fast) var(--ease), background var(--fast) var(--ease), transform var(--fast) var(--ease); }
 .fw-modes button:active{ transform:scale(.92); }
 .fw-path b, .fw-path span{ transition:color var(--fast) var(--ease); }
+
+/* ---------- schools, editable anywhere ---------- */
+
+.ed-chip.school{
+  --hue:currentColor;
+  border-color:color-mix(in srgb, currentColor 32%, transparent);
+  padding-left:3px; gap:3px;
+}
+.ed-name{
+  padding:0 5px; border-radius:999px; cursor:text;
+  transition:background var(--fast) var(--ease);
+}
+.ed-name:hover{ background:color-mix(in srgb, currentColor 12%, transparent); }
+.ed-name .arc-input{ min-width:9em; margin:0; }
+.ed-deg{
+  font-family:var(--typed); font-size:9px; letter-spacing:.1em;
+  padding:1px 6px; border-radius:999px; opacity:1 !important;
+  background:color-mix(in srgb, currentColor 14%, transparent);
+  transition:background var(--fast) var(--ease), transform var(--fast) var(--ease);
+}
+.ed-deg.none{ background:none; border:1px dashed color-mix(in srgb, currentColor 30%, transparent); opacity:.6 !important; }
+.ed-deg:hover{ background:color-mix(in srgb, currentColor 24%, transparent); }
+.ed-deg:active{ transform:scale(.94); }
+.arc-input.ed-inline{ width:12em; min-width:0; margin:0; padding:2px 6px; font-size:11.5px; }
+.ed-chip.school{ animation:chipin .28s var(--ease); }
+@keyframes chipin{ from{ opacity:0; transform:scale(.9); } }
+.arc-body.still .ed-chip.school{ animation:none; }
+
+.arc-pick.deg{ min-width:0; display:grid; grid-template-columns:repeat(3, auto); gap:2px; }
+.arc-pick.deg button{
+  padding:5px 10px; border-radius:4px; font-family:var(--typed); font-size:11px;
+  letter-spacing:.06em; color:var(--ink-2); text-align:center;
+}
+.arc-pick.deg button:hover, .arc-pick.deg button:focus-visible{ background:var(--panel-2); color:var(--ink); outline:none; }
+.arc-pick.deg button[data-on]{ background:var(--accent); color:#fff; }
+.arc-pick.deg button[data-pick=""]{ grid-column:1 / -1; font-family:var(--ui); letter-spacing:0; color:var(--muted); }
+.arc-pick{ animation:pickin .2s var(--ease); transform-origin:top left; }
+@keyframes pickin{ from{ opacity:0; transform:translateY(-4px) scale(.97); } }
+
+/* ---------- desktop, cooler ---------- */
+
+/* @property lets the desk's colour glide between folders instead of snapping */
+@property --desk{ syntax:'<color>'; inherits:true; initial-value:#7d8fdd; }
+
+.finder{
+  position:relative; isolation:isolate;
+  transition:--desk .9s var(--ease);
+}
+/* the desk the window sits on: a slow light in the open folder's colour */
+.fw-desk{
+  position:absolute; inset:-60px -40px; z-index:-1; pointer-events:none;
+  background:
+    radial-gradient(40% 55% at 22% 30%, color-mix(in srgb, var(--desk) 22%, transparent), transparent 70%),
+    radial-gradient(35% 50% at 80% 75%, color-mix(in srgb, var(--desk) 14%, transparent), transparent 70%);
+  filter:blur(18px);
+  animation:deskdrift 18s ease-in-out infinite alternate, lightup 1s var(--ease) both;
+}
+@keyframes deskdrift{
+  to{ transform:translate(3%, -2%) scale(1.05); }
+}
+
+/* the window itself: lifts in, then carries a light where the pointer is */
+.fw{ position:relative; animation:winin .6s var(--ease) .05s forwards; }
+@keyframes winin{
+  from{ opacity:0; transform:translateY(22px) scale(.97); filter:blur(4px); }
+  to{ opacity:1; transform:none; filter:none; }
+}
+.fw-sheen{
+  position:absolute; inset:0; z-index:3; pointer-events:none; border-radius:inherit;
+  background:radial-gradient(260px circle at var(--mx, 50%) var(--my, 0), color-mix(in srgb, var(--desk) 12%, transparent), transparent 70%);
+  opacity:0; transition:opacity .4s var(--ease);
+  mix-blend-mode:screen;
+}
+.fw[data-lit] .fw-sheen{ opacity:1; }
+.fw{ transition:box-shadow .5s var(--ease); }
+.fw[data-lit]{ box-shadow:0 40px 90px -50px #000, 0 0 0 1px color-mix(in srgb, var(--desk) 22%, transparent); }
+
+/* traffic lights pop in one after another */
+.fw-bar .lights i{ animation:lightpop .4s var(--ease) both; }
+.fw-bar .lights i:nth-child(1){ animation-delay:.25s; }
+.fw-bar .lights i:nth-child(2){ animation-delay:.31s; }
+.fw-bar .lights i:nth-child(3){ animation-delay:.37s; }
+@keyframes lightpop{ from{ transform:scale(0); } 70%{ transform:scale(1.25); } to{ transform:none; } }
+
+/* the path: settled segments dim, the newest slides in */
+.fw-path{ display:flex; align-items:center; gap:4px; }
+.fw-path .seg{ font-weight:400; color:var(--muted); display:inline-block; }
+.fw-path .seg:last-child{ color:var(--ink); font-weight:500; }
+.fw-path .sep{ color:var(--faint); }
+.fw-path .seg.new{ animation:segin .36s var(--ease) both; }
+@keyframes segin{ from{ opacity:0; transform:translateX(-8px); clip-path:inset(0 100% 0 0); } to{ clip-path:inset(0 0 0 0); } }
+
+/* one pill behind the view buttons, sliding to the one that is on */
+.fw-modes{ position:relative; }
+.fw-pill{
+  position:absolute; left:2px; top:0; height:22px; border-radius:3px;
+  background:var(--panel-2); box-shadow:inset 0 0 0 1px var(--rule);
+  transition:transform .3s var(--ease), width .3s var(--ease);
+}
+.fw-modes button{ position:relative; z-index:1; }
+.fw-modes button[data-on]{ color:var(--ink); }
+.fw-modes button:hover{ background:none; }
+
+/* switching views crossfades the pane rather than cutting */
+.fw-body.swap{ animation:swapin .38s var(--ease); }
+@keyframes swapin{ from{ opacity:0; transform:scale(.985); filter:blur(3px); } }
+
+/* folders open their lid when they are the one you are in */
+.fic .flap{
+  transform-box:fill-box; transform-origin:50% 100%;
+  transition:transform .32s var(--ease);
+}
+.frow:hover .fic .flap, .fitem:hover .fic .flap{ transform:skewX(-8deg) scaleY(.9); }
+.frow.on .fic .flap, .fitem.on .fic .flap{ transform:skewX(-16deg) scaleY(.78); }
+
+/* the selection marker glows faintly in the folder's colour */
+.fw-marker{ box-shadow:0 6px 18px -8px color-mix(in srgb, var(--accent) 80%, transparent); }
+
+/* status bar numbers roll when they change */
+.fw-foot span{ display:inline-block; }
+.fw-foot .tick{ animation:tick .34s var(--ease); }
+@keyframes tick{ from{ opacity:0; transform:translateY(-70%); } }
+
+/* the preview's glyph takes the folder's colour and breathes */
+.fprev-in .fic.big{ color:var(--desk); }
+.fprev-in .fic.big svg{ animation:float 5s ease-in-out .6s infinite; }
+@keyframes float{ 50%{ transform:translateY(-3px) rotate(1.5deg); } }
+/* a line of light reads down the preview each time a file is picked */
+.fprev-in{ position:relative; overflow:hidden; }
+.fprev-in::after{
+  content:""; position:absolute; left:0; right:0; top:0; height:40%;
+  background:linear-gradient(transparent, color-mix(in srgb, var(--desk) 10%, transparent), transparent);
+  transform:translateY(-100%); pointer-events:none;
+  animation:scan .8s var(--ease) .05s 1 both;
+}
+@keyframes scan{ to{ transform:translateY(260%); opacity:0; } }
+
+/* the ghost a file leaves as it opens */
+.fw-ghost{
+  position:fixed; z-index:40; pointer-events:none; border-radius:6px;
+  background:color-mix(in srgb, var(--hue) 35%, var(--panel));
+  box-shadow:0 0 0 1px color-mix(in srgb, var(--hue) 60%, transparent);
+  transform-origin:center;
+}
+
+.arc-body.still .fw-desk, .arc-body.still .fw-bar .lights i,
+.arc-body.still .fprev-in::after{ animation:none; }
+
+@media (prefers-reduced-motion:reduce){
+  .fw-desk, .fw, .fw-bar .lights i, .fw-path .seg.new, .fw-body.swap, .fw-foot .tick,
+  .fprev-in .fic.big svg, .fprev-in::after, .ed-chip.school, .arc-pick{ animation:none !important; }
+  .fw{ opacity:1; transform:none; }
+  .finder, .fic .flap, .fw-pill{ transition:none; }
+}

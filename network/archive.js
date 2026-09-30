@@ -298,14 +298,53 @@ function logBlock(p) {
   '</div></div>';
 }
 
+/* Schools are a list with a degree on each: the name edits where it sits, the
+   degree is a pick, and "+ school" takes "Wharton MBA" in one go. */
+function schoolsBlock(p) {
+  return '<div class="ed-row"><span class="ed-label">Schools</span>' +
+    '<div class="ed-chips">' +
+      L.schoolsOf(p).map(function (s, i) {
+        return '<span class="ed-chip school">' +
+          '<span class="ed-name" data-act="school" data-for="' + p.id + '" data-idx="' + i + '" tabindex="0" role="button"' +
+            ' title="Click to rename">' + esc(s.name) + '</span>' +
+          '<button class="ed-deg' + (s.level ? '' : ' none') + '" data-act="degree" data-for="' + p.id + '" data-idx="' + i + '"' +
+            ' title="Degree">' + esc(s.level || '+ degree') + '</button>' +
+          '<button data-act="unschool" data-for="' + p.id + '" data-idx="' + i + '" ' +
+            'aria-label="Remove ' + esc(s.name) + '">×</button></span>';
+      }).join('') +
+      '<button class="ed-add" data-act="addschool" data-for="' + p.id + '">+ school</button>' +
+    '</div></div>';
+}
+
+function schoolLine(p) {
+  return L.schoolsOf(p).map(function (s) { return s.name + (s.level ? ' (' + s.level + ')' : ''); }).join(', ');
+}
+function schoolSpan(p) {
+  var line = schoolLine(p);
+  return '<span data-schools="' + p.id + '">' + (line ? esc(line) : '<span class="none">' + DASH + '</span>') + '</span>';
+}
+
+function blocksOf(p) { return circlesBlock(p) + schoolsBlock(p) + notesBlock(p) + logBlock(p); }
+
 function editorBlocks(p) {
-  return '<div class="editor" data-blocks="' + p.id + '">' +
-    circlesBlock(p) + notesBlock(p) + logBlock(p) + '</div>';
+  return '<div class="editor" data-blocks="' + p.id + '">' + blocksOf(p) + '</div>';
 }
 
 function refreshBlocks(p) {
   var host = root.querySelector('[data-blocks="' + cssEsc(p.id) + '"]');
-  if (host) host.innerHTML = circlesBlock(p) + notesBlock(p) + logBlock(p);
+  if (host) host.innerHTML = blocksOf(p);
+  // the read-only school lines elsewhere on the same screen follow along
+  Array.prototype.forEach.call(root.querySelectorAll('[data-schools="' + cssEsc(p.id) + '"]'), function (n) {
+    var line = schoolLine(p);
+    n.innerHTML = line ? esc(line) : '<span class="none">' + DASH + '</span>';
+  });
+}
+
+/* A school edit changes the folders themselves when you are filing by school. */
+function schoolsChanged(p) {
+  commitPerson(p);
+  if (groupMode === 'school') return render(true);
+  refreshBlocks(p);
 }
 
 /* One line of text, edited where it sits. */
@@ -403,7 +442,107 @@ function editorAction(btn) {
     circleMenu(btn, p);
     return true;
   }
+
+  if (act === 'school' || act === 'degree' || act === 'unschool') {
+    var idx = +btn.dataset.idx;
+    var sc = L.schoolsOf(p)[idx];
+    if (!sc) return true;
+    if (act === 'unschool') { p.schools.splice(idx, 1); schoolsChanged(p); return true; }
+    if (act === 'degree') {
+      pickMenu(btn, L.degrees.concat(['']), sc.level, function (d) {
+        sc.level = d; schoolsChanged(p);
+      });
+      return true;
+    }
+    editText(btn, sc.name, function (val) {
+      if (!val) p.schools.splice(idx, 1);
+      else {
+        // "Lehigh MBA" typed over a name sets the degree too
+        var got = L.parseSchool(val);
+        sc.name = got.name;
+        if (got.level) sc.level = got.level;
+      }
+      schoolsChanged(p);
+    });
+    return true;
+  }
+
+  if (act === 'addschool') {
+    schoolField(btn, p);
+    return true;
+  }
   return false;
+}
+
+/* "+ school" becomes a field where it sits. Enter files one and leaves the
+   field open for the next; an empty Enter, Escape or clicking away closes it. */
+function schoolField(btn, p) {
+  var box = document.createElement('input');
+  box.className = 'arc-input ed-inline';
+  box.placeholder = 'Wharton MBA';
+  box.setAttribute('aria-label', 'Add a school');
+  btn.replaceWith(box);
+  box.focus();
+  var closed = false;
+  function add() {
+    var val = box.value.trim();
+    if (!val) return false;
+    var got = L.parseSchool(val);
+    p.schools = p.schools || [];
+    L.addSchool(p.schools, got.name, got.level);
+    return true;
+  }
+  function close(keep) {
+    if (closed) return;
+    closed = true;
+    if (keep) add();
+    schoolsChanged(p);
+  }
+  box.addEventListener('keydown', function (e) {
+    e.stopPropagation();
+    if (e.key === 'Escape') { e.preventDefault(); return close(false); }
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (!add()) return close(false);
+    closed = true;
+    schoolsChanged(p);
+    // straight back into a fresh field for the next one
+    var again = root.querySelector('[data-blocks="' + cssEsc(p.id) + '"] [data-act="addschool"]');
+    if (again) schoolField(again, p);
+  });
+  box.addEventListener('blur', function () { close(true); });
+}
+
+/* A short list to choose from, under whatever was clicked. '' reads as none. */
+function pickMenu(anchor, options, current, take) {
+  var old = document.getElementById('arc-pick');
+  if (old) old.remove();
+  var box = el('div', 'arc-pick deg');
+  box.id = 'arc-pick';
+  box.innerHTML = options.map(function (o) {
+    return '<button data-pick="' + esc(o) + '"' + (o === (current || '') ? ' data-on="1"' : '') + '>' +
+      esc(o || 'No degree') + '</button>';
+  }).join('');
+  document.body.appendChild(box);
+  var r = anchor.getBoundingClientRect();
+  box.style.left = Math.max(10, Math.min(window.innerWidth - box.offsetWidth - 10, r.left)) + 'px';
+  box.style.top = Math.max(10, Math.min(window.innerHeight - box.offsetHeight - 10, r.bottom + 6)) + 'px';
+  function off(e) {
+    if (box.contains(e.target)) return;
+    box.remove(); document.removeEventListener('pointerdown', off);
+  }
+  box.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-pick]');
+    if (!b) return;
+    box.remove(); document.removeEventListener('pointerdown', off);
+    take(b.dataset.pick);
+  });
+  box.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { e.stopPropagation(); box.remove(); document.removeEventListener('pointerdown', off); }
+  });
+  var on = box.querySelector('[data-on]') || box.querySelector('button');
+  if (on) on.focus();
+  setTimeout(function () { document.addEventListener('pointerdown', off); }, 0);
 }
 
 /* The circles that exist, plus a field to name a new one. */
@@ -835,7 +974,7 @@ function drawFile(host) {
     ['Email', p.email, 'email'], ['Phone', p.phone, 'phone'],
     ['Profession', p.profession, 'profession'], ['Company', p.company, 'company'],
     ['Location', p.location, 'location'],
-    ['Schools', L.schoolsOf(p).map(function (s) { return s.name + (s.level ? ' (' + s.level + ')' : ''); }).join(', ')],
+    ['Schools', '', '', schoolSpan(p)],
     ['Filed under', L.circlesOf(p).join(' · ')]
   ];
   Object.keys(p.custom || {}).forEach(function (k) { facts.push([k, p.custom[k]]); });
@@ -853,7 +992,7 @@ function drawFile(host) {
       '<h4><span class="edit"' + editableAttrs(p, 'name') + '>' + esc(p.name) + '</span></h4>' +
       '<div class="rule"></div>' +
       '<dl class="facts">' + facts.map(function (f) {
-        var body = f[1] ? esc(f[1]) : '<span class="none">—</span>';
+        var body = f[3] || (f[1] ? esc(f[1]) : '<span class="none">—</span>');
         return '<dt>' + esc(f[0]) + '</dt><dd>' + (f[2]
           ? '<span class="edit"' + editableAttrs(p, f[2]) + '>' + body + '</span>'
           : body) + '</dd>';
@@ -1040,7 +1179,6 @@ function drawChroma(host) {
   var pane = $('#ch-pane', rig);
   var scrim = $('#ch-scrim', rig);
   function showPane(p, from) {
-    var sch = L.schoolsOf(p).map(function (s) { return s.name + (s.level ? ' ' + s.level : ''); }).join(' \u00b7 ');
     pane.style.setProperty('--hue', hueVar(homeGroup(p)));
     pane.innerHTML =
       '<button class="ch-x" data-close aria-label="Close">\u00d7</button>' +
@@ -1053,7 +1191,7 @@ function drawChroma(host) {
         '<dt>Email</dt><dd class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +
         '<dt>Phone</dt><dd class="edit"' + editableAttrs(p, 'phone') + '>' + esc(p.phone || '—') + '</dd>' +
         '<dt>Location</dt><dd class="edit"' + editableAttrs(p, 'location') + '>' + esc(p.location || '—') + '</dd>' +
-        (sch ? '<dt>School</dt><dd>' + esc(sch) + '</dd>' : '') +
+        '<dt>School</dt><dd>' + schoolSpan(p) + '</dd>' +
         '<dt>Last</dt><dd>' + esc(p.log.length ? L.ago(L.lastTouch(p)) : 'no touchpoints') + '</dd>' +
       '</dl>' +
       editorBlocks(p) +
@@ -1125,11 +1263,13 @@ function drawFinder(host) {
 
   var rig = el('div', 'finder');
   rig.innerHTML =
+    '<div class="fw-desk" aria-hidden="true"></div>' +
     '<div class="fw">' +
+      '<i class="fw-sheen" aria-hidden="true"></i>' +
       '<div class="fw-bar">' +
         '<span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>' +
         '<span class="fw-path" id="fw-path"></span>' +
-        '<span class="fw-modes">' +
+        '<span class="fw-modes"><i class="fw-pill" aria-hidden="true"></i>' +
           '<button data-mode="columns" title="Columns">\u2016</button>' +
           '<button data-mode="icons" title="Icons">\u25a6</button>' +
         '</span>' +
@@ -1142,7 +1282,10 @@ function drawFinder(host) {
 
   function icon(kind) {
     return kind === 'folder'
-      ? '<svg class="fi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5V18a1.5 1.5 0 0 0 1.5 1.5h15A1.5 1.5 0 0 0 21 18V9.5A1.5 1.5 0 0 0 19.5 8h-7L10.5 5.5h-6A1.5 1.5 0 0 0 3 7z"/></svg>'
+      ? '<svg class="fi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+          '<path d="M3 18V7a1.5 1.5 0 0 1 1.5-1.5h6L12.5 8h7A1.5 1.5 0 0 1 21 9.5V18a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18z"/>' +
+          '<path class="flap" d="M3 18.2V11.5A1.5 1.5 0 0 1 4.5 10h15a1.5 1.5 0 0 1 1.5 1.5v6.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.2z" fill="currentColor" fill-opacity=".16"/>' +
+        '</svg>'
       : '<svg class="fi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a1.5 1.5 0 0 0-1.5 1.5v15A1.5 1.5 0 0 0 7 21h10a1.5 1.5 0 0 0 1.5-1.5V7.5z"/><path d="M14 3v4.5h4.5"/></svg>';
   }
 
@@ -1152,13 +1295,26 @@ function drawFinder(host) {
     return bytes < 1024 ? bytes + ' B' : (bytes / 1024).toFixed(1) + ' KB';
   }
 
+  var lastPath = [], lastFoot = [];
   function paint() {
     var folk = sel.circle ? peopleIn(sel.circle) : [];
     var p = sel.person ? personById(sel.person) : null;
 
-    $('#fw-path', rig).innerHTML =
-      '<b>Rootwork</b>' + (sel.circle ? ' <span>\u203a</span> ' + esc(sel.circle) : '') +
-      (p ? ' <span>\u203a</span> ' + esc(p.name) + '.card' : '');
+    // the path: a segment that is new slides in, the ones that stayed stay
+    var path = ['Rootwork'].concat(sel.circle ? [sel.circle] : [], p ? [p.name + '.card'] : []);
+    $('#fw-path', rig).innerHTML = path.map(function (bit, i) {
+      var fresh = lastPath[i] !== bit;
+      return (i ? '<span class="sep">\u203a</span>' : '') +
+        '<b class="seg' + (fresh ? ' new' : '') + '"' + (i ? ' style="--k:' + i + '"' : '') + '>' + esc(bit) + '</b>';
+    }).join('');
+    lastPath = path;
+
+    // the desk behind the window takes the open folder's colour
+    rig.style.setProperty('--desk', sel.circle ? hueVar(sel.circle) : 'var(--accent)');
+    Array.prototype.forEach.call(rig.querySelectorAll('.fw-modes [data-mode]'), function (b) {
+      b.toggleAttribute('data-on', b.dataset.mode === finderMode);
+    });
+    placePill();
 
     if (finderMode === 'icons') {
       pane.className = 'fw-icons';
@@ -1198,11 +1354,69 @@ function drawFinder(host) {
 
     placeMarker();
 
-    $('#fw-foot', rig).innerHTML =
-      '<span>' + cols.length + ' folder' + (cols.length === 1 ? '' : 's') + '</span>' +
-      '<span>' + folk.length + ' item' + (folk.length === 1 ? '' : 's') + (sel.circle ? ' in ' + esc(sel.circle) : '') + '</span>' +
-      '<span class="fw-tip">\u2191\u2193 move \u00b7 \u2192 open \u00b7 \u21b5 edit</span>';
+    var foot = [
+      cols.length + ' folder' + (cols.length === 1 ? '' : 's'),
+      folk.length + ' item' + (folk.length === 1 ? '' : 's') + (sel.circle ? ' in ' + sel.circle : '')
+    ];
+    $('#fw-foot', rig).innerHTML = foot.map(function (t, i) {
+      return '<span' + (lastFoot[i] !== undefined && lastFoot[i] !== t ? ' class="tick"' : '') + '>' + esc(t) + '</span>';
+    }).join('') + '<span class="fw-tip">\u2191\u2193 move \u00b7 \u2192 open \u00b7 \u21b5 edit</span>';
+    lastFoot = foot;
   }
+
+  /* The mode buttons share one pill that slides to whichever is on. */
+  function placePill() {
+    var pill = rig.querySelector('.fw-pill');
+    var on = rig.querySelector('.fw-modes [data-on]');
+    if (!pill || !on) return;
+    pill.style.transform = 'translateX(' + (on.offsetLeft - 2) + 'px)';
+    pill.style.width = on.offsetWidth + 'px';
+  }
+
+  /* Opening a file zooms out of the row it was in, the way an app launches
+     from its icon, and the card arrives where the zoom ends. */
+  function launch(id, from) {
+    var row = from || rig.querySelector('[data-person="' + cssEsc(id) + '"]');
+    if (!row || reduced() || !row.animate) return editCard(id);
+    var r = row.getBoundingClientRect();
+    var ghost = el('div', 'fw-ghost');
+    var hue = sel.circle ? hueVar(sel.circle) : 'var(--accent)';
+    ghost.style.cssText = 'left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;--hue:' + hue;
+    root.appendChild(ghost);
+    var dx = window.innerWidth / 2 - (r.left + r.width / 2);
+    var dy = window.innerHeight / 2 - (r.top + r.height / 2);
+    var sx = Math.min(420, window.innerWidth * .8) / r.width;
+    var sy = Math.min(360, window.innerHeight * .6) / r.height;
+    ghost.animate([
+      { transform: 'none', opacity: .9 },
+      { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(' + sx + ',' + sy + ')', opacity: 0 }
+    ], { duration: 320, easing: 'cubic-bezier(.16,.84,.32,1)' }).onfinish = function () { ghost.remove(); };
+    setTimeout(function () { editCard(id); }, 140);
+  }
+
+  /* Walking off either end of a list gives a little, rather than nothing. */
+  function bump(dir) {
+    if (reduced()) return;
+    var col = rig.querySelector('.fcol[data-col="' + (sel.person ? 1 : 0) + '"] .fw-marker');
+    if (!col || !col.animate) return;
+    var base = col.style.transform;
+    col.animate([
+      { transform: base },
+      { transform: base + ' translateY(' + (dir * 4) + 'px)' },
+      { transform: base }
+    ], { duration: 260, easing: 'cubic-bezier(.16,.84,.32,1)' });
+  }
+
+  /* A soft light on the window's glass follows the pointer. */
+  var fw = rig.querySelector('.fw');
+  var onGlass = function (e) {
+    var r = fw.getBoundingClientRect();
+    fw.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+    fw.style.setProperty('--my', (e.clientY - r.top) + 'px');
+  };
+  fw.addEventListener('pointermove', onGlass);
+  fw.addEventListener('pointerenter', function () { fw.setAttribute('data-lit', ''); });
+  fw.addEventListener('pointerleave', function () { fw.removeAttribute('data-lit'); });
 
   var previewSeq = 0;
   /* The highlight is one element that moves, so picking a row reads as the
@@ -1213,17 +1427,16 @@ function drawFinder(host) {
       if (!marker) return;
       var on = col.querySelector('.frow.on');
       if (!on) { marker.style.opacity = '0'; return; }
-      var cr = col.getBoundingClientRect(), r = on.getBoundingClientRect();
+      // layout offsets, not screen rects: the window is often mid-animation
+      // (scaling in, rows sliding) and a rect would catch it part way
       marker.style.opacity = '1';
-      marker.style.transform = 'translate(' + (r.left - cr.left) + 'px,' +
-        (r.top - cr.top + col.scrollTop) + 'px)';
-      marker.style.width = r.width + 'px';
-      marker.style.height = r.height + 'px';
+      marker.style.transform = 'translate(' + on.offsetLeft + 'px,' + on.offsetTop + 'px)';
+      marker.style.width = on.offsetWidth + 'px';
+      marker.style.height = on.offsetHeight + 'px';
     });
   }
 
   function preview(p) {
-    var sch = L.schoolsOf(p).map(function (s) { return s.name + (s.level ? ' ' + s.level : ''); }).join(', ');
     return '<div class="fprev-in" data-seq="' + (++previewSeq) + '">' +
       '<span class="fic big">' + icon('file') + '</span>' +
       '<h4><span class="edit"' + editableAttrs(p, 'name') + '>' + esc(p.name) + '</span></h4>' +
@@ -1237,7 +1450,7 @@ function drawFinder(host) {
         '<dt style="--i:4">Email</dt><dd style="--i:4" class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +
         '<dt style="--i:5">Phone</dt><dd style="--i:5" class="edit"' + editableAttrs(p, 'phone') + '>' + esc(p.phone || '—') + '</dd>' +
         '<dt style="--i:6">Location</dt><dd style="--i:6" class="edit"' + editableAttrs(p, 'location') + '>' + esc(p.location || '—') + '</dd>' +
-        (sch ? '<dt style="--i:7">School</dt><dd style="--i:7">' + esc(sch) + '</dd>' : '') +
+        '<dt style="--i:7">School</dt><dd style="--i:7">' + schoolSpan(p) + '</dd>' +
         '<dt style="--i:8">Opened</dt><dd style="--i:8">' + esc(p.log.length ? L.fmtDate(L.lastTouch(p)) : 'never') + '</dd>' +
         '<dt style="--i:9">Entries</dt><dd style="--i:9">' + p.log.length + '</dd>' +
       '</dl>' +
@@ -1252,9 +1465,15 @@ function drawFinder(host) {
 
   rig.addEventListener('click', function (e) {
     var m = e.target.closest('[data-mode]');
-    if (m) { finderMode = m.dataset.mode; return paint(); }
+    if (m) {
+      if (finderMode === m.dataset.mode) return;
+      finderMode = m.dataset.mode;
+      paint();
+      if (!reduced()) { pane.classList.remove('swap'); void pane.offsetWidth; pane.classList.add('swap'); }
+      return;
+    }
     var ed = e.target.closest('[data-edit]');
-    if (ed) return editCard(ed.dataset.edit);
+    if (ed) return launch(ed.dataset.edit, ed);
     var fi = e.target.closest('[data-file]');
     if (fi) { view.design = 'drawer'; return openPerson(fi.dataset.file); }
     var c = e.target.closest('[data-circle]');
@@ -1273,7 +1492,7 @@ function drawFinder(host) {
   });
   rig.addEventListener('dblclick', function (e) {
     var pr = e.target.closest('[data-person]');
-    if (pr) editCard(pr.dataset.person);
+    if (pr) launch(pr.dataset.person, pr);
   });
 
   var onKey = function (e) {
@@ -1284,7 +1503,9 @@ function drawFinder(host) {
     var cur = inPeople ? list.indexOf(sel.person) : list.indexOf(sel.circle);
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      var next = Math.max(0, Math.min(list.length - 1, cur + (e.key === 'ArrowDown' ? 1 : -1)));
+      var step = e.key === 'ArrowDown' ? 1 : -1;
+      var next = Math.max(0, Math.min(list.length - 1, cur + step));
+      if (next === cur) return bump(step);
       if (inPeople) sel.person = list[next]; else { sel.circle = list[next]; sel.person = null; }
       return paint();
     }
@@ -1298,10 +1519,24 @@ function drawFinder(host) {
       if (inPeople) { sel.person = null; return paint(); }
       return;
     }
-    if (e.key === 'Enter' && sel.person) { e.preventDefault(); editCard(sel.person); }
+    if (e.key === 'Enter' && sel.person) { e.preventDefault(); launch(sel.person); }
   };
   document.addEventListener('keydown', onKey);
-  return function () { document.removeEventListener('keydown', onKey); };
+  // fonts, the window's entrance and the page's width all settle after the
+  // first paint; the marker and the pill follow whatever they settle to
+  var settle = function () { placePill(); placeMarker(); };
+  window.addEventListener('resize', settle);
+  requestAnimationFrame(settle);
+  fw.addEventListener('animationend', function (e) { if (e.target === fw) settle(); });
+  var wrapEl = root.querySelector('.arc-wrap');
+  var onWrap = function (e) { if (e.target === wrapEl) settle(); };
+  if (wrapEl) wrapEl.addEventListener('transitionend', onWrap);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(settle);
+  return function () {
+    document.removeEventListener('keydown', onKey);
+    window.removeEventListener('resize', settle);
+    if (wrapEl) wrapEl.removeEventListener('transitionend', onWrap);
+  };
 }
 
 

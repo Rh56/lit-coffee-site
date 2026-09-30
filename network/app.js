@@ -3313,6 +3313,12 @@ window.Rootwork = {
     hasPerson: function (id) { return state.people.some(function (p) { return p.id === id; }); },
     primaryCircle: primaryCircle, inCircle: inCircle,
     lastTouch: lastTouch, schoolsOf: schoolsOf, tiesOf: tiesOf,
+    degrees: DEGREES, addSchool: addSchool,
+    // "Wharton mba" -> { name: 'Wharton', level: 'MBA' }, the card's own reading
+    parseSchool: function (val) {
+      val = clean(val || '');
+      return { name: titleCase(clean(val.replace(DEGREE_STRIP, ' ')) || val), level: degreeIn(val) };
+    },
     channelLabel: function (c) { return CHANNEL_LABEL[c] || c; },
     closeCard: function () { closeDossier(); },
     cardOpen: function () { return !!selected; },

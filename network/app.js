@@ -41,6 +41,7 @@ function load() {
     var d = JSON.parse(raw);
     if (!d || !Array.isArray(d.people)) return false;
     state = Object.assign(DEFAULTS(), d);
+    sweepIdCircles();
     if (!Array.isArray(state.pad)) state.pad = [];
     state.padTombstones = state.padTombstones || {};
     state.people.forEach(normalizePerson);
@@ -49,6 +50,24 @@ function load() {
 }
 
 var saveTimer = null;
+/* A circle that is really a person's id, left over from the URL bug: drop it,
+   and leave a tombstone so the other device does not hand it back. */
+function sweepIdCircles() {
+  var bad = (state.circles || []).filter(looksLikeId);
+  if (!bad.length) return;
+  state.circleTombstones = state.circleTombstones || {};
+  bad.forEach(function (name) {
+    state.circleTombstones[name.toLowerCase()] = Date.now();
+    if (state.colors) delete state.colors[name];
+  });
+  state.circles = state.circles.filter(function (c) { return !looksLikeId(c); });
+  state.people.forEach(function (p) {
+    if (!Array.isArray(p.circles)) return;
+    var keep = p.circles.filter(function (c) { return !looksLikeId(c); });
+    if (keep.length !== p.circles.length) { p.circles = keep; p.updated = Date.now(); }
+  });
+}
+
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(function () {
@@ -58,6 +77,12 @@ function save() {
 }
 
 function touch(p) { p.updated = Date.now(); return p; }
+
+/* What uid() produces: p, the sequence number, then four from Math.random.
+   Nothing a person would ever name a circle. */
+var IDLIKE = /^p\d+[a-z0-9]{3,5}$/;
+
+function looksLikeId(name) { return IDLIKE.test(String(name || '')); }
 
 function forget(p) {
   state.tombstones = state.tombstones || {};
@@ -123,7 +148,6 @@ function addSchool(list, name, level) {
 
 function normalizePerson(p) {
   p.ties = p.ties || [];
-  p.tags = p.tags || [];
   p.custom = p.custom || {};
 
   // schools became a list with a level on each
@@ -150,7 +174,7 @@ function normalizePerson(p) {
 function blankPerson(name) {
   return normalizePerson({
     id: uid(), name: name || '', email: '', phone: '', profession: '', company: '',
-    schools: [], location: '', circles: [], tags: [], custom: {},
+    schools: [], location: '', circles: [], custom: {},
     notes: [], log: [], created: Date.now()
   });
 }
@@ -235,12 +259,26 @@ function circleList(includeEmpty) {
 
 /* Colors are assigned by first appearance and remembered, so a circle keeps
    its pigment even as the map grows. */
+/* The colour a name would take, without registering it. Anything that only
+   needs a pigment for drawing uses this: a lookup has no business creating a
+   circle, and one that did is how a person's id once turned into one. */
+function hueIndex(name) {
+  if (!name || name === 'Unsorted') return 0;
+  if (state.colors && state.colors[name]) return state.colors[name];
+  var i = state.circles.indexOf(name);
+  if (i >= 0) return (i % 8) + 1;
+  var h = 0;
+  for (var k = 0; k < name.length; k++) h = (h * 31 + name.charCodeAt(k)) % 997;
+  return (h % 8) + 1;
+}
+
 function circleIndex(name) {
   if (name === 'Unsorted') return 0;
   if (state.colors && state.colors[name]) return state.colors[name];
   var i = state.circles.indexOf(name);
   if (i < 0) {
     if (circleKilled(name)) return 6;          // deleted: draw it, do not re-register it
+    if (looksLikeId(name)) return hueIndex(name);   // an id is not a circle
     state.circles.push(name);
     i = state.circles.length - 1;
   }
@@ -1704,12 +1742,6 @@ function openDossier(node) {
           }).join('') +
           '<input class="chipinput" data-add="tie" placeholder="' + (tiesOf(p).length ? 'another…' : 'who connected you?') + '" aria-label="Add a connection">') +
 
-        chiprow('Tags',
-          p.tags.map(function (t, i) {
-            return '<span class="cchip tag"><span class="lbl">#' + esc(t) + '</span>' +
-              '<button class="x" data-rmtag="' + i + '" aria-label="Remove ' + esc(t) + '">&times;</button></span>';
-          }).join('') +
-          '<input class="chipinput" data-add="tag" placeholder="' + (p.tags.length ? 'another…' : 'add…') + '" aria-label="Add a tag">') +
       '</div>' +
 
       '<div class="d-sec"><h4>History</h4>' +
@@ -1858,9 +1890,6 @@ $('#dossier').addEventListener('click', function (e) {
     if (t.dataset.own === '1') untie(p, otherId);
     else { var other = personById(otherId); if (other) untie(other, p.id); }
     save(); renderAll(); openDossier(selected); return;
-  }
-  if (t.dataset.rmtag !== undefined && t.hasAttribute('data-rmtag')) {
-    p.tags.splice(+t.dataset.rmtag, 1); touch(p); save(); renderAll(); return;
   }
   if (t.dataset.primary) { joinCircle(p, t.dataset.primary, true); save(); renderAll(); return; }
   if (t.dataset.up !== undefined && t.hasAttribute('data-up')) {
@@ -2234,9 +2263,6 @@ $('#dossier').addEventListener('keydown', function (e) {
     var level = degreeIn(val);
     var stripped = val.replace(DEGREE_STRIP, ' ');
     addSchool(p.schools, titleCase(clean(stripped) || val), level);
-  } else {
-    var tag = val.replace(/^#/, '');
-    if (p.tags.indexOf(tag) < 0) p.tags.push(tag);
   }
   touch(p); save(); renderAll();
   openDossier(selected);
@@ -2295,8 +2321,6 @@ function personForm(p) {
       esc(schoolsOf(p).map(function (x) { return x.name + (x.level ? ' ' + x.level : ''); }).join(', ')) + '">' +
       '<span class="hint">Comma separated. Add a degree after a name — “Rutgers BS, Wharton MBA”.</span></div>' +
     f('location', 'Location') +
-    '<div class="field wide"><label for="f-tags">Tags</label><input id="f-tags" value="' + esc(p.tags.join(', ')) + '">' +
-      '<span class="hint">Comma separated.</span></div>' +
     '<div class="field wide"><label for="f-note">Add a note</label><textarea id="f-note" placeholder="Anything worth remembering"></textarea></div>' +
     '</div>';
   var m = modal(isNew ? 'New person' : 'Edit ' + p.name, isNew ? 'Only the name is required.' : '', body,
@@ -2314,7 +2338,6 @@ function personForm(p) {
       addSchool(p.schools, titleCase(clean(nm) || bit), level);
     });
     p.circles = g('circle').split(',').map(clean).filter(Boolean);
-    p.tags = g('tags').split(',').map(function (t) { return t.trim().replace(/^#/, ''); }).filter(Boolean);
     if (g('note')) p.notes.unshift({ id: uid(), t: g('note'), at: Date.now() });
     if (isNew) state.people.push(p);
     circlesOf(p).forEach(circleIndex);
@@ -2351,7 +2374,7 @@ var FIELDS = [
   ['name', 'Name'], ['firstName', 'First name'], ['lastName', 'Last name'],
   ['email', 'Email'], ['phone', 'Phone'], ['profession', 'Profession'],
   ['company', 'Company'], ['school', 'School'], ['location', 'Location'],
-  ['circle', 'Circle'], ['tags', 'Tags'],
+  ['circle', 'Circle'],
   ['notes', 'Notes'], ['custom', 'Keep as its own field'],
   ['skip', 'Ignore this column']
 ];
@@ -2367,7 +2390,6 @@ var HEADER_HINTS = [
   ['school', /^(school|college|university|alma ?mater|education|studied)$/i],
   ['location', /^(location|city|town|where|based|address|state|region)$/i],
   ['circle', /^(circle|group|category|bucket|type|relationship|list|segment)$/i],
-  ['tags', /^(tags?|labels?|keywords)$/i],
   ['notes', /^(notes?|comments?|details|misc|description|remarks)$/i]
 ];
 
@@ -2577,14 +2599,13 @@ function importModal(preloaded, filename) {
     var added = 0, merged = 0, skipped = 0;
 
     parsed.rows.forEach(function (r) {
-      var rec = { tags: [], notes: [], custom: {} };
+      var rec = { notes: [], custom: {} };
       mp.forEach(function (field, i) {
         var v = clean(r[i]);
         if (!v || field === 'skip') return;
         if (field === 'custom') rec.custom[parsed.headers[i].toLowerCase()] = v;
         else if (field === 'notes') rec.notes.push(parsed.headers[i] && !/^notes?$/i.test(parsed.headers[i])
           ? parsed.headers[i] + ': ' + v : v);
-        else if (field === 'tags') rec.tags = v.split(/[,;|]/).map(function (t) { return clean(t).replace(/^#/, ''); }).filter(Boolean);
         else rec[field] = v;
       });
 
@@ -2602,7 +2623,6 @@ function importModal(preloaded, filename) {
       });
       if (rec.school) rec.school.split(/[,;|/]/).map(clean).filter(Boolean)
         .forEach(function (nm) { addSchool(p.schools, titleCase(nm), ''); });
-      rec.tags.forEach(function (t) { if (p.tags.indexOf(t) < 0) p.tags.push(t); });
       Object.keys(rec.custom).forEach(function (k) { p.custom[k] = rec.custom[k]; });
       rec.notes.forEach(function (t) { p.notes.unshift({ id: uid(), t: t, at: Date.now() }); });
 
@@ -2649,7 +2669,7 @@ function importModal(preloaded, filename) {
 })();
 
 function toCSV() {
-  var cols = ['name', 'phone', 'email', 'profession', 'company', 'schools', 'location', 'circles', 'tags', 'lastTouch', 'touchpoints', 'notes'];
+  var cols = ['name', 'phone', 'email', 'profession', 'company', 'schools', 'location', 'circles', 'lastTouch', 'touchpoints', 'notes'];
   var q = function (v) { v = String(v === undefined || v === null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
   var lines = [cols.join(',')];
   state.people.forEach(function (p) {
@@ -2659,7 +2679,7 @@ function toCSV() {
     var extra = Object.keys(p.custom || {}).map(function (k) { return k + ': ' + p.custom[k]; });
     var sch = schoolsOf(p).map(function (x) { return x.name + (x.level ? ' (' + x.level + ')' : ''); }).join(' / ');
     lines.push([p.name, p.phone, p.email, p.profession, p.company, sch, p.location, circlesOf(p).join(' / '),
-      p.tags.join(' '), p.log.length ? new Date(lastTouch(p)).toISOString().slice(0, 10) : '',
+      p.log.length ? new Date(lastTouch(p)).toISOString().slice(0, 10) : '',
       p.log.length, extra.concat(notes ? [notes] : []).join(' | ')].map(q).join(','));
   });
   return lines.join('\n');
@@ -2822,7 +2842,7 @@ function runSearch() {
   if (!q) { results.innerHTML = ''; return; }
   var hits = state.people.filter(function (p) {
     return [p.name, p.profession, p.company, schoolsOf(p).map(function (x) { return x.name; }).join(' '),
-      p.location, circlesOf(p).join(' '), p.email, p.tags.join(' '),
+      p.location, circlesOf(p).join(' '), p.email,
       p.notes.map(function (n) { return n.t; }).join(' '),
       p.log.map(function (e) { return e.text + ' ' + e.learned; }).join(' ')]
       .join(' ').toLowerCase().indexOf(q) >= 0;
@@ -2988,17 +3008,17 @@ function sample() {
   };
   return [
     mk({ name: 'Dana Okafor', circle: 'Work', profession: 'Data scientist', company: 'Merck', schools: [{ name: 'Rutgers', level: 'BS' }],
-      email: 'dana.okafor@example.com', phone: '(908) 555-0142', location: 'Rahway, NJ', tags: ['ai'],
+      email: 'dana.okafor@example.com', phone: '(908) 555-0142', location: 'Rahway, NJ',
       howMet: 'met at the Rutgers alumni mixer' },
       [[4, 'zoom', 'Zoom about the forecasting pilot — she wants a two-week trial.', 'Runs the internal AI guild, 200 people'],
        [38, 'coffee', 'Coffee downtown before the panel.'],
        [96, 'met', 'Met at the Rutgers alumni mixer.']]),
     mk({ name: 'Marcus Bell', circle: 'Work', profession: 'Engineering manager', company: 'Vanta', schools: [{ name: 'Lehigh', level: 'BS' }],
-      email: 'marcus@example.com', location: 'Brooklyn, NY', tags: ['hiring'] },
+      email: 'marcus@example.com', location: 'Brooklyn, NY' },
       [[11, 'call', 'Called about the staff role on his team.', 'Hiring two backend engineers in Q1'],
        [60, 'event', 'Sat next to him at the Philly infra meetup.']]),
     mk({ name: 'Priya Raman', circle: 'Work', profession: 'Product designer', company: 'Figma',
-      email: 'priya@example.com', tags: ['design'] },
+      email: 'priya@example.com' },
       [[130, 'coffee', 'Coffee at Monkey + Elf. Talked through the onboarding redesign.', 'Moving to Lisbon in the spring']]),
     mk({ name: 'Tomás Ferreira', circles: ['School', 'Work'], schools: [{ name: 'Lehigh', level: 'BS' }, { name: 'Villanova', level: 'JD' }], profession: 'Attorney', company: 'Reed Smith',
       email: 'tomas@example.com', phone: '(610) 555-0119' },
@@ -3011,7 +3031,7 @@ function sample() {
       [[168, 'event', 'Ran into him at homecoming.']]),
     mk({ name: 'Ada Whitfield', circles: ['Industry', 'Neighbors'], profession: 'Roaster', company: 'Deep Roots Coffee',
       email: 'ada@example.com', phone: '(484) 555-0177', location: 'Bethlehem, PA',
-      howMet: 'intro through Marcus Bell', tags: ['coffee'] },
+      howMet: 'intro through Marcus Bell' },
       [[2, 'coffee', 'Cupping session at her roastery — she walked me through the Ethiopia lots.', 'Has spare capacity on the Loring in Q2'],
        [30, 'email', 'Emailed about wholesale pricing.']]),
     mk({ name: 'Jonah Pike', circle: 'Industry', profession: 'Bakery consultant', email: 'jonah@example.com' },
@@ -3271,6 +3291,7 @@ window.Rootwork = {
     applyingRemote = true;
     var keepSelected = selected && selected.ref ? selected.ref.id : null;
     state = Object.assign(DEFAULTS(), next);
+    sweepIdCircles();
     state.people.forEach(normalizePerson);
     state.people.forEach(function (p) { circlesOf(p).forEach(circleIndex); });
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { }
@@ -3284,7 +3305,12 @@ window.Rootwork = {
   // what the archive view needs to read the same map the canvas draws
   lib: {
     esc: esc, ago: ago, fmtDate: fmtDate,
-    circleList: circleList, circleIndex: circleIndex, circlesOf: circlesOf,
+    circleList: circleList, circleIndex: hueIndex, circlesOf: circlesOf,
+    knownCircle: function (name) {
+      return !!name && !looksLikeId(name) &&
+        (state.circles || []).some(function (c) { return c.toLowerCase() === String(name).toLowerCase(); });
+    },
+    hasPerson: function (id) { return state.people.some(function (p) { return p.id === id; }); },
     primaryCircle: primaryCircle, inCircle: inCircle,
     lastTouch: lastTouch, schoolsOf: schoolsOf, tiesOf: tiesOf,
     channelLabel: function (c) { return CHANNEL_LABEL[c] || c; },

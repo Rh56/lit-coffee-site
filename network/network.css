@@ -46,6 +46,16 @@
   --wd-b: 500;
   --wb: 400;
 
+  /* one spacing scale, so nothing is eyeballed: every padding, margin and gap
+     is a step on it */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 24px; --s6: 32px; --s7: 48px; --s8: 64px;
+
+  /* one motion curve and two durations, everywhere */
+  --ease: cubic-bezier(.16,.84,.32,1);
+  --fast: .18s;
+  --slow: .42s;
+
   --r: 3px;
   color-scheme: dark;
 }
@@ -116,7 +126,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
   background:var(--field);
   border:1px solid var(--rule);
   border-radius:var(--r);
-  padding:6px 10px 6px 28px;
+  padding:6px 8px 6px 24px;
   font-size:13px;
 }
 .searchwrap input::placeholder{ color:var(--faint); }
@@ -132,7 +142,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .results:empty{ display:none; }
 .results button{
   display:flex; align-items:center; gap:8px; width:100%; text-align:left;
-  padding:7px 10px; border-bottom:1px solid var(--rule-soft);
+  padding:6px 8px; border-bottom:1px solid var(--rule-soft);
 }
 .results button:hover, .results button[data-active="1"]{ background:var(--panel-2); }
 .results .rname{ font-size:13px; }
@@ -141,7 +151,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .stats{
   margin-left:auto;
   display:flex; align-items:center; gap:15px;
-  padding-right:15px; margin-right:1px;
+  padding-right:16px; margin-right:1px;
   border-right:1px solid var(--rule);
   font-family:var(--mono); font-size:10.5px; letter-spacing:.1em;
   text-transform:uppercase; color:var(--muted);
@@ -156,7 +166,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
   border:1px solid var(--rule);
   background:var(--panel-2);
   border-radius:var(--r);
-  padding:6px 11px;
+  padding:6px 12px;
   font-size:12px;
   letter-spacing:.02em;
   transition:border-color .15s, background .15s;
@@ -239,7 +249,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 }
 .dossier.open{ transform:none; }
 .dossier .d-top{
-  padding:16px 18px 13px; border-bottom:1px solid var(--rule);
+  padding:16px 16px 12px; border-bottom:1px solid var(--rule);
   position:relative;
 }
 .d-kicker{
@@ -250,7 +260,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .d-name{
   font-family:var(--display); font-weight:var(--wd); font-size:31px; line-height:1.05; font-weight:400;
   margin:0; letter-spacing:.005em; text-wrap:balance;
-  padding-right:26px;
+  padding-right:24px;
 }
 .d-sub{ font-size:13px; color:var(--muted); margin-top:3px; }
 .d-close{ position:absolute; top:13px; right:14px; color:var(--faint); font-size:17px; line-height:1; }
@@ -292,7 +302,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .entry .e-ch{ color:var(--accent); }
 .entry p{ margin:3px 0 0; font-size:13.5px; line-height:1.55; }
 .entry .learned{
-  margin-top:5px; padding-left:9px; border-left:2px solid var(--rule);
+  margin-top:4px; padding-left:9px; border-left:2px solid var(--rule);
   font-size:13px; color:var(--ink-2);
 }
 .entry .del{ float:right; color:var(--faint); font-size:12px; opacity:0; }
@@ -301,7 +311,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .notes-list{ display:flex; flex-direction:column; gap:7px; }
 .note{
   font-size:13.5px; line-height:1.55;
-  padding:8px 10px; border:1px solid var(--rule-soft); border-radius:var(--r);
+  padding:8px 8px; border:1px solid var(--rule-soft); border-radius:var(--r);
   background:var(--panel-2);
 }
 .note .del{ float:right; color:var(--faint); font-size:12px; }
@@ -329,7 +339,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
   animation:rise .2s ease-out;
 }
 .modal header{
-  padding:15px 20px 12px; border-bottom:1px solid var(--rule);
+  padding:16px 20px 12px; border-bottom:1px solid var(--rule);
   display:flex; align-items:baseline; gap:10px;
 }
 .modal header h2{
@@ -353,7 +363,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 }
 .field input, .field textarea, .field select{
   background:var(--field); border:1px solid var(--rule); border-radius:var(--r);
-  padding:7px 9px; font-size:13.5px; outline:none;
+  padding:6px 8px; font-size:13.5px; outline:none;
 }
 .field input:focus, .field textarea:focus, .field select:focus{ border-color:var(--accent); }
 .field textarea{ resize:vertical; min-height:66px; line-height:1.5; }
@@ -361,14 +371,14 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 
 .helpgrid{ display:flex; flex-direction:column; gap:14px; }
 .helpgrid section h5{
-  margin:0 0 5px; font-family:var(--mono); font-size:9.5px; letter-spacing:.16em;
+  margin:0 0 4px; font-family:var(--mono); font-size:9.5px; letter-spacing:.16em;
   text-transform:uppercase; color:var(--faint); font-weight:500;
 }
 .helpgrid p{ margin:0 0 6px; font-size:13px; line-height:1.6; color:var(--ink-2); }
 .ex{
   font-family:var(--mono); font-size:12px; line-height:1.65;
   background:var(--field); border:1px solid var(--rule-soft); border-radius:var(--r);
-  padding:8px 10px; color:var(--ink-2);
+  padding:8px 8px; color:var(--ink-2);
   overflow-x:auto; white-space:pre-wrap;
 }
 .ex b{ color:var(--accent); font-weight:400; }
@@ -385,7 +395,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .toast{
   position:fixed; left:50%; bottom:96px; transform:translateX(-50%);
   background:var(--ink); color:var(--ground);
-  padding:7px 14px; border-radius:var(--r); font-size:12.5px;
+  padding:6px 12px; border-radius:var(--r); font-size:12.5px;
   z-index:40; box-shadow:var(--shadow);
   animation:rise .18s ease-out;
 }
@@ -416,7 +426,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .pill{
   display:inline-flex; align-items:center; gap:6px;
   border:1px solid var(--rule); border-radius:999px;
-  padding:5px 11px 5px 9px;
+  padding:4px 12px 4px 8px;
   font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase;
   color:var(--muted); background:var(--panel-2);
   transition:border-color .15s, color .15s;
@@ -432,7 +442,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .sync .lead{ margin:0 0 12px; font-size:13px; line-height:1.6; color:var(--ink-2); }
 .sync .tabs{ display:flex; gap:6px; margin-bottom:14px; }
 .sync .steps{
-  margin:0 0 14px; padding-left:18px;
+  margin:0 0 12px; padding-left:18px;
   display:flex; flex-direction:column; gap:8px;
   font-size:13px; line-height:1.55; color:var(--ink-2);
 }
@@ -448,7 +458,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .import .drop{
   border:1px dashed var(--rule); border-radius:var(--r);
   background:var(--field);
-  padding:22px 18px; text-align:center;
+  padding:20px 16px; text-align:center;
   transition:border-color .15s, background .15s;
 }
 .import .drop.over{ border-color:var(--accent); background:var(--panel-2); }
@@ -471,7 +481,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .import details textarea{ min-height:120px; margin-top:6px; }
 
 .maphead{
-  margin-top:14px; padding-bottom:8px;
+  margin-top:12px; padding-bottom:8px;
   font-size:12.5px; color:var(--muted);
   border-bottom:1px solid var(--rule-soft);
 }
@@ -496,7 +506,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .circlepick{ margin-top:14px; }
 .circlepick select, .circlepick input{
   background:var(--field); border:1px solid var(--rule); border-radius:var(--r);
-  padding:7px 9px; font-size:13.5px; outline:none;
+  padding:6px 8px; font-size:13.5px; outline:none;
 }
 .circlepick input{ margin-top:6px; }
 
@@ -534,7 +544,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 
 .card h3 .mini{
   margin-left:2px; color:var(--faint); font-size:14px; line-height:1;
-  padding:0 3px; border-radius:2px;
+  padding:0 2px; border-radius:2px;
 }
 .card h3 .mini:hover{ color:var(--accent); background:var(--panel-2); }
 .legend-list .cname{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -546,7 +556,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
   background:var(--panel-2); overflow:hidden;
 }
 .cchip .lbl{
-  padding:3px 7px; font-size:12.5px; position:relative; padding-left:16px;
+  padding:2px 6px; font-size:12.5px; position:relative; padding-left:16px;
 }
 .cchip .lbl::before{
   content:""; position:absolute; left:7px; top:50%; transform:translateY(-50%);
@@ -566,7 +576,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 }
 .cpick button[data-pick]{
   display:flex; align-items:center; gap:7px; width:100%; text-align:left;
-  padding:5px 7px; border-radius:2px; font-size:12.5px;
+  padding:4px 6px; border-radius:2px; font-size:12.5px;
 }
 .cpick button[data-pick]:hover{ background:var(--panel-2); }
 .cpick .cnew{ display:flex; gap:4px; padding:5px 4px 3px; border-top:1px solid var(--rule-soft); margin-top:3px; }
@@ -635,7 +645,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .d-name .inplace{ font-family:var(--display); font-size:29px; padding:0 4px; }
 
 .addfield{
-  margin-top:10px; font-family:var(--mono); font-size:10px; letter-spacing:.12em;
+  margin-top:8px; font-family:var(--mono); font-size:10px; letter-spacing:.12em;
   text-transform:uppercase; color:var(--faint);
 }
 .addfield:hover{ color:var(--accent); }
@@ -659,7 +669,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .cpick.renamer{ display:flex; gap:6px; padding:8px; }
 .cpick.renamer input{
   background:var(--field); border:1px solid var(--accent); border-radius:2px;
-  padding:5px 7px; font-size:13px; outline:none; width:160px;
+  padding:4px 6px; font-size:13px; outline:none; width:160px;
 }
 .hiddenbar .n{ color:var(--accent); }
 
@@ -668,7 +678,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .chiplist{ display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
 .cchip.school .lbl, .cchip.tag .lbl{ padding:3px 7px; font-size:12.5px; }
 .cchip.school .lvl{
-  padding:3px 6px; font-family:var(--mono); font-size:9.5px; letter-spacing:.1em;
+  padding:2px 6px; font-family:var(--mono); font-size:9.5px; letter-spacing:.1em;
   text-transform:uppercase; color:var(--muted);
   border-left:1px solid var(--rule); border-right:1px solid var(--rule);
 }
@@ -678,7 +688,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .chipinput{
   flex:1; min-width:110px;
   background:none; border:none; border-bottom:1px dashed var(--rule);
-  padding:3px 2px; font-size:12.5px; outline:none;
+  padding:2px 2px; font-size:12.5px; outline:none;
 }
 .chipinput::placeholder{ color:var(--faint); }
 .chipinput:focus{ border-bottom-color:var(--accent); border-bottom-style:solid; }
@@ -686,7 +696,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .notebox{
   width:100%; margin-top:2px; resize:none; overflow:hidden;
   background:var(--field); border:1px solid var(--rule); border-radius:var(--r);
-  padding:7px 9px; font-size:13px; line-height:1.5; outline:none;
+  padding:6px 8px; font-size:13px; line-height:1.5; outline:none;
 }
 .notebox:focus{ border-color:var(--accent); }
 .notebox::placeholder{ color:var(--faint); }
@@ -700,7 +710,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 }
 .cchip.tie .lbl:hover{ color:var(--accent); }
 .tiehint{
-  margin:7px 0 0; font-family:var(--mono); font-size:10px; letter-spacing:.06em;
+  margin:6px 0 0; font-family:var(--mono); font-size:10px; letter-spacing:.06em;
   color:var(--faint);
 }
 
@@ -781,7 +791,7 @@ dd:hover .jump, .jump:focus-visible{ opacity:1; }
 .logger[hidden]{ display:none; }
 .logger{
   display:flex; flex-direction:column; gap:7px;
-  padding:10px; margin-bottom:12px;
+  padding:8px; margin-bottom:12px;
   border:1px solid var(--rule); border-left:2px solid var(--accent);
   border-radius:var(--r); background:var(--panel-2);
 }
@@ -811,7 +821,7 @@ dd:hover .jump, .jump:focus-visible{ opacity:1; }
 .cchip.dragging{ opacity:.45; }
 .cchip.over{ box-shadow:inset 2px 0 0 var(--accent); }
 .cchip .up{
-  padding:3px 2px 3px 5px; color:var(--faint); font-size:13px; line-height:1;
+  padding:2px 2px 2px 4px; color:var(--faint); font-size:13px; line-height:1;
 }
 .cchip .up:hover{ color:var(--accent); }
 .cchip .lbl i{
@@ -863,7 +873,7 @@ dd:hover .jump, .jump:focus-visible{ opacity:1; }
 #pad-input{
   width:100%; resize:none; overflow:auto; max-height:120px;
   background:var(--field); border:1px solid var(--rule); border-radius:var(--r);
-  padding:7px 9px; font-size:12.5px; line-height:1.5; outline:none;
+  padding:6px 8px; font-size:12.5px; line-height:1.5; outline:none;
 }
 #pad-input:focus{ border-color:var(--accent); }
 #pad-input::placeholder{ color:var(--faint); }
@@ -880,7 +890,7 @@ dd:hover .jump, .jump:focus-visible{ opacity:1; }
 .cpick.degrees{ min-width:206px; padding:8px; }
 .cpick .dgrid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:4px; }
 .cpick .dgrid button{
-  padding:5px 2px; border:1px solid var(--rule); border-radius:2px;
+  padding:4px 2px; border:1px solid var(--rule); border-radius:2px;
   font-family:var(--mono); font-size:10.5px; letter-spacing:.04em; color:var(--muted);
 }
 .cpick .dgrid button:hover{ color:var(--ink); border-color:var(--muted); }
@@ -892,7 +902,7 @@ dd:hover .jump, .jump:focus-visible{ opacity:1; }
 .cpick.types{ min-width:218px; padding:6px; max-height:360px; }
 .cpick.types button[data-font]{
   display:flex; align-items:baseline; gap:10px; width:100%; text-align:left;
-  padding:7px 9px; border-radius:3px;
+  padding:6px 8px; border-radius:3px;
   transition:background .12s ease;
 }
 .cpick.types button[data-font]:hover{ background:var(--panel-2); }

@@ -1,16 +1,23 @@
 /* ==========================================================================
    Rootwork — the archive.
 
-   The map, filed three ways. The canvas keeps running underneath; this is a
-   drawer pulled out over it, not a different app, so nothing here owns data:
-   every screen reads the same state the canvas draws and hands editing back
-   to the card.
+   Six ways to read the same network, each a surface of its own rather than a
+   panel over the map: its own bar, its own address, its own idea of what a
+   folder is. Nothing here owns data — every screen reads the state the map
+   draws, and editing happens on the card, which comes to whichever surface
+   you are looking at.
 
-     Drawer      cut tabs and colour bands — a filing drawer seen from above
-     Rolodex     one card at a time on a spindle, flipped front to back
-     Light table sheets loose on a table, dragged around under a lamp
+     Drawer         cut tabs and colour bands — a filing drawer from above
+     Index          everyone at once, set tight, no colour but the pips
+     Chroma         no paper at all: each folder a field of its own light
+     Desktop        folders, files, a preview pane, a status bar
+     Studio         outliner, nodes and an inspector
+     Constellation  everyone on a sphere you can spin
 
-   Shared chrome, three renderers. Each renderer owns a root element and is
+   Folders are whatever you say they are — circles, companies, schools or
+   towns — so the same six read differently depending on how you file.
+
+   Shared chrome, one renderer each. A renderer owns its root element and is
    torn down whole on a switch, so no state leaks between them.
    ========================================================================== */
 (function () {
@@ -21,16 +28,44 @@ var L = null;                  // its helpers
 var root = null, scroll = null, head = null, body = null;
 var DESIGNS = [
   { id: 'drawer', name: 'Drawer', hint: 'A filing drawer, seen from above' },
-  { id: 'rolodex', name: 'Rolodex', hint: 'One card at a time, on a spindle' },
-  { id: 'table', name: 'Light table', hint: 'Sheets loose under a lamp' },
   { id: 'index', name: 'Index', hint: 'Everyone at once, set tight' },
-  { id: 'sublime', name: 'Sublime', hint: 'One name at a time, in the dark' },
   { id: 'chroma', name: 'Chroma', hint: 'Light and type, no paper at all' },
-  { id: 'finder', name: 'Desktop', hint: 'Folders and files, the way a computer keeps them' }
+  { id: 'finder', name: 'Desktop', hint: 'Folders and files, the way a computer keeps them' },
+  { id: 'studio', name: 'Studio', hint: 'Outliner, nodes and an inspector' },
+  { id: 'orbit', name: 'Constellation', hint: 'Everyone on a sphere you can spin' }
 ];
 var view = { design: 'drawer', circle: null, person: null };
 var DESIGN_KEY = 'rootwork.archive.design';
 var open = false;
+var query = '', qTimer = null;
+
+/* Each design has its own address, so one can be opened cold — bookmarked,
+   shared, pinned to a phone's home screen — without going through the map. */
+function routeOf() {
+  if (!open) return '';
+  var bits = ['#' + view.design];
+  if (view.circle) bits.push(encodeURIComponent(view.circle));
+  if (view.person) bits.push(encodeURIComponent(view.person));
+  return bits.join('/');
+}
+function writeRoute(replace) {
+  var to = routeOf() || (location.pathname + location.search);
+  try {
+    if (replace) history.replaceState(null, '', to); else history.pushState(null, '', to);
+  } catch (e) { }
+}
+function readRoute() {
+  var h = (location.hash || '').replace(/^#/, '');
+  if (!h) return null;
+  var bits = h.split('/');
+  var d = DESIGNS.filter(function (x) { return x.id === bits[0]; })[0];
+  if (!d) return null;
+  return {
+    design: d.id,
+    circle: bits[1] ? decodeURIComponent(bits[1]) : null,
+    person: bits[2] ? decodeURIComponent(bits[2]) : null
+  };
+}
 
 function esc(s) { return L.esc(s); }
 function $(sel, within) { return (within || document).querySelector(sel); }
@@ -45,18 +80,86 @@ function reduced() { return window.matchMedia('(prefers-reduced-motion: reduce)'
 /* ---- reading the map ---- */
 
 function st() { return R.getState(); }
-function hueVar(circle) { return 'var(--h' + L.circleIndex(circle) + ')'; }
+function hueVar(circle) { return hueOfGroup(circle); }
+function matches(p) {
+  if (!query) return true;
+  return [p.name, p.profession, p.company, p.location, p.email,
+    L.circlesOf(p).join(' '), (p.tags || []).join(' '),
+    L.schoolsOf(p).map(function (s) { return s.name; }).join(' '),
+    (p.log || []).map(function (e) { return e.text; }).join(' ')]
+    .join(' ').toLowerCase().indexOf(query) >= 0;
+}
+
 function peopleIn(circle) {
-  return st().people.filter(function (p) { return L.inCircle(p, circle); })
+  return st().people.filter(function (p) { return inGroup(p, circle) && matches(p); })
     .sort(function (a, b) { return L.lastTouch(b) - L.lastTouch(a); });
 }
-function circles() { return L.circleList(); }
+/* ---- grouping ----
+   Circles are how you filed people, but they are not the only thing a set of
+   people has in common: half of them work somewhere, some went to the same
+   school, some live in the same town. Any of those can be the folders. */
+
+var GROUPS = [
+  { id: 'circle', name: 'Circle', of: function (p) { return L.circlesOf(p); } },
+  { id: 'company', name: 'Company', of: function (p) { return p.company ? [p.company] : []; } },
+  { id: 'school', name: 'School', of: function (p) {
+      return L.schoolsOf(p).map(function (s) { return s.name; }); } },
+  { id: 'place', name: 'Place', of: function (p) { return p.location ? [p.location] : []; } }
+];
+var groupMode = 'circle';
+var GROUP_KEY = 'rootwork.archive.group';
+
+function grouper() {
+  return GROUPS.filter(function (g) { return g.id === groupMode; })[0] || GROUPS[0];
+}
+function groupsOf(p) { return grouper().of(p).filter(Boolean); }
+
+/* Colour: circles keep the pigment the map gave them; anything else takes a
+   stable one from its own name, so Merck is the same green everywhere. */
+function hueOfGroup(name) {
+  if (groupMode === 'circle') return 'var(--h' + L.circleIndex(name) + ')';
+  var h = 0, s = String(name).toLowerCase();
+  for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 997;
+  return 'var(--h' + ((h % 8) + 1) + ')';
+}
+
+function inGroup(p, name) {
+  var low = String(name).toLowerCase();
+  return groupsOf(p).some(function (c) { return String(c).toLowerCase() === low; });
+}
+
+function circles() {
+  var seen = {}, out = [];
+  st().people.forEach(function (p) {
+    if (!matches(p)) return;
+    groupsOf(p).forEach(function (c) {
+      var k = String(c).toLowerCase();
+      if (!seen[k]) { seen[k] = { name: c, n: 0 }; out.push(seen[k]); }
+      seen[k].n++;
+    });
+  });
+  if (groupMode === 'circle' && !query) {
+    // an empty circle is still a folder; an empty company is not a thing
+    L.circleList().forEach(function (c) {
+      var k = c.name.toLowerCase();
+      if (!seen[k]) { seen[k] = { name: c.name, n: 0 }; out.push(seen[k]); }
+    });
+  }
+  out.sort(function (a, b) { return b.n - a.n || a.name.localeCompare(b.name); });
+  return out;
+}
+
+/* Whoever the current filing has nothing to say about. */
+function ungrouped() {
+  return st().people.filter(function (p) { return !groupsOf(p).length && matches(p); });
+}
 function personById(id) {
   return st().people.filter(function (p) { return p.id === id; })[0] || null;
 }
 function roleOf(p) {
   return [p.profession, p.company].filter(Boolean).join(' · ');
 }
+function homeGroup(p) { return groupsOf(p)[0] || L.primaryCircle(p); }
 function seed(str) {                       // a stable number per person, for scatter
   var h = 2166136261;
   for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -71,9 +174,20 @@ function build() {
   root.hidden = true;
   root.innerHTML =
     '<div class="arc-veil"></div>' +
-    '<button class="arc-close" id="arc-close" aria-label="Close the archive" title="Close (Esc)">' +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 5l14 14M19 5L5 19"/></svg>' +
-    '</button>' +
+    '<header class="arc-bar">' +
+      '<button class="arc-mark" id="arc-home" title="Everything">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+          '<path d="M12 22V10M12 10c0-3 2.6-4.6 5.4-4.8M12 10C12 7 9.4 5.4 6.6 5.2M12 15c0-2.2 2-3.2 4-3.4"/>' +
+          '<circle cx="12" cy="22" r="1.6" fill="currentColor" stroke="none"/>' +
+          '<circle cx="17.8" cy="5" r="1.6"/><circle cx="6.2" cy="5" r="1.6"/></svg>' +
+        '<span>Rootwork</span><em id="arc-mode">Archive</em>' +
+      '</button>' +
+      '<div class="arc-find">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>' +
+        '<input id="arc-q" type="search" placeholder="Find anyone" autocomplete="off" aria-label="Find anyone">' +
+      '</div>' +
+      '<button class="arc-map" id="arc-close" title="Back to the map (Esc)">The map</button>' +
+    '</header>' +
     '<div class="arc-scroll" id="arc-scroll"><div class="arc-wrap">' +
       '<div class="arc-head" id="arc-head"></div>' +
       '<div class="arc-body" id="arc-body"></div>' +
@@ -84,10 +198,25 @@ function build() {
   body = $('#arc-body', root);
 
   $('#arc-close', root).addEventListener('click', close);
+  $('#arc-home', root).addEventListener('click', function () {
+    view.circle = null; view.person = null; query = ''; $('#arc-q', root).value = ''; render();
+  });
+  var qbox = $('#arc-q', root);
+  qbox.addEventListener('input', function () {
+    query = qbox.value.trim().toLowerCase();
+    clearTimeout(qTimer);
+    qTimer = setTimeout(render, 140);
+  });
+  qbox.addEventListener('keydown', function (e) { e.stopPropagation(); });
   root.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') { e.stopPropagation(); back(); }
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    if (L.cardOpen && L.cardOpen()) return L.closeCard();
+    back();
   });
   head.addEventListener('click', function (e) {
+    var g = e.target.closest('[data-group]');
+    if (g) return setGroup(g.dataset.group);
     var d = e.target.closest('[data-design]');
     if (d) return setDesign(d.dataset.design);
     var b = e.target.closest('[data-crumb]');
@@ -107,6 +236,14 @@ function titleFor() {
   if (view.circle) return view.circle;
   var name = (st().me && st().me.name) || 'Me';
   return name === 'Me' ? 'The Archive' : name + '’s archive';
+}
+
+/* A line of type that arrives a word at a time, each rising out of its own
+   clipped box the way a title card sets. */
+function words(text) {
+  return String(text).split(/\s+/).map(function (w, i) {
+    return '<span class="word" style="--w:' + i + '"><i>' + esc(w) + '</i></span>';
+  }).join(' ');
 }
 
 function renderHead() {
@@ -140,20 +277,32 @@ function renderHead() {
   } else {
     sub = [
       '<b>' + s.people.length + '</b> people',
-      '<b>' + circles().length + '</b> folders',
+      '<b>' + circles().length + '</b> ' + grouper().name.toLowerCase() + (circles().length === 1 ? '' : 's'),
       '<b>' + s.people.reduce(function (a, p) { return a + p.log.length; }, 0) + '</b> touchpoints'
     ];
   }
 
+  var mode = DESIGNS.filter(function (d) { return d.id === view.design; })[0];
+  var label = $('#arc-mode', root);
+  if (label && mode) label.textContent = mode.name;
+
   head.innerHTML =
     '<div class="crumb">' + crumbs.join('') + '</div>' +
-    '<h1 class="arc-title">' + esc(titleFor()) + '</h1>' +
-    '<div class="arc-sub">' + sub.map(function (x) { return '<span>' + x + '</span>'; }).join('') + '</div>' +
-    '<div class="designs" role="group" aria-label="Archive design">' +
-      DESIGNS.map(function (d) {
-        return '<button data-design="' + d.id + '"' + (view.design === d.id ? ' data-on="1"' : '') +
-          ' title="' + esc(d.hint) + '">' + esc(d.name) + '</button>';
-      }).join('') +
+    '<h1 class="arc-title">' + words(titleFor()) + '</h1>' +
+    '<div class="apparatus">' +
+      '<div class="arc-sub">' + sub.map(function (x) { return '<span>' + x + '</span>'; }).join('') + '</div>' +
+      '<div class="designs" role="group" aria-label="Archive design">' +
+        DESIGNS.map(function (d) {
+          return '<button data-design="' + d.id + '"' + (view.design === d.id ? ' data-on="1"' : '') +
+            ' title="' + esc(d.hint) + '">' + esc(d.name) + '</button>';
+        }).join('') +
+      '</div>' +
+      '<div class="grouping"><span>Filed by</span>' +
+        GROUPS.map(function (g) {
+          return '<button data-group="' + g.id + '"' + (groupMode === g.id ? ' data-on="1"' : '') + '>' +
+            esc(g.name) + '</button>';
+        }).join('') +
+      '</div>' +
     '</div>';
 }
 
@@ -164,14 +313,23 @@ function render() {
   if (teardown) { try { teardown(); } catch (e) { } teardown = null; }
   renderHead();
   body.innerHTML = '';
-  var fn = view.design === 'rolodex' ? drawRolodex
-    : view.design === 'table' ? drawTable
-    : view.design === 'index' ? drawIndex
-    : view.design === 'sublime' ? drawSublime
+  var fn = view.design === 'index' ? drawIndex
     : view.design === 'chroma' ? drawChroma
     : view.design === 'finder' ? drawFinder
+    : view.design === 'studio' ? drawStudio
+    : view.design === 'orbit' ? drawOrbit
     : drawDrawer;
   teardown = fn(body) || null;
+}
+
+function setGroup(id) {
+  if (groupMode === id) return;
+  groupMode = id;
+  view.circle = null; view.person = null;
+  try { localStorage.setItem(GROUP_KEY, id); } catch (e) { }
+  scroll.scrollTop = 0;
+  render();
+  writeRoute();
 }
 
 function setDesign(id) {
@@ -180,19 +338,23 @@ function setDesign(id) {
   try { localStorage.setItem(DESIGN_KEY, id); } catch (e) { }
   scroll.scrollTop = 0;
   render();
+  writeRoute();
 }
 
-function show(circle, person) {
+function show(circle, person, design) {
   if (!window.Rootwork) return;
   R = window.Rootwork; L = R.lib;
   if (!root) build();
   view.circle = circle || null;
   view.person = person || null;
-  try { view.design = localStorage.getItem(DESIGN_KEY) || view.design; } catch (e) { }
+  if (design) view.design = design;
+  else { try { view.design = localStorage.getItem(DESIGN_KEY) || view.design; } catch (e) { } }
+  try { groupMode = localStorage.getItem(GROUP_KEY) || groupMode; } catch (e) { }
   open = true;
   root.hidden = false;
   document.body.classList.add('archived');
   render();
+  writeRoute(true);
   requestAnimationFrame(function () { root.classList.add('in'); });
   root.setAttribute('tabindex', '-1');
   root.focus({ preventScroll: true });
@@ -203,24 +365,64 @@ function close() {
   open = false;
   root.classList.remove('in');
   document.body.classList.remove('archived');
+  if (L && L.closeCard) L.closeCard();
+  releaseCard();
+  if (location.hash) {
+    try { history.pushState(null, '', location.pathname + location.search); } catch (e) { }
+  }
   var done = function () { if (!open) root.hidden = true; };
   if (reduced()) done(); else setTimeout(done, 300);
   if (teardown) { try { teardown(); } catch (e) { } teardown = null; }
 }
 
 function back() {
-  if (view.person) { view.person = null; return render(); }
-  if (view.circle) { view.circle = null; return render(); }
+  if (view.person) { view.person = null; render(); return writeRoute(); }
+  if (view.circle) { view.circle = null; render(); return writeRoute(); }
   close();
 }
 
-function openPerson(id) { view.person = id; render(); scroll.scrollTop = 0; }
-function openCircle(name) { view.circle = name; view.person = null; render(); scroll.scrollTop = 0; }
+function wipe(hue) {
+  if (reduced() || !hue) return;
+  var w = el('div', 'arc-wipe');
+  w.style.setProperty('--hue', hue);
+  root.appendChild(w);
+  setTimeout(function () { w.remove(); }, 660);
+}
 
-/* Hand a person back to the map, where everything is editable. */
+function openPerson(id, hue) {
+  wipe(hue);
+  view.person = id;
+  render();
+  writeRoute();
+  scroll.scrollTop = 0;
+}
+function openCircle(name) { view.circle = name; view.person = null; render(); writeRoute(); scroll.scrollTop = 0; }
+
+/* The card is the one place anything is edited, so it comes to whichever
+   surface you are on rather than sending you back to the map.
+
+   A fixed element makes its own stacking context, so the card cannot simply
+   be raised above this one — it is moved into it while the archive is the
+   surface in front, and handed back when the archive closes. Moving the node
+   keeps its handlers and its contents; only its parent changes. */
+var cardHome = null;
+
+function holdCard() {
+  var d = document.getElementById('dossier');
+  if (!d || d.parentNode === root) return;
+  cardHome = d.parentNode;
+  root.appendChild(d);
+}
+
+function releaseCard() {
+  var d = document.getElementById('dossier');
+  if (d && cardHome && d.parentNode === root) cardHome.appendChild(d);
+  cardHome = null;
+}
+
 function editCard(id) {
-  close();
-  setTimeout(function () { L.openCard(id); }, reduced() ? 0 : 240);
+  holdCard();
+  L.openCard(id);
 }
 
 /* ==========================================================================
@@ -258,7 +460,7 @@ function drawDrawer(host) {
         '</div>' +
         '<div class="inside"><div><div class="entries">' +
           (folk.length ? folk.map(function (p, j) {
-            var extra = L.circlesOf(p).filter(function (x) { return x !== c.name; });
+            var extra = groupsOf(p).filter(function (x) { return x !== c.name; });
             return '<button class="entry-row" data-person="' + p.id + '" style="--d:' + j + '">' +
               '<span class="who"><span>' + esc(p.name) + '</span>' +
                 (roleOf(p) ? '<span class="role">' + esc(roleOf(p)) + '</span>' : '') +
@@ -293,7 +495,7 @@ function drawDrawer(host) {
     if (p) {
       var f = p.closest('.folder');
       if (f) view.circle = f.dataset.folder;
-      return openPerson(p.dataset.person);
+      return openPerson(p.dataset.person, f ? hueVar(f.dataset.folder) : null);
     }
     var o = e.target.closest('[data-open]');
     if (o) pick(o.closest('.folder'));
@@ -309,8 +511,10 @@ function drawDrawer(host) {
 function drawFile(host) {
   var p = personById(view.person);
   if (!p) return emptyState(host, 'That entry is gone.');
-  var home = view.circle || L.primaryCircle(p);
-  var extra = L.circlesOf(p).filter(function (x) { return x !== home; });
+  var home = view.circle || homeGroup(p);
+  var extra = groupsOf(p).concat(L.circlesOf(p)).filter(function (x, i, a) {
+    return x !== home && a.indexOf(x) === i;
+  });
 
   var file = el('div', 'file');
   file.style.setProperty('--hue', hueVar(home));
@@ -384,221 +588,6 @@ function emptyState(host, text) {
     '<span>Log something in the bar, or import your spreadsheet, and it lands here.</span>'));
 }
 
-/* ==========================================================================
-   Design 2 — Rolodex
-   One card up front on a spindle, the rest falling away behind it. Drag,
-   scroll, or arrow through them; click the card to turn it over and read the
-   history on the back.
-   ========================================================================== */
-
-function drawRolodex(host) {
-  var people = view.circle ? peopleIn(view.circle)
-    : st().people.slice().sort(function (a, b) { return L.lastTouch(b) - L.lastTouch(a); });
-  if (!people.length) return emptyState(host, view.circle ? 'This folder is empty.' : 'No cards yet.');
-
-  var at = 0;
-  if (view.person) {
-    var want = people.map(function (p) { return p.id; }).indexOf(view.person);
-    if (want >= 0) at = want;
-  }
-  var flipped = {};
-
-  var rig = el('div', 'rolo');
-  rig.innerHTML =
-    '<div class="rolo-spindle" aria-hidden="true"><i></i><b></b><i></i></div>' +
-    '<div class="rolo-deck" id="rolo-deck"></div>' +
-    '<div class="rolo-foot">' +
-      '<button class="step" data-step="-1" aria-label="Previous card">‹</button>' +
-      '<div class="rolo-dial" id="rolo-dial"></div>' +
-      '<button class="step" data-step="1" aria-label="Next card">›</button>' +
-    '</div>' +
-    '<div class="rolo-hint">drag · scroll · ← → · click the card to turn it over · type to find</div>';
-  host.appendChild(rig);
-  var deck = $('#rolo-deck', rig);
-
-  var cards = people.map(function (p, i) {
-    var c = el('article', 'rcard');
-    c.dataset.i = i;
-    c.style.setProperty('--hue', hueVar(L.primaryCircle(p)));
-    var sch = L.schoolsOf(p).map(function (s) { return s.name + (s.level ? ' ' + s.level : ''); }).join(', ');
-    c.innerHTML =
-      '<div class="rface rfront">' +
-        '<div class="rtabs">' + L.circlesOf(p).map(function (x) {
-          return '<i style="background:' + hueVar(x) + '"></i>'; }).join('') + '</div>' +
-        '<div class="rno">' + String(i + 1).padStart(3, '0') + ' / ' + String(people.length).padStart(3, '0') + '</div>' +
-        '<h3>' + esc(p.name) + '</h3>' +
-        '<div class="rrole">' + esc(roleOf(p) || 'no role recorded') + '</div>' +
-        '<dl class="rfacts">' +
-          (p.email ? '<dt>e</dt><dd>' + esc(p.email) + '</dd>' : '') +
-          (p.phone ? '<dt>t</dt><dd>' + esc(p.phone) + '</dd>' : '') +
-          (p.location ? '<dt>at</dt><dd>' + esc(p.location) + '</dd>' : '') +
-          (sch ? '<dt>ed</dt><dd>' + esc(sch) + '</dd>' : '') +
-        '</dl>' +
-        '<div class="rfoot">' +
-          '<span>' + esc(L.circlesOf(p).join(' · ')) + '</span>' +
-          '<span>' + esc(p.log.length ? L.ago(L.lastTouch(p)) : 'no touchpoints') + '</span>' +
-        '</div>' +
-        '<div class="rpunch" aria-hidden="true"></div>' +
-      '</div>' +
-      '<div class="rface rback">' +
-        '<div class="rno">' + esc(p.name) + ' — history</div>' +
-        '<div class="rlog">' +
-          (p.log.length ? p.log.slice(0, 7).map(function (e) {
-            return '<div class="rlogrow"><span class="rk">' + esc(L.channelLabel(e.channel)) + '</span>' +
-              '<span class="rt">' + esc(e.text) + '</span>' +
-              '<span class="rd">' + esc(L.fmtDate(e.at)) + '</span></div>';
-          }).join('') : '<div class="rlogrow"><span class="rt">Nothing logged yet.</span></div>') +
-          ((p.notes || []).length ? '<div class="rnote">' + esc(p.notes[0].t) + '</div>' : '') +
-        '</div>' +
-        '<div class="racts">' +
-          '<button class="btn" data-edit="' + p.id + '">Open the card</button>' +
-          '<button class="btn" data-file="' + p.id + '">See the file</button>' +
-        '</div>' +
-      '</div>';
-    deck.appendChild(c);
-    return c;
-  });
-
-  var dial = $('#rolo-dial', rig);
-  dial.innerHTML = people.map(function (p, i) {
-    return '<button data-go="' + i + '" title="' + esc(p.name) + '"><i></i></button>';
-  }).join('');
-  var dots = Array.prototype.slice.call(dial.children);
-
-  var n = cards.length;
-  function offset(i) {                     // shortest way round the ring
-    var d = (i - at) % n;
-    if (d > n / 2) d -= n;
-    if (d < -n / 2) d += n;
-    return d;
-  }
-  function place(animate) {
-    cards.forEach(function (c, i) {
-      var d = offset(i);
-      var far = Math.min(Math.abs(d), 6);
-      var dir = d < 0 ? -1 : 1;
-      c.style.transition = animate ? '' : 'none';
-      c.style.transform =
-        'translate(-50%, -50%) ' +
-        'translateX(' + (d === 0 ? 0 : dir * (96 + far * 30)) + 'px) ' +
-        'translateY(' + (far * 6) + 'px) ' +
-        'translateZ(' + (-far * 132) + 'px) ' +
-        'rotateY(' + (d === 0 ? 0 : dir * -42) + 'deg) ' +
-        'rotateX(' + (far * 1.6) + 'deg)';
-      c.style.opacity = Math.abs(d) > 5 ? 0 : (d === 0 ? 1 : 0.92 - far * 0.12);
-      c.style.zIndex = String(100 - far);
-      c.classList.toggle('now', d === 0);
-      c.classList.toggle('flipped', d === 0 && !!flipped[people[i].id]);
-      c.style.pointerEvents = Math.abs(d) > 5 ? 'none' : '';
-    });
-    dots.forEach(function (b, i) { b.toggleAttribute('data-on', i === at); });
-    var here = dots[at];
-    if (here && here.scrollIntoView) here.scrollIntoView({ block: 'nearest', inline: 'center', behavior: reduced() ? 'auto' : 'smooth' });
-  }
-
-  function go(k) {
-    at = ((k % n) + n) % n;                // the ring has no ends
-    place(true);
-  }
-  place(false);
-  requestAnimationFrame(function () { rig.classList.add('ready'); });
-
-  // the deck leans a little toward the pointer — enough to feel like an object
-  var lean = function (e) {
-    var r = rig.getBoundingClientRect();
-    var nx = (e.clientX - r.left) / r.width - .5;
-    var ny = (e.clientY - r.top) / r.height - .5;
-    deck.style.setProperty('--lean-y', (nx * 9).toFixed(2) + 'deg');
-    deck.style.setProperty('--lean-x', (-ny * 6).toFixed(2) + 'deg');
-  };
-  var unlean = function () {
-    deck.style.setProperty('--lean-y', '0deg');
-    deck.style.setProperty('--lean-x', '0deg');
-  };
-  if (!reduced()) {
-    rig.addEventListener('pointermove', lean);
-    rig.addEventListener('pointerleave', unlean);
-  }
-
-  rig.addEventListener('click', function (e) {
-    var ed = e.target.closest('[data-edit]');
-    if (ed) return editCard(ed.dataset.edit);
-    var fi = e.target.closest('[data-file]');
-    if (fi) { view.design = 'drawer'; return openPerson(fi.dataset.file); }
-    var g = e.target.closest('[data-go]');
-    if (g) return go(+g.dataset.go);
-    var s = e.target.closest('[data-step]');
-    if (s) return go(at + (+s.dataset.step));
-    var c = e.target.closest('.rcard');
-    if (!c) return;
-    var i = +c.dataset.i;
-    if (i !== at) return go(i);
-    var id = people[at].id;
-    flipped[id] = !flipped[id];
-    place(true);
-  });
-
-  // wheel and drag both spin the spindle
-  var acc = 0, wheelLock = 0;
-  var onWheel = function (e) {
-    if (!rig.contains(e.target)) return;
-    var now = Date.now();
-    acc += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-    if (Math.abs(acc) > 40 && now - wheelLock > 90) {
-      go(at + (acc > 0 ? 1 : -1));
-      acc = 0; wheelLock = now;
-    }
-    e.preventDefault();
-  };
-  scroll.addEventListener('wheel', onWheel, { passive: false });
-
-  var drag = null;
-  deck.addEventListener('pointerdown', function (e) {
-    drag = { x: e.clientX, from: at, moved: false };
-    deck.setPointerCapture(e.pointerId);
-  });
-  deck.addEventListener('pointermove', function (e) {
-    if (!drag) return;
-    var dx = e.clientX - drag.x;
-    if (Math.abs(dx) > 6) drag.moved = true;
-    var step = Math.round(-dx / 110);
-    if (step !== at - drag.from) go(drag.from + step);
-  });
-  var endDrag = function () { drag = null; };
-  deck.addEventListener('pointerup', endDrag);
-  deck.addEventListener('pointercancel', endDrag);
-
-  // type a few letters to jump to a name
-  var typed = '', typedAt = 0;
-  var onKey = function (e) {
-    if (!open || view.design !== 'rolodex') return;
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); return go(at + 1); }
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); return go(at - 1); }
-    if (e.key === 'Home') { e.preventDefault(); return go(0); }
-    if (e.key === 'End') { e.preventDefault(); return go(n - 1); }
-    if (e.key === ' ' || e.key === 'Enter') {
-      e.preventDefault();
-      flipped[people[at].id] = !flipped[people[at].id];
-      return place(true);
-    }
-    if (e.key.length !== 1 || !/\S/.test(e.key)) return;
-    var now = Date.now();
-    typed = (now - typedAt < 900 ? typed : '') + e.key.toLowerCase();
-    typedAt = now;
-    for (var i = 0; i < people.length; i++) {
-      if (people[i].name.toLowerCase().indexOf(typed) === 0) { go(i); break; }
-    }
-  };
-  document.addEventListener('keydown', onKey);
-
-  return function () {
-    scroll.removeEventListener('wheel', onWheel);
-    document.removeEventListener('keydown', onKey);
-    rig.removeEventListener('pointermove', lean);
-    rig.removeEventListener('pointerleave', unlean);
-  };
-}
 
 /* ==========================================================================
    Design 3 — Light table
@@ -607,150 +596,6 @@ function drawRolodex(host) {
    people are drawn underneath in thread.
    ========================================================================== */
 
-var tablePos = {};              // id -> {x,y} in table coordinates, kept for the session
-
-function drawTable(host) {
-  var people = view.circle ? peopleIn(view.circle) : st().people.slice();
-  if (!people.length) return emptyState(host, view.circle ? 'This folder is empty.' : 'Nothing on the table.');
-
-  var W = Math.max(720, Math.min(1020, host.clientWidth || 980));
-  var cols = W > 860 ? 4 : W > 620 ? 3 : 2;
-  var cw = 214, ch = 118, gapx = (W - cols * cw) / (cols + 1);
-  var rows = Math.ceil(people.length / cols);
-  var H = rows * (ch + 54) + 130;
-
-  var rig = el('div', 'table');
-  rig.style.height = H + 'px';
-  rig.innerHTML =
-    '<div class="lamp" id="lamp" aria-hidden="true"></div>' +
-    '<svg class="threads" id="threads" width="' + W + '" height="' + H + '" aria-hidden="true"></svg>';
-  host.appendChild(rig);
-
-  var top = 40;
-  var sheets = people.map(function (p, i) {
-    var rnd = seed(p.id);
-    var col = i % cols, row = Math.floor(i / cols);
-    var base = tablePos[p.id] || {
-      x: gapx + col * (cw + gapx) + (rnd(64) - 32),
-      y: top + row * (ch + 54) + (rnd(52) - 26)
-    };
-    tablePos[p.id] = base;
-
-    var s = el('article', 'lsheet');
-    s.dataset.id = p.id;
-    s.style.setProperty('--hue', hueVar(L.primaryCircle(p)));
-    s.style.setProperty('--rot', (rnd(9) - 4.5).toFixed(2) + 'deg');
-    s.style.setProperty('--w', (200 + Math.round(rnd(34))) + 'px');
-    s.style.setProperty('--d', String(i));
-    s.style.left = base.x + 'px';
-    s.style.top = base.y + 'px';
-    s.innerHTML =
-      '<div class="lclip" aria-hidden="true"></div>' +
-      '<div class="lhead">' +
-        '<h4>' + esc(p.name) + '</h4>' +
-        '<span class="lrole">' + esc(roleOf(p) || '—') + '</span>' +
-      '</div>' +
-      '<div class="lmeta">' +
-        '<span>' + esc(L.circlesOf(p).join(' · ')) + '</span>' +
-        '<span>' + esc(p.log.length ? L.ago(L.lastTouch(p)) : 'no touchpoints') + '</span>' +
-      '</div>' +
-      '<div class="lmore"><div class="linner">' +
-        (p.email ? '<div><b>e</b> ' + esc(p.email) + '</div>' : '') +
-        (p.phone ? '<div><b>t</b> ' + esc(p.phone) + '</div>' : '') +
-        (p.location ? '<div><b>at</b> ' + esc(p.location) + '</div>' : '') +
-        (p.log.length ? '<div class="llast">“' + esc(p.log[0].text.slice(0, 120)) + '”</div>' : '') +
-        '<div class="lacts">' +
-          '<button class="btn" data-edit="' + p.id + '">Open the card</button>' +
-          '<button class="btn" data-file="' + p.id + '">See the file</button>' +
-        '</div>' +
-      '</div></div>';
-    rig.appendChild(s);
-    return s;
-  });
-
-  var byId = {};
-  people.forEach(function (p, i) { byId[p.id] = { p: p, el: sheets[i] }; });
-
-  // thread between anyone who introduced anyone
-  var svg = $('#threads', rig);
-  function drawThreads() {
-    var lines = [];
-    people.forEach(function (p) {
-      (p.ties || []).forEach(function (t) {
-        var a = byId[p.id], b = byId[t.id];
-        if (!a || !b) return;
-        var pa = tablePos[p.id], pb = tablePos[t.id];
-        lines.push('<path d="M' + (pa.x + cw / 2) + ' ' + (pa.y + 30) +
-          ' Q' + ((pa.x + pb.x) / 2 + cw / 2) + ' ' + ((pa.y + pb.y) / 2 - 40) +
-          ' ' + (pb.x + cw / 2) + ' ' + (pb.y + 30) + '" data-a="' + p.id + '" data-b="' + t.id + '"/>');
-      });
-    });
-    svg.innerHTML = lines.join('');
-  }
-  drawThreads();
-
-  // the lamp
-  var lamp = $('#lamp', rig);
-  var onMove = function (e) {
-    var r = rig.getBoundingClientRect();
-    lamp.style.setProperty('--lx', (e.clientX - r.left) + 'px');
-    lamp.style.setProperty('--ly', (e.clientY - r.top) + 'px');
-  };
-  rig.addEventListener('pointermove', onMove);
-
-  var zTop = 10;
-  var upEl = null;
-  function lift(s) {
-    if (upEl && upEl !== s) upEl.classList.remove('up');
-    upEl = s.classList.contains('up') ? null : s;
-    s.classList.toggle('up');
-    s.style.zIndex = String(++zTop);
-    var id = s.dataset.id;
-    svg.querySelectorAll('path').forEach(function (path) {
-      path.toggleAttribute('data-lit', !!upEl && (path.dataset.a === id || path.dataset.b === id));
-    });
-  }
-
-  var drag = null;
-  rig.addEventListener('pointerdown', function (e) {
-    var s = e.target.closest('.lsheet');
-    if (!s || e.target.closest('button')) return;
-    drag = {
-      s: s, id: s.dataset.id, moved: false,
-      dx: e.clientX - tablePos[s.dataset.id].x,
-      dy: e.clientY - tablePos[s.dataset.id].y
-    };
-    s.style.zIndex = String(++zTop);
-    s.classList.add('held');
-    s.setPointerCapture(e.pointerId);
-  });
-  rig.addEventListener('pointermove', function (e) {
-    if (!drag) return;
-    var x = e.clientX - drag.dx, y = e.clientY - drag.dy;
-    if (Math.abs(x - tablePos[drag.id].x) > 3 || Math.abs(y - tablePos[drag.id].y) > 3) drag.moved = true;
-    tablePos[drag.id] = { x: x, y: y };
-    drag.s.style.left = x + 'px';
-    drag.s.style.top = y + 'px';
-    drawThreads();
-  });
-  var release = function () {
-    if (!drag) return;
-    drag.s.classList.remove('held');
-    if (!drag.moved) lift(drag.s);
-    drag = null;
-  };
-  rig.addEventListener('pointerup', release);
-  rig.addEventListener('pointercancel', release);
-
-  rig.addEventListener('click', function (e) {
-    var ed = e.target.closest('[data-edit]');
-    if (ed) return editCard(ed.dataset.edit);
-    var fi = e.target.closest('[data-file]');
-    if (fi) { view.design = 'drawer'; return openPerson(fi.dataset.file); }
-  });
-
-  return function () { rig.removeEventListener('pointermove', onMove); };
-}
 
 /* ==========================================================================
    Design 4 — Index
@@ -761,7 +606,7 @@ function drawTable(host) {
    ========================================================================== */
 
 function drawIndex(host) {
-  var people = (view.circle ? peopleIn(view.circle) : st().people.slice())
+  var people = (view.circle ? peopleIn(view.circle) : st().people.filter(matches))
     .sort(function (a, b) { return a.name.localeCompare(b.name); });
   if (!people.length) return emptyState(host, view.circle ? 'This folder is empty.' : 'Nothing indexed yet.');
 
@@ -802,6 +647,9 @@ function drawIndex(host) {
     '<div class="ix-read" id="ix-read" aria-hidden="true"></div>';
   host.appendChild(rig);
 
+  var cross = el('div', 'ix-cross');
+  $('#ix-grid', rig).appendChild(cross);
+
   var read = $('#ix-read', rig);
   var typer = null;
   function type(p) {
@@ -825,9 +673,11 @@ function drawIndex(host) {
     if (!r) return;
     rig.querySelectorAll('.ix-row[data-on]').forEach(function (x) { x.removeAttribute('data-on'); });
     r.setAttribute('data-on', '');
+    cross.style.top = (r.offsetTop + r.offsetHeight - 1) + 'px';
+    cross.setAttribute('data-on', '');
     type(personById(r.dataset.person));
   });
-  rig.addEventListener('pointerleave', function () { type(null); });
+  rig.addEventListener('pointerleave', function () { type(null); cross.removeAttribute('data-on'); });
   rig.addEventListener('click', function (e) {
     var f = e.target.closest('[data-folder]');
     if (f) { view.circle = f.dataset.folder || null; return render(); }
@@ -838,109 +688,6 @@ function drawIndex(host) {
   return function () { clearInterval(typer); };
 }
 
-/* ==========================================================================
-   Design 5 — Sublime
-   One person, full frame, nothing else. Scroll or arrow and the next name
-   dissolves in behind a hairline rule. Built for reading, not scanning.
-   ========================================================================== */
-
-function drawSublime(host) {
-  var people = (view.circle ? peopleIn(view.circle) : st().people.slice())
-    .sort(function (a, b) { return L.lastTouch(b) - L.lastTouch(a); });
-  if (!people.length) return emptyState(host, view.circle ? 'This folder is empty.' : 'Nothing to show.');
-
-  var at = 0;
-  if (view.person) {
-    var k = people.map(function (p) { return p.id; }).indexOf(view.person);
-    if (k >= 0) at = k;
-  }
-
-  var rig = el('div', 'sublime');
-  rig.innerHTML =
-    '<div class="sb-frame">' +
-      '<div class="sb-glow" id="sb-glow"></div>' +
-      '<div class="sb-stage" id="sb-stage"></div>' +
-      '<div class="sb-rule"><i id="sb-bar"></i></div>' +
-      '<div class="sb-nav">' +
-        '<button data-step="-1" aria-label="Previous">\u2191</button>' +
-        '<span id="sb-count"></span>' +
-        '<button data-step="1" aria-label="Next">\u2193</button>' +
-      '</div>' +
-    '</div>';
-  host.appendChild(rig);
-  var stage = $('#sb-stage', rig);
-
-  function paint(dir) {
-    var p = people[at];
-    var sch = L.schoolsOf(p).map(function (s) { return s.name + (s.level ? ' ' + s.level : ''); }).join(' \u00b7 ');
-    var last = p.log[0];
-    var card = el('div', 'sb-card');
-    card.style.setProperty('--hue', hueVar(L.primaryCircle(p)));
-    card.style.setProperty('--dir', dir < 0 ? '-1' : '1');
-    card.innerHTML =
-      '<div class="sb-kicker">' + esc(L.circlesOf(p).join(' \u2014 ')) + '</div>' +
-      '<h2 class="sb-name">' + esc(p.name) + '</h2>' +
-      '<div class="sb-role">' + esc(roleOf(p) || 'No role recorded') + '</div>' +
-      (last ? '<p class="sb-line">' + esc(last.learned || last.text) + '</p>' : '') +
-      '<dl class="sb-facts">' +
-        (p.location ? '<div><dt>Where</dt><dd>' + esc(p.location) + '</dd></div>' : '') +
-        (sch ? '<div><dt>Read at</dt><dd>' + esc(sch) + '</dd></div>' : '') +
-        (p.email ? '<div><dt>Reach</dt><dd>' + esc(p.email) + '</dd></div>' : '') +
-        '<div><dt>Last</dt><dd>' + esc(p.log.length ? L.fmtDate(L.lastTouch(p)) : 'never') + '</dd></div>' +
-      '</dl>' +
-      '<div class="sb-acts">' +
-        '<button class="btn" data-edit="' + p.id + '">Open the card</button>' +
-        '<button class="btn" data-file="' + p.id + '">See the file</button>' +
-      '</div>';
-    var old = stage.firstElementChild;
-    if (old) { old.classList.add('out'); setTimeout(function () { old.remove(); }, reduced() ? 0 : 520); }
-    stage.appendChild(card);
-    requestAnimationFrame(function () { card.classList.add('on'); });
-    $('#sb-count', rig).textContent = String(at + 1).padStart(2, '0') + ' / ' + String(people.length).padStart(2, '0');
-    $('#sb-bar', rig).style.transform = 'scaleX(' + ((at + 1) / people.length) + ')';
-    $('#sb-glow', rig).style.setProperty('--hue', hueVar(L.primaryCircle(p)));
-  }
-  paint(1);
-
-  function go(n) {
-    var next = Math.max(0, Math.min(people.length - 1, n));
-    if (next === at) return;
-    var dir = next > at ? 1 : -1;
-    at = next;
-    paint(dir);
-  }
-
-  var acc = 0, lock = 0;
-  var onWheel = function (e) {
-    if (!rig.contains(e.target)) return;
-    e.preventDefault();
-    acc += e.deltaY;
-    var now = Date.now();
-    if (Math.abs(acc) > 60 && now - lock > 420) { go(at + (acc > 0 ? 1 : -1)); acc = 0; lock = now; }
-  };
-  scroll.addEventListener('wheel', onWheel, { passive: false });
-
-  var onKey = function (e) {
-    if (!open || view.design !== 'sublime') return;
-    if (e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); go(at + 1); }
-    if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); go(at - 1); }
-  };
-  document.addEventListener('keydown', onKey);
-
-  rig.addEventListener('click', function (e) {
-    var s = e.target.closest('[data-step]');
-    if (s) return go(at + (+s.dataset.step));
-    var ed = e.target.closest('[data-edit]');
-    if (ed) return editCard(ed.dataset.edit);
-    var fi = e.target.closest('[data-file]');
-    if (fi) { view.design = 'drawer'; return openPerson(fi.dataset.file); }
-  });
-
-  return function () {
-    scroll.removeEventListener('wheel', onWheel);
-    document.removeEventListener('keydown', onKey);
-  };
-}
 
 /* ==========================================================================
    Design 6 — Chroma
@@ -988,7 +735,7 @@ function drawChroma(host) {
   var pane = $('#ch-pane', rig);
   function showPane(p, from) {
     var sch = L.schoolsOf(p).map(function (s) { return s.name + (s.level ? ' ' + s.level : ''); }).join(' \u00b7 ');
-    pane.style.setProperty('--hue', hueVar(L.primaryCircle(p)));
+    pane.style.setProperty('--hue', hueVar(homeGroup(p)));
     pane.innerHTML =
       '<button class="ch-x" data-close aria-label="Close">\u00d7</button>' +
       '<div class="ch-kicker">' + esc(L.circlesOf(p).join(' \u00b7 ')) + '</div>' +
@@ -1068,8 +815,8 @@ function drawFinder(host) {
 
   function icon(kind) {
     return kind === 'folder'
-      ? '<svg class="fi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7.5V18a1.5 1.5 0 0 0 1.5 1.5h15A1.5 1.5 0 0 0 21 18V9.5A1.5 1.5 0 0 0 19.5 8h-7L10.5 5.5h-6A1.5 1.5 0 0 0 3 7z"/></svg>'
-      : '<svg class="fi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 3H7a1.5 1.5 0 0 0-1.5 1.5v15A1.5 1.5 0 0 0 7 21h10a1.5 1.5 0 0 0 1.5-1.5V7.5z"/><path d="M14 3v4.5h4.5"/></svg>';
+      ? '<svg class="fi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5V18a1.5 1.5 0 0 0 1.5 1.5h15A1.5 1.5 0 0 0 21 18V9.5A1.5 1.5 0 0 0 19.5 8h-7L10.5 5.5h-6A1.5 1.5 0 0 0 3 7z"/></svg>'
+      : '<svg class="fi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a1.5 1.5 0 0 0-1.5 1.5v15A1.5 1.5 0 0 0 7 21h10a1.5 1.5 0 0 0 1.5-1.5V7.5z"/><path d="M14 3v4.5h4.5"/></svg>';
   }
 
   function sizeOf(p) {                      // something file-like to sort and show
@@ -1162,7 +909,16 @@ function drawFinder(host) {
     var fi = e.target.closest('[data-file]');
     if (fi) { view.design = 'drawer'; return openPerson(fi.dataset.file); }
     var c = e.target.closest('[data-circle]');
-    if (c) { sel.circle = c.dataset.circle; sel.person = null; return paint(); }
+    if (c) {
+      sel.circle = c.dataset.circle; sel.person = null;
+      paint();
+      var col = rig.querySelector('.fcol[data-col="1"]');
+      if (col && !reduced()) {
+        col.setAttribute('data-fresh', '');
+        setTimeout(function () { col.removeAttribute('data-fresh'); }, 360);
+      }
+      return;
+    }
     var pr = e.target.closest('[data-person]');
     if (pr) { sel.person = pr.dataset.person; return paint(); }
   });
@@ -1199,7 +955,451 @@ function drawFinder(host) {
   return function () { document.removeEventListener('keydown', onKey); };
 }
 
+/* ==========================================================================
+   Design 8 — Studio
+   The shape a mind-map editor takes: an outliner down the left, the nodes
+   themselves in the middle, an inspector on the right. Everything is live —
+   fold the tree, drag a node, and the inspector edits the real record.
+   ========================================================================== */
+
+function drawStudio(host) {
+  var groups = circles();
+  var loose = ungrouped();
+  if (!groups.length && !loose.length) return emptyState(host, 'Nothing to lay out yet.');
+
+  var folded = {};
+  var sel = view.person || null;
+
+  var rig = el('div', 'studio');
+  rig.innerHTML =
+    '<div class="sd-top">' +
+      '<div class="sd-title">' +
+        '<h3>' + esc(((st().me && st().me.name) || 'My') + ' network') + '</h3>' +
+        '<span>Filed by ' + esc(grouper().name.toLowerCase()) + ' \u00b7 last edited ' +
+          esc(lastEdited()) + '</span>' +
+      '</div>' +
+      '<div class="sd-count">' +
+        '<div><span>Groups</span><b>' + groups.length + '</b></div>' +
+        '<div><span>People</span><b>' + st().people.length + '</b></div>' +
+        '<div><span>Touchpoints</span><b>' +
+          st().people.reduce(function (a, p) { return a + p.log.length; }, 0) + '</b></div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="sd-rig">' +
+      '<aside class="sd-out" id="sd-out"></aside>' +
+      '<div class="sd-canvas" id="sd-canvas"><svg id="sd-wires"></svg><div class="sd-nodes" id="sd-nodes"></div></div>' +
+      '<aside class="sd-insp" id="sd-insp"></aside>' +
+    '</div>';
+  host.appendChild(rig);
+
+  /* ---- the outliner ---- */
+  function outline() {
+    $('#sd-out', rig).innerHTML =
+      '<div class="sd-panel-head">Outliner</div>' +
+      groups.map(function (g) {
+        var folk = peopleIn(g.name);
+        var shut = folded[g.name];
+        return '<div class="sd-branch' + (shut ? ' shut' : '') + '">' +
+          '<button class="sd-grp" data-fold="' + esc(g.name) + '">' +
+            '<i class="caret">\u203a</i>' +
+            '<span class="dot" style="background:' + hueVar(g.name) + '"></span>' +
+            '<span class="nm">' + esc(g.name) + '</span>' +
+            '<span class="n">' + folk.length + '</span>' +
+          '</button>' +
+          '<div class="sd-kids">' + folk.map(function (p) {
+            return '<button class="sd-leaf' + (sel === p.id ? ' on' : '') + '" data-person="' + p.id + '">' +
+              '<span class="nm">' + esc(p.name) + '</span>' +
+              (p.company || p.location
+                ? '<span class="sub">' + esc(p.company || p.location) + '</span>' : '') +
+            '</button>';
+          }).join('') + '</div>' +
+        '</div>';
+      }).join('') +
+      (loose.length ? '<div class="sd-branch"><button class="sd-grp" data-fold="\u2014"><i class="caret">\u203a</i>' +
+        '<span class="dot" style="background:var(--faint)"></span><span class="nm">Unfiled</span>' +
+        '<span class="n">' + loose.length + '</span></button><div class="sd-kids">' +
+        loose.map(function (p) {
+          return '<button class="sd-leaf" data-person="' + p.id + '"><span class="nm">' + esc(p.name) + '</span></button>';
+        }).join('') + '</div></div>' : '');
+  }
+
+  /* ---- the nodes ---- */
+  var pos = {};                       // id -> {x,y}, kept while this view is up
+  function layout() {
+    var wrap = $('#sd-canvas', rig);
+    var W = wrap.clientWidth || 700;
+    var rows = [];
+    groups.forEach(function (g) { rows.push({ group: g, people: peopleIn(g.name) }); });
+    if (loose.length) rows.push({ group: { name: 'Unfiled' }, people: loose });
+
+    var y = 40, out = [], wires = [];
+    var rootX = 26, rootY = Math.max(60, 40);
+    rows.forEach(function (r) {
+      var gx = rootX + 190, gy = y;
+      var gid = 'g:' + r.group.name;
+      pos[gid] = pos[gid] || { x: gx, y: gy };
+      out.push({ id: gid, kind: 'group', label: r.group.name, hue: hueVar(r.group.name) });
+      wires.push([ 'me', gid ]);
+      r.people.forEach(function (p, i) {
+        var pid = p.id;
+        pos[pid] = pos[pid] || { x: gx + 210, y: gy + i * 46 };
+        out.push({ id: pid, kind: 'person', label: p.name, sub: roleOf(p), hue: hueVar(r.group.name), ref: p });
+        wires.push([ gid, pid ]);
+      });
+      y += Math.max(1, r.people.length) * 46 + 34;
+    });
+    pos.me = pos.me || { x: rootX, y: Math.max(rootY, y / 2 - 20) };
+    out.unshift({ id: 'me', kind: 'me', label: (st().me && st().me.name) || 'Me', hue: 'var(--accent)' });
+    wrap.style.height = Math.max(420, y + 40) + 'px';
+    return { nodes: out, wires: wires, W: W };
+  }
+
+  function paintNodes() {
+    var L2 = layout();
+    $('#sd-nodes', rig).innerHTML = L2.nodes.map(function (n, i) {
+      var p = pos[n.id];
+      return '<div class="sd-node sd-' + n.kind + (sel === n.id ? ' on' : '') + '" data-node="' + esc(n.id) + '"' +
+        ' style="left:' + p.x + 'px; top:' + p.y + 'px; --hue:' + n.hue + '; --d:' + i + '">' +
+        '<span class="lab">' + esc(n.label) + '</span>' +
+        (n.sub ? '<span class="sub">' + esc(n.sub) + '</span>' : '') +
+      '</div>';
+    }).join('');
+    requestAnimationFrame(function () { paintWires(L2.wires); });
+  }
+
+  function paintWires(wires) {
+    var svg = $('#sd-wires', rig);
+    var wrap = $('#sd-canvas', rig);
+    var box = wrap.getBoundingClientRect();
+    svg.setAttribute('width', wrap.clientWidth);
+    svg.setAttribute('height', wrap.clientHeight);
+    var d = wires.map(function (w) {
+      var a = rig.querySelector('[data-node="' + cssEsc(w[0]) + '"]');
+      var b = rig.querySelector('[data-node="' + cssEsc(w[1]) + '"]');
+      if (!a || !b) return '';
+      var ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+      var x1 = ra.right - box.left, y1 = ra.top - box.top + ra.height / 2;
+      var x2 = rb.left - box.left, y2 = rb.top - box.top + rb.height / 2;
+      var mx = (x1 + x2) / 2;
+      return '<path d="M' + x1 + ' ' + y1 + ' C' + mx + ' ' + y1 + ', ' + mx + ' ' + y2 + ', ' + x2 + ' ' + y2 + '"/>';
+    }).join('');
+    svg.innerHTML = d;
+  }
+
+  function cssEsc(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : s; }
+
+  /* ---- the inspector ---- */
+  function inspect() {
+    var box = $('#sd-insp', rig);
+    var p = sel ? personById(sel) : null;
+    if (!p) {
+      box.innerHTML = '<div class="sd-panel-head">Inspector</div>' +
+        '<div class="sd-none">Pick a node</div>';
+      return;
+    }
+    var sch = L.schoolsOf(p);
+    box.innerHTML =
+      '<div class="sd-panel-head">Node<button class="reset" data-open-card="' + p.id + '">Edit</button></div>' +
+      '<div class="sd-field"><label>Name</label><div class="val">' + esc(p.name) + '</div></div>' +
+      '<div class="sd-field"><label>Role</label><div class="val">' + esc(p.profession || '\u2014') + '</div></div>' +
+      '<div class="sd-field"><label>Company</label><div class="val">' + esc(p.company || '\u2014') + '</div></div>' +
+      '<div class="sd-panel-head">Filed</div>' +
+      '<div class="sd-chips">' + L.circlesOf(p).map(function (c, i) {
+        return '<span class="sd-chip' + (i === 0 ? ' main' : '') + '" style="--hue:' + hueOfGroup(c) + '">' +
+          esc(c) + '</span>';
+      }).join('') + '</div>' +
+      (sch.length ? '<div class="sd-chips">' + sch.map(function (s) {
+        return '<span class="sd-chip pale">' + esc(s.name) + (s.level ? ' <i>' + esc(s.level) + '</i>' : '') + '</span>';
+      }).join('') + '</div>' : '') +
+      '<div class="sd-panel-head">Contact</div>' +
+      '<div class="sd-field"><label>Mail</label><div class="val">' + esc(p.email || '\u2014') + '</div></div>' +
+      '<div class="sd-field"><label>Phone</label><div class="val">' + esc(p.phone || '\u2014') + '</div></div>' +
+      '<div class="sd-field"><label>Where</label><div class="val">' + esc(p.location || '\u2014') + '</div></div>' +
+      '<div class="sd-panel-head">History<span class="reset">' + p.log.length + '</span></div>' +
+      '<div class="sd-log">' + (p.log.length ? p.log.slice(0, 4).map(function (e) {
+        return '<div><span>' + esc(L.channelLabel(e.channel)) + ' \u00b7 ' + esc(L.fmtDate(e.at)) + '</span>' +
+          esc(e.text) + '</div>';
+      }).join('') : '<div class="sd-none">Nothing logged</div>') + '</div>';
+  }
+
+  function pick(id) {
+    sel = id;
+    rig.querySelectorAll('.sd-leaf.on, .sd-node.on').forEach(function (x) { x.classList.remove('on'); });
+    var leaf = rig.querySelector('.sd-leaf[data-person="' + cssEsc(id) + '"]');
+    if (leaf) leaf.classList.add('on');
+    var node = rig.querySelector('.sd-node[data-node="' + cssEsc(id) + '"]');
+    if (node) node.classList.add('on');
+    inspect();
+  }
+
+  outline(); paintNodes(); inspect();
+
+  rig.addEventListener('click', function (e) {
+    var f = e.target.closest('[data-fold]');
+    if (f) {
+      folded[f.dataset.fold] = !folded[f.dataset.fold];
+      f.closest('.sd-branch').classList.toggle('shut');
+      return;
+    }
+    var oc = e.target.closest('[data-open-card]');
+    if (oc) return editCard(oc.dataset.openCard);
+    var l = e.target.closest('[data-person]');
+    if (l) return pick(l.dataset.person);
+    var n = e.target.closest('[data-node]');
+    if (n) {
+      if (n.dataset.node.indexOf('g:') === 0) {
+        view.circle = n.dataset.node.slice(2);
+        return render();
+      }
+      if (n.dataset.node !== 'me') pick(n.dataset.node);
+    }
+  });
+
+  // nodes can be dragged, and the wires follow
+  var drag = null;
+  $('#sd-nodes', rig).addEventListener('pointerdown', function (e) {
+    var n = e.target.closest('.sd-node');
+    if (!n) return;
+    drag = { n: n, id: n.dataset.node, dx: e.clientX - pos[n.dataset.node].x, dy: e.clientY - pos[n.dataset.node].y };
+    n.setPointerCapture(e.pointerId);
+    n.classList.add('held');
+  });
+  $('#sd-nodes', rig).addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    pos[drag.id] = { x: e.clientX - drag.dx, y: e.clientY - drag.dy };
+    drag.n.style.left = pos[drag.id].x + 'px';
+    drag.n.style.top = pos[drag.id].y + 'px';
+    paintWires(layout().wires);
+  });
+  var drop = function () { if (drag) { drag.n.classList.remove('held'); drag = null; } };
+  $('#sd-nodes', rig).addEventListener('pointerup', drop);
+  $('#sd-nodes', rig).addEventListener('pointercancel', drop);
+
+  var onResize = function () { paintWires(layout().wires); };
+  window.addEventListener('resize', onResize);
+  return function () { window.removeEventListener('resize', onResize); };
+}
+
+/* ==========================================================================
+   Design 9 — Constellation
+   Everyone as a lit sphere in real depth. Each group gets its own direction
+   out from the centre, labelled at the end of its axis, and its people sit
+   around that heading — so the shape of the thing is the shape of your
+   network. Drag to spin, scroll to come closer.
+   ========================================================================== */
+
+function drawOrbit(host) {
+  var groups = circles().filter(function (g) { return peopleIn(g.name).length; });
+  var everyone = st().people.filter(matches);
+  if (!everyone.length) return emptyState(host, 'Nothing to plot yet.');
+
+  var rig = el('div', 'orbit');
+  rig.innerHTML =
+    '<div class="or-stage" id="or-stage">' +
+      '<svg class="or-rays" id="or-rays" aria-hidden="true"></svg>' +
+      '<div class="or-field" id="or-field"></div>' +
+    '</div>' +
+    '<div class="or-read" id="or-read" aria-live="polite"></div>' +
+    '<div class="or-hint">drag to spin \u00b7 scroll to come closer \u00b7 click a point</div>';
+  host.appendChild(rig);
+
+  var stage = $('#or-stage', rig);
+  var field = $('#or-field', rig);
+  var rays = $('#or-rays', rig);
+
+  /* Each group gets its own heading out from the centre, spread evenly over
+     the sphere by the golden angle; its people sit around that heading. The
+     projection is done here rather than in CSS 3D, so depth sorting, fading
+     and hit areas are all under control and nothing foreshortens. */
+  var dirs = {};
+  var n = Math.max(1, groups.length);
+  groups.forEach(function (g, i) {
+    var y = 1 - (i + 0.5) / n * 2;
+    var r = Math.sqrt(Math.max(0, 1 - y * y));
+    var th = Math.PI * (3 - Math.sqrt(5)) * i;
+    dirs[g.name] = { x: Math.cos(th) * r, y: y, z: Math.sin(th) * r };
+  });
+
+  var R = 240;
+  var items = [];
+  groups.forEach(function (g) {
+    var d = dirs[g.name];
+    items.push({
+      kind: 'axis', label: g.name, hue: hueVar(g.name),
+      x: d.x * R * 1.2, y: d.y * R * 1.2, z: d.z * R * 1.2
+    });
+  });
+  everyone.forEach(function (p) {
+    var home = groupsOf(p)[0];
+    var d = dirs[home] || { x: 0, y: 0, z: 0 };
+    var rnd = seed(p.id);
+    var vx = d.x + (rnd(1) - .5) * .7, vy = d.y + (rnd(1) - .5) * .7, vz = d.z + (rnd(1) - .5) * .7;
+    var len = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1;
+    var reach = home ? (0.55 + rnd(1) * 0.45) : 0.3;
+    items.push({
+      kind: 'point', ref: p, label: p.name,
+      hue: home ? hueOfGroup(home) : 'var(--faint)',
+      size: 14 + Math.min(20, (p.log ? p.log.length : 0) * 3),
+      x: vx / len * R * reach, y: vy / len * R * reach, z: vz / len * R * reach
+    });
+  });
+  items.push({ kind: 'core', label: (st().me && st().me.name) || 'Me', x: 0, y: 0, z: 0, size: 26 });
+
+  field.innerHTML = items.map(function (it, i) {
+    if (it.kind === 'axis') {
+      return '<button class="or-axis" data-i="' + i + '" data-axis="' + esc(it.label) + '"' +
+        ' style="--hue:' + it.hue + '">' + esc(it.label) + '</button>';
+    }
+    if (it.kind === 'core') {
+      return '<div class="or-core" data-i="' + i + '"><i></i><span>' + esc(it.label) + '</span></div>';
+    }
+    return '<button class="or-pt" data-i="' + i + '" data-person="' + it.ref.id + '"' +
+      ' style="--hue:' + it.hue + '; --s:' + it.size + 'px; --d:' + i + '">' +
+      '<i></i><span class="or-name">' + esc(it.label) + '</span></button>';
+  }).join('');
+
+  var els = Array.prototype.slice.call(field.children);
+
+  var rot = { x: -0.2, y: 0.3 };
+  var dist = 900, spin = 0.0016, idle = true;
+
+  function project() {
+    var w = stage.clientWidth, h = stage.clientHeight;
+    var cx = w / 2, cy = h / 2;
+    var sx = Math.sin(rot.x), cxr = Math.cos(rot.x);
+    var sy = Math.sin(rot.y), cyr = Math.cos(rot.y);
+    var order = [];
+    items.forEach(function (it, i) {
+      // turn about Y, then about X
+      var x1 = it.x * cyr + it.z * sy;
+      var z1 = -it.x * sy + it.z * cyr;
+      var y1 = it.y * cxr - z1 * sx;
+      var z2 = it.y * sx + z1 * cxr;
+      var k = dist / (dist - z2);
+      order.push({ i: i, z: z2, x: cx + x1 * k, y: cy + y1 * k, k: k });
+    });
+    // a ray out to each heading, and two rings about the centre, so the shape
+    // of the field reads even where there is nothing lit
+    var core = order[order.length - 1];
+    var lines = [];
+    items.forEach(function (it, i) {
+      if (it.kind !== 'axis') return;
+      var o = order[i];
+      lines.push('<line x1="' + core.x.toFixed(1) + '" y1="' + core.y.toFixed(1) +
+        '" x2="' + o.x.toFixed(1) + '" y2="' + o.y.toFixed(1) + '" style="stroke:' + it.hue +
+        '" opacity="' + (0.1 + Math.max(0, (o.z + R) / (R * 2)) * 0.3).toFixed(2) + '"/>');
+    });
+    [0.34, 0.62].forEach(function (f) {
+      lines.push('<ellipse cx="' + core.x.toFixed(1) + '" cy="' + core.y.toFixed(1) +
+        '" rx="' + (R * f * core.k).toFixed(1) + '" ry="' + (R * f * core.k * Math.abs(Math.sin(rot.x))).toFixed(1) +
+        '" class="ring"/>');
+    });
+    rays.setAttribute('width', w); rays.setAttribute('height', h);
+    rays.innerHTML = lines.join('');
+
+    var back = order.slice().sort(function (a, b) { return a.z - b.z; });
+    back.forEach(function (o, rank) {
+      var e = els[o.i];
+      if (!e) return;
+      e.style.transform = 'translate3d(' + o.x.toFixed(1) + 'px,' + o.y.toFixed(1) + 'px,0) ' +
+        'translate(-50%,-50%) scale(' + o.k.toFixed(3) + ')';
+      e.style.zIndex = String(rank + 1);
+      // the far side of the sphere sits back into the dark
+      var far = (o.z + R) / (R * 2);
+      e.style.opacity = (0.34 + far * 0.66).toFixed(3);
+    });
+  }
+
+  var raf = 0;
+  function frame() {
+    raf = requestAnimationFrame(frame);
+    if (idle && !reduced()) rot.y += spin;
+    project();
+  }
+  project();
+  if (!reduced()) frame();
+
+  var drag = null;
+  stage.addEventListener('pointerdown', function (e) {
+    drag = { x: e.clientX, y: e.clientY, rx: rot.x, ry: rot.y, moved: false };
+    idle = false;
+    stage.setPointerCapture(e.pointerId);
+    stage.classList.add('held');
+  });
+  stage.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    if (Math.abs(e.clientX - drag.x) > 3 || Math.abs(e.clientY - drag.y) > 3) drag.moved = true;
+    rot.y = drag.ry + (e.clientX - drag.x) * 0.006;
+    rot.x = Math.max(-1.2, Math.min(1.2, drag.rx + (e.clientY - drag.y) * 0.006));
+    if (reduced()) project();
+  });
+  var release = function () {
+    if (!drag) return;
+    drag = null;
+    stage.classList.remove('held');
+    setTimeout(function () { idle = true; }, 2200);
+  };
+  stage.addEventListener('pointerup', release);
+  stage.addEventListener('pointercancel', release);
+
+  var onWheel = function (e) {
+    if (!rig.contains(e.target)) return;
+    e.preventDefault();
+    dist = Math.max(430, Math.min(1800, dist + e.deltaY));
+    project();
+  };
+  scroll.addEventListener('wheel', onWheel, { passive: false });
+
+  var read = $('#or-read', rig);
+  rig.addEventListener('pointerover', function (e) {
+    var b = e.target.closest('.or-pt');
+    if (!b) return;
+    var p = personById(b.dataset.person);
+    if (!p) return;
+    read.innerHTML = '<b>' + esc(p.name) + '</b>' +
+      (roleOf(p) ? '<span>' + esc(roleOf(p)) + '</span>' : '') +
+      '<span>' + esc(groupsOf(p).join(' \u00b7 ') || 'unfiled') + '</span>' +
+      '<span>' + esc(p.log.length ? L.ago(L.lastTouch(p)) : 'no touchpoints') + '</span>';
+    read.setAttribute('data-on', '');
+  });
+  rig.addEventListener('pointerout', function (e) {
+    if (e.target.closest('.or-pt')) read.removeAttribute('data-on');
+  });
+  rig.addEventListener('click', function (e) {
+    var a = e.target.closest('[data-axis]');
+    if (a) { view.circle = a.dataset.axis; return render(); }
+    var b = e.target.closest('[data-person]');
+    if (b) return editCard(b.dataset.person);
+  });
+
+  var onResize = function () { project(); };
+  window.addEventListener('resize', onResize);
+
+  return function () {
+    cancelAnimationFrame(raf);
+    scroll.removeEventListener('wheel', onWheel);
+    window.removeEventListener('resize', onResize);
+  };
+}
+
+function lastEdited() {
+  var t = 0;
+  st().people.forEach(function (p) { t = Math.max(t, p.updated || p.created || 0); });
+  return t ? L.fmtDate(t) : 'never';
+}
+
 /* ---- wiring ---- */
+
+window.addEventListener('popstate', function () {
+  var r = readRoute();
+  if (r) {
+    if (!open) return show(r.circle, r.person, r.design);
+    view.design = r.design; view.circle = r.circle; view.person = r.person;
+    render();
+  } else if (open) {
+    close();
+  }
+});
 
 document.addEventListener('rootwork:changed', function () {
   if (open && !document.querySelector('.archive .held')) render();
@@ -1207,6 +1407,7 @@ document.addEventListener('rootwork:changed', function () {
 
 window.RootworkArchive = {
   open: show,
+  route: routeOf,
   close: close,
   isOpen: function () { return open; },
   design: function (id) { if (id) setDesign(id); return view.design; }
@@ -1220,6 +1421,9 @@ function wire() {
   wired = true;
   var btn = document.getElementById('btn-archive');
   if (btn) btn.addEventListener('click', function () { show(null, null); });
+
+  var landed = readRoute();
+  if (landed) show(landed.circle, landed.person, landed.design);
   document.addEventListener('keydown', function (e) {
     if (open) return;
     var t = document.activeElement;

@@ -35,6 +35,7 @@ var DESIGNS = [
   { id: 'orbit', name: 'Constellation', hint: 'Everyone on a sphere you can spin' }
 ];
 var view = { design: 'drawer', circle: null, person: null };
+var WIDE = { studio: 1, finder: 1, orbit: 1, chroma: 1 };
 var DESIGN_KEY = 'rootwork.archive.design';
 var open = false;
 var query = '', qTimer = null;
@@ -56,7 +57,7 @@ function writeRoute(replace) {
 }
 function readRoute() {
   var h = (location.hash || '').replace(/^#/, '');
-  if (!h) return null;
+  if (!h || h === 'map') return null;
   var bits = h.split('/');
   var d = DESIGNS.filter(function (x) { return x.id === bits[0]; })[0];
   if (!d) return null;
@@ -166,6 +167,56 @@ function seed(str) {                       // a stable number per person, for sc
   return function (n) { h = Math.imul(h ^ (h >>> 15), 2246822507); return Math.abs(h % 1000) / 1000 * (n || 1); };
 }
 
+/* ---- editing in place ----
+   Every design shows the same record, so every design can change it. A value
+   marked data-field turns into an input where it sits; what is typed goes
+   back to the person and the map hears about it like any other edit. */
+
+var FIELD_LABELS = {
+  name: 'Name', profession: 'Role', company: 'Company', email: 'Email',
+  phone: 'Phone', location: 'Where'
+};
+
+function editableAttrs(p, field) {
+  return ' data-field="' + field + '" data-for="' + p.id + '" tabindex="0" role="button"' +
+    ' title="Click to edit ' + esc((FIELD_LABELS[field] || field).toLowerCase()) + '"';
+}
+
+function editValue(el) {
+  if (el.querySelector('input')) return;
+  var p = personById(el.dataset.for);
+  if (!p) return;
+  var field = el.dataset.field;
+  var was = p[field] || '';
+  var box = document.createElement('input');
+  box.className = 'arc-input';
+  box.value = was;
+  box.setAttribute('aria-label', FIELD_LABELS[field] || field);
+  var held = el.innerHTML;
+  el.innerHTML = '';
+  el.appendChild(box);
+  box.focus();
+  box.select();
+
+  var done = false;
+  function finish(keep) {
+    if (done) return;
+    done = true;
+    var val = box.value.trim();
+    if (!keep || val === was) { el.innerHTML = held; return; }
+    p[field] = val;
+    p.updated = Date.now();
+    L.save();                                  // writes, re-renders the map
+    render(true);                              // and this surface, without the fanfare
+  }
+  box.addEventListener('blur', function () { finish(true); });
+  box.addEventListener('keydown', function (e) {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+}
+
 /* ---- chrome ---- */
 
 function build() {
@@ -198,6 +249,16 @@ function build() {
   body = $('#arc-body', root);
 
   $('#arc-close', root).addEventListener('click', close);
+  root.addEventListener('click', function (e) {
+    var f = e.target.closest('[data-field][data-for]');
+    if (f) { e.stopPropagation(); editValue(f); }
+  }, true);
+  root.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    var f = e.target.closest && e.target.closest('[data-field][data-for]');
+    if (f && !f.querySelector('input')) { e.preventDefault(); editValue(f); }
+  });
+
   $('#arc-home', root).addEventListener('click', function () {
     view.circle = null; view.person = null; query = ''; $('#arc-q', root).value = ''; render();
   });
@@ -215,8 +276,6 @@ function build() {
     back();
   });
   head.addEventListener('click', function (e) {
-    var g = e.target.closest('[data-group]');
-    if (g) return setGroup(g.dataset.group);
     var d = e.target.closest('[data-design]');
     if (d) return setDesign(d.dataset.design);
     var b = e.target.closest('[data-crumb]');
@@ -297,21 +356,35 @@ function renderHead() {
             ' title="' + esc(d.hint) + '">' + esc(d.name) + '</button>';
         }).join('') +
       '</div>' +
-      '<div class="grouping"><span>Filed by</span>' +
-        GROUPS.map(function (g) {
-          return '<button data-group="' + g.id + '"' + (groupMode === g.id ? ' data-on="1"' : '') + '>' +
-            esc(g.name) + '</button>';
-        }).join('') +
-      '</div>' +
     '</div>';
 }
 
-/* Each renderer gets a clean element and says how to tear itself down. */
+/* A cheap fingerprint of everything a screen draws. Sync polls every few
+   seconds and the map re-renders for its own reasons; without this the
+   archive rebuilt itself — and replayed every entrance animation — on each
+   of them. */
+function signature() {
+  var s = st();
+  var t = 0;
+  for (var i = 0; i < s.people.length; i++) t += (s.people[i].updated || s.people[i].created || 0) % 100000;
+  return [s.people.length, t, (s.circles || []).join('|'), s.me && s.me.name,
+    groupMode, query, view.design, view.circle, view.person].join('~');
+}
+var lastSig = '';
+
+/* Each renderer gets a clean element and says how to tear itself down.
+   A quiet render is one nobody asked for — data caught up underneath — so it
+   arrives without the animations a navigation deserves. */
 var teardown = null;
-function render() {
+function render(quiet) {
   if (!open) return;
   if (teardown) { try { teardown(); } catch (e) { } teardown = null; }
+  lastSig = signature();
+  // a workspace wants the whole window; a document wants a column
+  var wrap = root.querySelector('.arc-wrap');
+  if (wrap) wrap.classList.toggle('wide', WIDE[view.design] && !view.person);
   renderHead();
+  body.className = 'arc-body' + (quiet ? ' still' : '');
   body.innerHTML = '';
   var fn = view.design === 'index' ? drawIndex
     : view.design === 'chroma' ? drawChroma
@@ -367,9 +440,7 @@ function close() {
   document.body.classList.remove('archived');
   if (L && L.closeCard) L.closeCard();
   releaseCard();
-  if (location.hash) {
-    try { history.pushState(null, '', location.pathname + location.search); } catch (e) { }
-  }
+  try { history.pushState(null, '', '#map'); } catch (e) { }
   var done = function () { if (!open) root.hidden = true; };
   if (reduced()) done(); else setTimeout(done, 300);
   if (teardown) { try { teardown(); } catch (e) { } teardown = null; }
@@ -521,9 +592,9 @@ function drawFile(host) {
   file.style.setProperty('--tab-x', '18px');
 
   var facts = [
-    ['Email', p.email], ['Phone', p.phone],
-    ['Profession', p.profession], ['Company', p.company],
-    ['Location', p.location],
+    ['Email', p.email, 'email'], ['Phone', p.phone, 'phone'],
+    ['Profession', p.profession, 'profession'], ['Company', p.company, 'company'],
+    ['Location', p.location, 'location'],
     ['Schools', L.schoolsOf(p).map(function (s) { return s.name + (s.level ? ' (' + s.level + ')' : ''); }).join(', ')],
     ['Filed under', L.circlesOf(p).join(' · ')],
     ['Tags', (p.tags || []).map(function (t) { return '#' + t; }).join(' ')]
@@ -540,9 +611,13 @@ function drawFile(host) {
   var sheets = [
     '<div class="sheet card" style="--d:' + (d++) + ';--r:-.35deg">' +
       '<span class="stamped">File ' + esc(String(p.id).slice(-4).toUpperCase()) + '</span>' +
-      '<h4>Particulars</h4><div class="rule"></div>' +
+      '<h4><span class="edit"' + editableAttrs(p, 'name') + '>' + esc(p.name) + '</span></h4>' +
+      '<div class="rule"></div>' +
       '<dl class="facts">' + facts.map(function (f) {
-        return '<dt>' + esc(f[0]) + '</dt><dd>' + (f[1] ? esc(f[1]) : '<span class="none">—</span>') + '</dd>';
+        var body = f[1] ? esc(f[1]) : '<span class="none">—</span>';
+        return '<dt>' + esc(f[0]) + '</dt><dd>' + (f[2]
+          ? '<span class="edit"' + editableAttrs(p, f[2]) + '>' + body + '</span>'
+          : body) + '</dd>';
       }).join('') + '</dl>' +
     '</div>'
   ];
@@ -613,23 +688,6 @@ function drawIndex(host) {
   var cols = circles();
   var rig = el('div', 'index');
   rig.innerHTML =
-    '<div class="ix-legend">' +
-      '<div class="ix-col"><h5>Folders</h5>' +
-        cols.map(function (c) {
-          return '<button class="ix-f" data-folder="' + esc(c.name) + '"' +
-            (view.circle === c.name ? ' data-on="1"' : '') + '>' +
-            '<i style="background:' + hueVar(c.name) + '"></i>' + esc(c.name) +
-            '<span>' + String(c.n).padStart(2, '0') + '</span></button>';
-        }).join('') +
-        (view.circle ? '<button class="ix-f ix-all" data-folder="">All entries</button>' : '') +
-      '</div>' +
-      '<div class="ix-col wide"><h5>Reading</h5>' +
-        '<p>Every entry this archive holds, set alphabetically. Hover a line to' +
-        ' read it out; click to open the file. The number is the order it was' +
-        ' filed, not its importance.</p></div>' +
-      '<div class="ix-col"><h5>Count</h5>' +
-        '<p class="ix-big">' + String(people.length).padStart(3, '0') + '</p></div>' +
-    '</div>' +
     '<div class="ix-grid" id="ix-grid">' +
       people.map(function (p, i) {
         var sch = L.schoolsOf(p)[0];
@@ -697,9 +755,15 @@ function drawIndex(host) {
    ========================================================================== */
 
 function drawChroma(host) {
+  // one band each: a person shows under the circle they are filed under
+  // first, never twice
+  var mine = function (name) {
+    return peopleIn(name).filter(function (p) { return homeGroup(p) === name; });
+  };
   var groups = view.circle
-    ? [{ name: view.circle, people: peopleIn(view.circle) }]
-    : circles().map(function (c) { return { name: c.name, people: peopleIn(c.name) }; });
+    ? [{ name: view.circle, people: mine(view.circle) }]
+    : circles().map(function (c) { return { name: c.name, people: mine(c.name) }; })
+        .filter(function (g) { return g.people.length; });
   var loose = st().people.filter(function (p) { return !L.circlesOf(p).length; });
   if (!groups.length) return emptyState(host, 'Nothing to light up yet.');
 
@@ -739,12 +803,14 @@ function drawChroma(host) {
     pane.innerHTML =
       '<button class="ch-x" data-close aria-label="Close">\u00d7</button>' +
       '<div class="ch-kicker">' + esc(L.circlesOf(p).join(' \u00b7 ')) + '</div>' +
-      '<h3>' + esc(p.name) + '</h3>' +
-      '<div class="ch-role">' + esc(roleOf(p) || 'No role recorded') + '</div>' +
+      '<h3><span class="edit"' + editableAttrs(p, 'name') + '>' + esc(p.name) + '</span></h3>' +
+      '<div class="ch-role"><span class="edit"' + editableAttrs(p, 'profession') + '>' +
+        esc(p.profession || 'Add a role') + '</span></div>' +
       '<dl>' +
-        (p.email ? '<dt>Mail</dt><dd>' + esc(p.email) + '</dd>' : '') +
-        (p.phone ? '<dt>Ring</dt><dd>' + esc(p.phone) + '</dd>' : '') +
-        (p.location ? '<dt>Where</dt><dd>' + esc(p.location) + '</dd>' : '') +
+        '<dt>Company</dt><dd class="edit"' + editableAttrs(p, 'company') + '>' + esc(p.company || '—') + '</dd>' +
+        '<dt>Mail</dt><dd class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +
+        '<dt>Ring</dt><dd class="edit"' + editableAttrs(p, 'phone') + '>' + esc(p.phone || '—') + '</dd>' +
+        '<dt>Where</dt><dd class="edit"' + editableAttrs(p, 'location') + '>' + esc(p.location || '—') + '</dd>' +
         (sch ? '<dt>Read at</dt><dd>' + esc(sch) + '</dd>' : '') +
         '<dt>Last</dt><dd>' + esc(p.log.length ? L.ago(L.lastTouch(p)) : 'no touchpoints') + '</dd>' +
       '</dl>' +
@@ -835,14 +901,14 @@ function drawFinder(host) {
 
     if (finderMode === 'icons') {
       pane.className = 'fw-icons';
-      pane.innerHTML = cols.map(function (c) {
-        return '<div class="fitem' + (sel.circle === c.name ? ' on' : '') + '" data-circle="' + esc(c.name) + '" tabindex="0">' +
+      pane.innerHTML = cols.map(function (c, ci) {
+        return '<div class="fitem' + (sel.circle === c.name ? ' on' : '') + '" data-circle="' + esc(c.name) + '" tabindex="0" style="--r:' + ci + '">' +
           '<span class="fic" style="color:' + hueVar(c.name) + '">' + icon('folder') + '</span>' +
           '<span class="fnm">' + esc(c.name) + '</span>' +
           '<span class="fsz">' + c.n + ' item' + (c.n === 1 ? '' : 's') + '</span>' +
         '</div>';
-      }).join('') + folk.map(function (x) {
-        return '<div class="fitem' + (sel.person === x.id ? ' on' : '') + '" data-person="' + x.id + '" tabindex="0">' +
+      }).join('') + folk.map(function (x, xi) {
+        return '<div class="fitem' + (sel.person === x.id ? ' on' : '') + '" data-person="' + x.id + '" tabindex="0" style="--r:' + (cols.length + xi) + '">' +
           '<span class="fic">' + icon('file') + '</span>' +
           '<span class="fnm">' + esc(x.name) + '</span>' +
           '<span class="fsz">' + esc(sizeOf(x)) + '</span>' +
@@ -851,16 +917,16 @@ function drawFinder(host) {
     } else {
       pane.className = 'fw-cols';
       pane.innerHTML =
-        '<div class="fcol" data-col="0">' + cols.map(function (c) {
-          return '<button class="frow' + (sel.circle === c.name ? ' on' : '') + '" data-circle="' + esc(c.name) + '">' +
+        '<div class="fcol" data-col="0">' + cols.map(function (c, ci) {
+          return '<button class="frow' + (sel.circle === c.name ? ' on' : '') + '" data-circle="' + esc(c.name) + '" style="--r:' + ci + '">' +
             '<span class="fic" style="color:' + hueVar(c.name) + '">' + icon('folder') + '</span>' +
             '<span class="fnm">' + esc(c.name) + '</span>' +
             '<span class="fct">' + c.n + '</span>' +
             '<span class="fch">\u203a</span>' +
           '</button>';
         }).join('') + '</div>' +
-        '<div class="fcol" data-col="1">' + (folk.length ? folk.map(function (x) {
-          return '<button class="frow' + (sel.person === x.id ? ' on' : '') + '" data-person="' + x.id + '">' +
+        '<div class="fcol" data-col="1">' + (folk.length ? folk.map(function (x, xi) {
+          return '<button class="frow' + (sel.person === x.id ? ' on' : '') + '" data-person="' + x.id + '" style="--r:' + xi + '">' +
             '<span class="fic">' + icon('file') + '</span>' +
             '<span class="fnm">' + esc(x.name) + '</span>' +
             '<span class="fct">' + esc(sizeOf(x)) + '</span>' +
@@ -879,15 +945,17 @@ function drawFinder(host) {
     var sch = L.schoolsOf(p).map(function (s) { return s.name + (s.level ? ' ' + s.level : ''); }).join(', ');
     return '<div class="fprev-in">' +
       '<span class="fic big">' + icon('file') + '</span>' +
-      '<h4>' + esc(p.name) + '</h4>' +
-      '<div class="fkind">' + esc(roleOf(p) || 'Entry') + '</div>' +
+      '<h4><span class="edit"' + editableAttrs(p, 'name') + '>' + esc(p.name) + '</span></h4>' +
+      '<div class="fkind"><span class="edit"' + editableAttrs(p, 'profession') + '>' +
+        esc(p.profession || 'Add a role') + '</span></div>' +
       '<dl>' +
         '<dt>Kind</dt><dd>Rootwork entry</dd>' +
         '<dt>Size</dt><dd>' + esc(sizeOf(p)) + '</dd>' +
         '<dt>Filed</dt><dd>' + esc(L.circlesOf(p).join(', ')) + '</dd>' +
-        (p.email ? '<dt>Mail</dt><dd>' + esc(p.email) + '</dd>' : '') +
-        (p.phone ? '<dt>Phone</dt><dd>' + esc(p.phone) + '</dd>' : '') +
-        (p.location ? '<dt>Where</dt><dd>' + esc(p.location) + '</dd>' : '') +
+        '<dt>Company</dt><dd class="edit"' + editableAttrs(p, 'company') + '>' + esc(p.company || '—') + '</dd>' +
+        '<dt>Mail</dt><dd class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +
+        '<dt>Phone</dt><dd class="edit"' + editableAttrs(p, 'phone') + '>' + esc(p.phone || '—') + '</dd>' +
+        '<dt>Where</dt><dd class="edit"' + editableAttrs(p, 'location') + '>' + esc(p.location || '—') + '</dd>' +
         (sch ? '<dt>School</dt><dd>' + esc(sch) + '</dd>' : '') +
         '<dt>Opened</dt><dd>' + esc(p.log.length ? L.fmtDate(L.lastTouch(p)) : 'never') + '</dd>' +
         '<dt>Entries</dt><dd>' + p.log.length + '</dd>' +
@@ -974,7 +1042,7 @@ function drawStudio(host) {
   rig.innerHTML =
     '<div class="sd-top">' +
       '<div class="sd-title">' +
-        '<h3>' + esc(((st().me && st().me.name) || 'My') + ' network') + '</h3>' +
+        '<h3>' + esc(meName() === 'Me' ? 'My network' : meName() + '\u2019s network') + '</h3>' +
         '<span>Filed by ' + esc(grouper().name.toLowerCase()) + ' \u00b7 last edited ' +
           esc(lastEdited()) + '</span>' +
       '</div>' +
@@ -1034,6 +1102,7 @@ function drawStudio(host) {
 
     var y = 40, out = [], wires = [];
     var rootX = 26, rootY = Math.max(60, 40);
+    var widest = 0;
     rows.forEach(function (r) {
       var gx = rootX + 190, gy = y;
       var gid = 'g:' + r.group.name;
@@ -1042,16 +1111,21 @@ function drawStudio(host) {
       wires.push([ 'me', gid ]);
       r.people.forEach(function (p, i) {
         var pid = p.id;
-        pos[pid] = pos[pid] || { x: gx + 210, y: gy + i * 46 };
+        pos[pid] = pos[pid] || { x: gx + 210, y: gy + i * 58 };
         out.push({ id: pid, kind: 'person', label: p.name, sub: roleOf(p), hue: hueVar(r.group.name), ref: p });
         wires.push([ gid, pid ]);
       });
-      y += Math.max(1, r.people.length) * 46 + 34;
+      y += Math.max(1, r.people.length) * 58 + 40;
     });
     pos.me = pos.me || { x: rootX, y: Math.max(rootY, y / 2 - 20) };
-    out.unshift({ id: 'me', kind: 'me', label: (st().me && st().me.name) || 'Me', hue: 'var(--accent)' });
-    wrap.style.height = Math.max(420, y + 40) + 'px';
-    return { nodes: out, wires: wires, W: W };
+    out.unshift({ id: 'me', kind: 'me', label: meName(), hue: 'var(--accent)' });
+    Object.keys(pos).forEach(function (k) { widest = Math.max(widest, pos[k].x + 260); });
+    var inner = $('#sd-nodes', rig);
+    var h = Math.max(420, y + 40);
+    inner.style.width = Math.max(W, widest) + 'px';
+    inner.style.height = h + 'px';
+    wrap.style.height = h + 'px';
+    return { nodes: out, wires: wires, W: Math.max(W, widest), H: h };
   }
 
   function paintNodes() {
@@ -1070,9 +1144,10 @@ function drawStudio(host) {
   function paintWires(wires) {
     var svg = $('#sd-wires', rig);
     var wrap = $('#sd-canvas', rig);
-    var box = wrap.getBoundingClientRect();
-    svg.setAttribute('width', wrap.clientWidth);
-    svg.setAttribute('height', wrap.clientHeight);
+    var inner = $('#sd-nodes', rig);
+    var box = inner.getBoundingClientRect();
+    svg.setAttribute('width', inner.clientWidth);
+    svg.setAttribute('height', inner.clientHeight);
     var d = wires.map(function (w) {
       var a = rig.querySelector('[data-node="' + cssEsc(w[0]) + '"]');
       var b = rig.querySelector('[data-node="' + cssEsc(w[1]) + '"]');
@@ -1100,9 +1175,7 @@ function drawStudio(host) {
     var sch = L.schoolsOf(p);
     box.innerHTML =
       '<div class="sd-panel-head">Node<button class="reset" data-open-card="' + p.id + '">Edit</button></div>' +
-      '<div class="sd-field"><label>Name</label><div class="val">' + esc(p.name) + '</div></div>' +
-      '<div class="sd-field"><label>Role</label><div class="val">' + esc(p.profession || '\u2014') + '</div></div>' +
-      '<div class="sd-field"><label>Company</label><div class="val">' + esc(p.company || '\u2014') + '</div></div>' +
+      sdField(p, 'name', 'Name') + sdField(p, 'profession', 'Role') + sdField(p, 'company', 'Company') +
       '<div class="sd-panel-head">Filed</div>' +
       '<div class="sd-chips">' + L.circlesOf(p).map(function (c, i) {
         return '<span class="sd-chip' + (i === 0 ? ' main' : '') + '" style="--hue:' + hueOfGroup(c) + '">' +
@@ -1112,9 +1185,7 @@ function drawStudio(host) {
         return '<span class="sd-chip pale">' + esc(s.name) + (s.level ? ' <i>' + esc(s.level) + '</i>' : '') + '</span>';
       }).join('') + '</div>' : '') +
       '<div class="sd-panel-head">Contact</div>' +
-      '<div class="sd-field"><label>Mail</label><div class="val">' + esc(p.email || '\u2014') + '</div></div>' +
-      '<div class="sd-field"><label>Phone</label><div class="val">' + esc(p.phone || '\u2014') + '</div></div>' +
-      '<div class="sd-field"><label>Where</label><div class="val">' + esc(p.location || '\u2014') + '</div></div>' +
+      sdField(p, 'email', 'Mail') + sdField(p, 'phone', 'Phone') + sdField(p, 'location', 'Where') +
       '<div class="sd-panel-head">History<span class="reset">' + p.log.length + '</span></div>' +
       '<div class="sd-log">' + (p.log.length ? p.log.slice(0, 4).map(function (e) {
         return '<div><span>' + esc(L.channelLabel(e.channel)) + ' \u00b7 ' + esc(L.fmtDate(e.at)) + '</span>' +
@@ -1382,6 +1453,14 @@ function drawOrbit(host) {
   };
 }
 
+function sdField(p, field, label) {
+  return '<div class="sd-field"><label>' + esc(label) + '</label>' +
+    '<div class="val edit"' + editableAttrs(p, field) + '>' +
+      (p[field] ? esc(p[field]) : '\u2014') + '</div></div>';
+}
+
+function meName() { return (st().me && st().me.name) || 'Me'; }
+
 function lastEdited() {
   var t = 0;
   st().people.forEach(function (p) { t = Math.max(t, p.updated || p.created || 0); });
@@ -1402,12 +1481,18 @@ window.addEventListener('popstate', function () {
 });
 
 document.addEventListener('rootwork:changed', function () {
-  if (open && !document.querySelector('.archive .held')) render();
+  if (!open) return;
+  if (document.querySelector('.archive .held')) return;      // mid-drag, leave it alone
+  if (signature() === lastSig) return;                       // nothing we draw has moved
+  render(true);
 });
 
 window.RootworkArchive = {
   open: show,
   route: routeOf,
+  /* Filing by company, school or place has no button any more — the simple
+     look won — but the capability is still here for a URL or the console. */
+  group: function (id) { if (id) setGroup(id); return groupMode; },
   close: close,
   isOpen: function () { return open; },
   design: function (id) { if (id) setDesign(id); return view.design; }
@@ -1424,6 +1509,7 @@ function wire() {
 
   var landed = readRoute();
   if (landed) show(landed.circle, landed.person, landed.design);
+  else if (location.hash !== '#map') show(null, null);       // opens here, not on the map
   document.addEventListener('keydown', function (e) {
     if (open) return;
     var t = document.activeElement;

@@ -6,66 +6,12 @@
    marks at the rim, mid-saturation pigment inks, and branches that TAPER
    the way real ones do (thick at the trunk, fine at the tip).
 
-   Light theme is the same plate printed on bone paper; dark is the same
-   plate inked. Every color is a token so the canvas can read it too.
+   Inked plate, always — there is no light mode. Every color is a token so
+   the canvas can read it too.
    ========================================================================== */
 
 :root{
-  /* ---- light: bone paper ---- */
-  --ground:      #e6e2d7;
-  --ground-2:    #dfdacd;
-  --panel:       #f4f1e9;
-  --panel-2:     #ebe7dc;
-  --ink:         #1a2129;
-  --ink-2:       #3d4852;
-  --muted:       #6e7982;
-  --faint:       #97a0a6;
-  --rule:        #c9c1b0;
-  --rule-soft:   #d8d2c4;
-  --accent:      #a4522a;
-  --accent-soft: #c2683a;
-  --good:        #2f7a67;
-  --warn:        #b0761f;
-  --shadow:      0 18px 40px -24px rgba(26,33,41,.45);
-  --field:       #fbf9f4;
-
-  /* pigment set — branch colors, legible on either ground */
-  --h1:#a4522a; --h2:#2f7a67; --h3:#4a5fb0; --h4:#8c4676;
-  --h5:#6b7f2e; --h6:#2f6f8f; --h7:#a3781f; --h8:#8b4a4a;
-
-  --display: "Instrument Serif", Georgia, serif;
-  --ui: "Archivo", system-ui, -apple-system, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
-
-  --r: 3px;
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    --ground:      #0e141a;
-    --ground-2:    #0a0f14;
-    --panel:       #151d25;
-    --panel-2:     #1b242d;
-    --ink:         #e8e5dc;
-    --ink-2:       #c3c8cc;
-    --muted:       #8d99a3;
-    --faint:       #66727c;
-    --rule:        #27313b;
-    --rule-soft:   #1e262e;
-    --accent:      #d07a42;
-    --accent-soft: #c2683a;
-    --good:        #4aa189;
-    --warn:        #d5a04a;
-    --shadow:      0 22px 50px -26px rgba(0,0,0,.8);
-    --field:       #101820;
-    --h1:#d07a42; --h2:#4aa189; --h3:#7d8fdd; --h4:#c07aa8;
-    --h5:#9bb154; --h6:#4f9cc0; --h7:#d0a545; --h8:#c07878;
-    color-scheme: dark;
-  }
-}
-
-:root[data-theme="dark"]{
+  /* ---- the plate, inked. One theme only. ---- */
   --ground:      #0e141a;
   --ground-2:    #0a0f14;
   --panel:       #151d25;
@@ -82,8 +28,16 @@
   --warn:        #d5a04a;
   --shadow:      0 22px 50px -26px rgba(0,0,0,.8);
   --field:       #101820;
+
+  /* pigment set — branch colors */
   --h1:#d07a42; --h2:#4aa189; --h3:#7d8fdd; --h4:#c07aa8;
   --h5:#9bb154; --h6:#4f9cc0; --h7:#d0a545; --h8:#c07878;
+
+  --display: "Instrument Serif", Georgia, serif;
+  --ui: "Archivo", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+
+  --r: 3px;
   color-scheme: dark;
 }
 
@@ -185,7 +139,6 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
   font-variant-numeric:tabular-nums;
 }
 .stats b{ color:var(--ink); font-weight:600; }
-.stats .due b{ color:var(--warn); }
 
 .tools{ display:flex; align-items:center; gap:6px; }
 .topbar > .searchwrap + .stats{ margin-left:auto; }
@@ -222,7 +175,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .stage-hint p{ margin:0; font-size:13.5px; line-height:1.6; }
 .stage-hint[hidden]{ display:none; }
 
-/* legend + nudges, bottom-left */
+/* legend, bottom-left */
 .rail{
   position:absolute; left:14px; bottom:14px; width:212px;
   display:flex; flex-direction:column; gap:10px;
@@ -249,17 +202,6 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 }
 .swatch{ width:9px; height:9px; border-radius:50%; flex:none; }
 .legend-list .n{ margin-left:auto; font-family:var(--mono); font-size:10.5px; color:var(--muted); }
-.nudge-list{
-  padding:5px; max-height:150px; overflow:auto;
-  -webkit-mask-image:linear-gradient(to bottom, #000 calc(100% - 14px), transparent);
-  mask-image:linear-gradient(to bottom, #000 calc(100% - 14px), transparent);
-}
-.nudge-list button{
-  display:block; width:100%; text-align:left; padding:5px 6px; border-radius:2px;
-}
-.nudge-list button:hover{ background:var(--panel-2); }
-.nudge-list .n1{ font-size:12.5px; }
-.nudge-list .n2{ font-size:10.5px; font-family:var(--mono); color:var(--warn); letter-spacing:.04em; }
 .rail .empty{ padding:8px 10px; font-size:11.5px; color:var(--faint); }
 
 .viewtools{
@@ -923,6 +865,7 @@ dd:hover .jump, .jump:focus-visible{ opacity:1; }
 
 /* ---------- logging from the card ---------- */
 
+.logger[hidden]{ display:none; }
 .logger{
   display:flex; flex-direction:column; gap:7px;
   padding:10px; margin-bottom:12px;
@@ -962,3 +905,70 @@ dd:hover .jump, .jump:focus-visible{ opacity:1; }
   font-family:var(--mono); font-style:normal; font-size:8.5px; letter-spacing:.12em;
   text-transform:uppercase; color:var(--hue); margin-left:6px; opacity:.85;
 }
+
+/* ---------- the notepad, bottom right ----------
+   Loose notes that belong to nobody in particular. Always open and one click
+   from a cursor, because the whole point is to get a thought down fast. */
+
+.pad{
+  position:absolute; right:14px; bottom:14px; width:262px; z-index:4;
+  display:flex; flex-direction:column;
+  transition:right .26s cubic-bezier(.22,.7,.28,1);
+}
+.stage.panel-open .pad{ right:386px; bottom:88px; }   /* clear of the chat bar */
+.pad h3{ cursor:default; }
+.pad h3 .mini{
+  margin-left:auto; color:var(--faint); font-size:15px; line-height:1;
+  padding:0 4px; border-radius:2px;
+}
+.pad h3 .mini:hover{ color:var(--accent); background:var(--panel-2); }
+.pad-body{ display:flex; flex-direction:column; gap:6px; padding:6px; }
+.pad[data-shut="1"] .pad-body{ display:none; }
+.pad-list{
+  display:flex; flex-direction:column; gap:5px;
+  max-height:196px; overflow:auto;
+}
+.pad-list:empty{ display:none; }
+.pnote{
+  position:relative; padding:6px 20px 6px 8px;
+  border:1px solid var(--rule-soft); border-radius:var(--r);
+  background:var(--panel-2);
+  font-size:12.5px; line-height:1.5;
+}
+.pnote .val{ display:block; cursor:text; white-space:pre-wrap; word-break:break-word; }
+.pnote .when{
+  display:block; margin-top:3px;
+  font-family:var(--mono); font-size:9px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--faint);
+}
+.pnote .del{
+  position:absolute; top:3px; right:4px;
+  color:var(--faint); font-size:13px; line-height:1; opacity:0;
+}
+.pnote:hover .del, .pnote .del:focus-visible{ opacity:1; }
+.pnote .del:hover{ color:var(--accent); }
+#pad-input{
+  width:100%; resize:none; overflow:auto; max-height:120px;
+  background:var(--field); border:1px solid var(--rule); border-radius:var(--r);
+  padding:7px 9px; font-size:12.5px; line-height:1.5; outline:none;
+}
+#pad-input:focus{ border-color:var(--accent); }
+#pad-input::placeholder{ color:var(--faint); }
+
+@media (max-width:880px){
+  .pad{ right:10px; bottom:auto; top:58px; width:198px; }
+  .stage.panel-open .pad{ right:10px; }
+  .pad-list{ max-height:132px; }
+  #pad-input{ font-size:16px; }          /* iOS zooms anything smaller */
+}
+
+/* ---------- degree picker ---------- */
+
+.cpick.degrees{ min-width:206px; padding:8px; }
+.cpick .dgrid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:4px; }
+.cpick .dgrid button{
+  padding:5px 2px; border:1px solid var(--rule); border-radius:2px;
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.04em; color:var(--muted);
+}
+.cpick .dgrid button:hover{ color:var(--ink); border-color:var(--muted); }
+.cpick .dgrid button[data-on="1"]{ color:var(--accent); border-color:var(--accent); }

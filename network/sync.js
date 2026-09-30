@@ -127,6 +127,8 @@ function merge(a, b) {
     // a circle deleted on one device must stay deleted on the other, or the
     // next pull quietly hands it back
     circleTombstones: Object.assign({}, a.circleTombstones || {}, b.circleTombstones || {}),
+    pad: [],
+    padTombstones: Object.assign({}, a.padTombstones || {}, b.padTombstones || {}),
     // settings are a set: whichever device changed them last wins outright,
     // rather than blending two people's palettes into one
     colors: ((b.settingsAt || 0) > (a.settingsAt || 0) ? b.colors : a.colors) || {},
@@ -164,6 +166,22 @@ function merge(a, b) {
     out.people.push(p);
   });
 
+  // loose notes merge the same way people do: newest edit per note wins, and a
+  // deleted one stays deleted
+  var padById = {};
+  (a.pad || []).forEach(function (n) { padById[n.id] = n; });
+  (b.pad || []).forEach(function (n) {
+    var mine = padById[n.id];
+    if (!mine || (n.upd || n.at || 0) > (mine.upd || mine.at || 0)) padById[n.id] = n;
+  });
+  Object.keys(padById).forEach(function (id) {
+    var n = padById[id];
+    var killed = out.padTombstones[id];
+    if (killed && killed >= (n.upd || n.at || 0)) return;
+    out.pad.push(n);
+  });
+  out.pad.sort(function (x, y) { return (y.at || 0) - (x.at || 0); });
+
   // forget tombstones older than a season; two devices will have seen them
   var cutoff = Date.now() - 90 * 86400000;
   Object.keys(out.tombstones).forEach(function (id) {
@@ -171,6 +189,9 @@ function merge(a, b) {
   });
   Object.keys(out.circleTombstones).forEach(function (k) {
     if (out.circleTombstones[k] < cutoff) delete out.circleTombstones[k];
+  });
+  Object.keys(out.padTombstones).forEach(function (k) {
+    if (out.padTombstones[k] < cutoff) delete out.padTombstones[k];
   });
   return out;
 }

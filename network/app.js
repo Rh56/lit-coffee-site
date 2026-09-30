@@ -11,8 +11,8 @@
 var KEY = 'rootwork.v1';
 var DAY = 86400000;
 
-var state = { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, circleTombstones: {}, layout: 'orbit', settingsAt: 0, meUpdated: 0, demo: false, seq: 1 };
-var DEFAULTS = function () { return { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, circleTombstones: {}, layout: 'orbit', settingsAt: 0, meUpdated: 0, demo: false, seq: 1 }; };
+var state = { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, circleTombstones: {}, pad: [], padTombstones: {}, layout: 'orbit', settingsAt: 0, meUpdated: 0, demo: false, seq: 1 };
+var DEFAULTS = function () { return { me: { name: 'Me' }, people: [], circles: [], colors: {}, tombstones: {}, circleTombstones: {}, pad: [], padTombstones: {}, layout: 'orbit', settingsAt: 0, meUpdated: 0, demo: false, seq: 1 }; };
 var applyingRemote = false;
 var pendingRemote = null;
 
@@ -27,7 +27,7 @@ function isEditing() {
   // anything typed inside a panel we rebuild wholesale: the card, the touchpoint
   // composer, an inline field editor. Checking the container rather than a list
   // of classes means a new control here is covered the day it is added.
-  if (el.closest('#dossier, .logger, .cpick, .newfield')) return true;
+  if (el.closest('#dossier, .logger, .cpick, .newfield, #pad')) return true;
   return !!(el.matches && el.matches('.inplace, .chipinput, .notebox'));
 }
 
@@ -41,6 +41,8 @@ function load() {
     var d = JSON.parse(raw);
     if (!d || !Array.isArray(d.people)) return false;
     state = Object.assign(DEFAULTS(), d);
+    if (!Array.isArray(state.pad)) state.pad = [];
+    state.padTombstones = state.padTombstones || {};
     state.people.forEach(normalizePerson);
     return true;
   } catch (e) { return false; }
@@ -63,7 +65,49 @@ function forget(p) {
   state.people = state.people.filter(function (x) { return x.id !== p.id; });
 }
 
-var LEVELS = ['', 'undergrad', 'grad'];
+/* Real degrees rather than a vague undergrad/grad pair. Clicking the chip
+   opens this list; the two old values are converted on the way in. */
+var DEGREES = ['BS', 'BA', 'BBA', 'BFA', 'Assoc', 'MS', 'MA', 'MBA', 'MEng', 'MPH', 'MFA', 'JD', 'MD', 'PhD', 'EdD'];
+var OLD_LEVEL = { undergrad: 'BS', grad: 'MS' };
+
+/* Spoken or written degree -> the label on the chip. Most specific first, so
+   "MBA" is not read as a bare "BA". */
+var DEGREE_WORDS = [
+  [/\bm\.?b\.?a\b|\bbusiness school\b/i, 'MBA'],
+  [/\bb\.?b\.?a\b/i, 'BBA'],
+  [/\bm\.?p\.?h\b|\bpublic health\b/i, 'MPH'],
+  [/\bm\.?f\.?a\b/i, 'MFA'],
+  [/\bb\.?f\.?a\b/i, 'BFA'],
+  [/\bm\.?eng\b/i, 'MEng'],
+  [/\bed\.?d\b/i, 'EdD'],
+  [/\bph\.?d\b|\bdoctorate\b|\bdoctoral\b/i, 'PhD'],
+  [/\bj\.?d\b|\blaw school\b/i, 'JD'],
+  [/\bm\.?d\b|\bmed(?:ical)? school\b|\bresidency\b/i, 'MD'],
+  [/\bm\.?s\.?c?\b|\bmasters?(?:'s)?\s+of\s+science\b/i, 'MS'],
+  [/\bm\.?a\b|\bmasters?(?:'s)?\s+of\s+arts\b/i, 'MA'],
+  [/\bb\.?s\.?c?\b|\bbachelors?(?:'s)?\s+of\s+science\b/i, 'BS'],
+  [/\bb\.?a\b|\bbachelors?(?:'s)?\s+of\s+arts\b/i, 'BA'],
+  [/\bassociates?\b/i, 'Assoc'],
+  [/\bmasters?\b|\bmaster's\b/i, 'MS'],
+  [/\bbachelors?\b|\bundergrad(?:uate)?\b|\bfreshman\b|\bsophomore\b/i, 'BS']
+];
+
+/* The degree named in a phrase, or '' when it only says "grad" — better blank
+   than a guess at which degree it was. */
+function degreeIn(hay) {
+  if (!hay) return '';
+  for (var i = 0; i < DEGREE_WORDS.length; i++) {
+    if (DEGREE_WORDS[i][0].test(hay)) return DEGREE_WORDS[i][1];
+  }
+  return '';
+}
+function cleanDegree(v) {
+  v = clean(v || '');
+  if (!v) return '';
+  if (OLD_LEVEL[v.toLowerCase()]) return OLD_LEVEL[v.toLowerCase()];
+  var hit = DEGREES.filter(function (d) { return d.toLowerCase() === v.toLowerCase(); })[0];
+  return hit || degreeIn(v) || '';
+}
 
 function schoolsOf(p) { return p.schools || []; }
 
@@ -71,8 +115,9 @@ function addSchool(list, name, level) {
   name = clean(name);
   if (!name) return list;
   var found = list.filter(function (s) { return s.name.toLowerCase() === name.toLowerCase(); })[0];
+  level = cleanDegree(level);
   if (found) { if (level && !found.level) found.level = level; return list; }
-  list.push({ name: name, level: level || '' });
+  list.push({ name: name, level: level });
   return list;
 }
 
@@ -84,6 +129,8 @@ function normalizePerson(p) {
   // schools became a list with a level on each
   if (!Array.isArray(p.schools)) p.schools = [];
   if (p.school) { addSchool(p.schools, p.school, ''); delete p.school; }
+  // undergrad/grad from the old two-value days become a real degree
+  p.schools.forEach(function (sc) { sc.level = cleanDegree(sc.level); });
 
   // birthday and "met via" are gone as fields; anything already recorded
   // keeps its place on the card as a line of its own
@@ -104,7 +151,7 @@ function blankPerson(name) {
   return normalizePerson({
     id: uid(), name: name || '', email: '', phone: '', profession: '', company: '',
     schools: [], location: '', circles: [], tags: [], custom: {},
-    followUp: null, notes: [], log: [], created: Date.now()
+    notes: [], log: [], created: Date.now()
   });
 }
 
@@ -140,12 +187,6 @@ function lastTouch(p) {
   return t;
 }
 function daysSince(t) { return Math.floor((Date.now() - t) / DAY); }
-/* Only a follow-up you actually asked for counts as due. Nobody goes cold on
-   their own here. */
-function nudgeDue(p) {
-  return !!(p.followUp && p.followUp.date && p.followUp.date <= Date.now() + DAY);
-}
-
 /* Where a person hangs. First one is their primary — it colours their dot and
    is the branch they sit closest to. */
 function circlesOf(p) {
@@ -316,16 +357,6 @@ function relativeDate(text) {
   return now.getTime();
 }
 
-function futureDate(text) {
-  var m = /\b(?:follow(?:ing)?[ -]?up|circle back|check in|reconnect|talk|catch up|reach out|ping)\b[^.;\n]{0,40}?\b(?:in|next)\s+(a|an|one|two|three|four|six|\d{1,2})?\s*(day|week|month|quarter)s?\b/i.exec(text)
-    || /\bin\s+(a|an|one|two|three|four|six|\d{1,2})\s+(day|week|month)s?\b/i.exec(text);
-  if (!m) return null;
-  var words = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, six: 6 };
-  var n = m[1] ? (words[m[1].toLowerCase()] || parseInt(m[1], 10) || 1) : 1;
-  var unit = m[2].toLowerCase();
-  var mult = unit === 'day' ? 1 : unit === 'week' ? 7 : unit === 'month' ? 30 : 90;
-  return Date.now() + n * mult * DAY;
-}
 
 function findPerson(name) {
   if (!name) return null;
@@ -361,7 +392,7 @@ var CLEARABLE = /^(e-?mail|mail|phone|number|school|company|employer|role|title|
    longer be mistaken for the person's name further down. */
 function parse(raw) {
   var text = clean(raw);
-  var out = { name: '', person: null, patch: {}, custom: {}, clears: [], tags: [], schools: [], via: null, viaName: '', entry: null, followUp: null };
+  var out = { name: '', person: null, patch: {}, custom: {}, clears: [], tags: [], schools: [], via: null, viaName: '', entry: null };
   var work = ' ' + text + ' ';
   var m;
 
@@ -504,15 +535,6 @@ function parse(raw) {
 
   // 9. schools — several, each possibly undergrad or graduate. People write
   //    them in lower case as often as not, so casing is restored on the way in.
-  var GRAD = /\b(mba|ph\.?d|phd|masters?|master's|grad school|graduate school|jd|md|mfa|m\.?s\.?|m\.?a\.?|doctorate|law school|med school|business school|residency|fellowship)\b/i;
-  var UNDER = /\b(undergrad(?:uate)?|bachelors?|b\.?[as]\.?|freshman|sophomore)\b/i;
-
-  function levelNear(hay) {
-    if (GRAD.test(hay)) return 'grad';
-    if (UNDER.test(hay)) return 'undergrad';
-    return '';
-  }
-
   var SCHOOL_NAME = "[\\w'’.&-]+(?:\\s+[\\w'’.&-]+){0,3}";
   var seenSchool = {};
   function noteSchool(name, hay) {
@@ -520,7 +542,7 @@ function parse(raw) {
     if (!name || name.length < 2) return;
     if (seenSchool[name.toLowerCase()]) return;
     seenSchool[name.toLowerCase()] = 1;
-    addSchool(out.schools, name, levelNear(hay));
+    addSchool(out.schools, name, degreeIn(hay));
   }
 
   var sre = new RegExp('\\b(?:went to|studied at|graduated from|attended|was at|alum(?:n|ni|na|nus)?\\s+of|did (?:her|his|their) (?:mba|ph\\.?d|masters?|jd|md|mfa|degree|doctorate|undergrad) at|got (?:her|his|their) (?:mba|ph\\.?d|masters?|jd|md|mfa|degree|doctorate) (?:at|from))\\s+(' + SCHOOL_NAME + ')([^.;\\n]{0,28})', 'gi');
@@ -582,9 +604,6 @@ function parse(raw) {
   for (var c = 0; c < CHANNELS.length; c++) { if (CHANNELS[c][1].test(text)) { channel = CHANNELS[c][0]; break; } }
   out.entry = { channel: channel || 'note', at: relativeDate(text), text: text, learned: out.learned || '' };
 
-  var fu = futureDate(text);
-  if (fu) out.followUp = { date: fu, what: '' };
-
   // 14. which circle it sprouts from
   if (!out.patch.circle) {
     var known = circleList().map(function (x) { return x.name.toLowerCase(); });
@@ -637,7 +656,6 @@ function commit(draft) {
   if (draft.entry && draft.entry.text) {
     p.log.unshift({ id: uid(), at: draft.entry.at, channel: draft.entry.channel, text: draft.entry.text, learned: draft.entry.learned || '' });
   }
-  if (draft.followUp) p.followUp = draft.followUp;
   circlesOf(p).forEach(circleIndex);
   p.updated = Date.now();
   lastSubject = p;
@@ -1613,10 +1631,6 @@ function draw() {
         ctx.beginPath(); ctx.arc(n.x, n.y, r + 5, 0, Math.PI * 2);
         ctx.lineWidth = 1.2 / cam.k; ctx.strokeStyle = C.ink; ctx.stroke();
       }
-      if (n.ref && n.ref.followUp && n.ref.followUp.date <= Date.now() + DAY) {
-        ctx.beginPath(); ctx.arc(n.x + r + 4, n.y - r - 2, 2.2, 0, Math.PI * 2);
-        ctx.fillStyle = C.warn; ctx.fill();
-      }
     }
   });
 
@@ -1964,13 +1978,12 @@ document.addEventListener('click', function (e) {
 function updateHint() { $('#hint').hidden = state.people.length > 0; }
 
 function renderStats() {
-  var due = state.people.filter(nudgeDue).length;
   var logs = state.people.reduce(function (a, p) { return a + p.log.length; }, 0);
   $('#stats').innerHTML =
     '<span><b>' + state.people.length + '</b> people</span>' +
     '<span><b>' + circleList().length + '</b> circles</span>' +
     '<span><b>' + logs + '</b> touchpoints</span>' +
-    (due ? '<span class="due"><b>' + due + '</b> to follow up</span>' : '');
+    '';
 }
 
 function renderLegend() {
@@ -1985,19 +1998,105 @@ function renderLegend() {
   }).join('');
 }
 
-function renderNudges() {
-  var due = state.people.filter(nudgeDue).sort(function (a, b) { return lastTouch(a) - lastTouch(b); });
-  $('#nudge-count').textContent = due.length || '';
-  $('#nudges').innerHTML = due.slice(0, 12).map(function (p) {
-    var why = 'follow-up due · last touch ' + (p.log.length ? ago(lastTouch(p)) : 'never');
-    return '<button data-goto="' + p.id + '"><span class="n1">' + esc(p.name) + '</span><br>' +
-      '<span class="n2">' + esc(why) + '</span></button>';
-  }).join('') || '<div class="empty">No follow-ups due.</div>';
+
+/* ---- the notepad ----
+   Loose notes with nobody attached: a thought, an address, a to-do. Each one
+   carries its own stamp so two devices merge them rather than overwrite, and
+   a deleted one leaves a tombstone so it does not come back on the next pull. */
+
+function padNotes() {
+  return (state.pad || []).slice().sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
 }
+
+function addPadNote(text) {
+  text = clean(text);
+  if (!text) return;
+  state.pad = state.pad || [];
+  state.pad.unshift({ id: 'n' + (state.seq++) + Math.random().toString(36).slice(2, 6),
+                      t: text, at: Date.now(), upd: Date.now() });
+  save(); renderPad();
+}
+
+function dropPadNote(id) {
+  state.padTombstones = state.padTombstones || {};
+  state.padTombstones[id] = Date.now();
+  state.pad = (state.pad || []).filter(function (n) { return n.id !== id; });
+  save(); renderPad();
+}
+
+function renderPad() {
+  var list = padNotes();
+  var el = $('#pad-list');
+  if (!el) return;
+  $('#pad-count').textContent = list.length || '';
+  // never rebuilt out from under a cursor: the box you type in lives outside this
+  el.innerHTML = list.map(function (n) {
+    return '<div class="pnote">' +
+      '<button class="del" data-delpad="' + esc(n.id) + '" title="Delete note" aria-label="Delete note">&times;</button>' +
+      '<span class="val" data-padnote="' + esc(n.id) + '" tabindex="0" role="button" title="Click to edit">' +
+        esc(n.t) + '</span>' +
+      '<span class="when">' + esc(ago(n.at)) + '</span>' +
+    '</div>';
+  }).join('');
+}
+
+var PAD_SHUT = 'rootwork.pad.shut';
+
+(function wirePad() {
+  var pad = $('#pad'), box = $('#pad-input');
+  if (!pad || !box) return;
+
+  var shut = false;
+  try { shut = localStorage.getItem(PAD_SHUT) === '1'; } catch (e) { }
+  var setShut = function (v) {
+    shut = v;
+    pad.setAttribute('data-shut', v ? '1' : '0');
+    $('#pad-toggle').textContent = v ? '+' : '–';
+    $('#pad-toggle').setAttribute('aria-expanded', v ? 'false' : 'true');
+    try { localStorage.setItem(PAD_SHUT, v ? '1' : '0'); } catch (e) { }
+  };
+  setShut(shut);
+  $('#pad-toggle').addEventListener('click', function () {
+    setShut(!shut);
+    if (!shut) box.focus();
+  });
+
+  var grow = function () {
+    box.style.height = 'auto';
+    box.style.height = Math.min(120, box.scrollHeight) + 'px';
+  };
+  box.addEventListener('input', grow);
+  box.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!clean(box.value)) return;
+      addPadNote(box.value);
+      box.value = ''; grow();
+    }
+    if (e.key === 'Escape') { box.value = ''; grow(); box.blur(); }
+  });
+
+  pad.addEventListener('click', function (e) {
+    var d = e.target.closest('[data-delpad]');
+    if (d) return dropPadNote(d.dataset.delpad);
+    var v = e.target.closest('[data-padnote]');
+    if (v) {
+      var id = v.dataset.padnote;
+      var note = (state.pad || []).filter(function (n) { return n.id === id; })[0];
+      if (!note) return;
+      editInPlace(v, note.t, true, function (val) {
+        if (val === null) return renderPad();
+        if (clean(val)) { note.t = clean(val); note.upd = Date.now(); }
+        else dropPadNote(id);
+        save(); renderPad();
+      });
+    }
+  });
+})();
 
 function renderAll() {
   renderLayouts();
-  rebuild(); renderStats(); renderLegend(); renderNudges(); kick();
+  rebuild(); renderStats(); renderLegend(); renderPad(); kick();
   if (selected && selected.kind === 'person') {
     var still = state.people.filter(function (p) { return p.id === selected.id; })[0];
     if (still) openDossier(byId[still.id] || selected); else closeDossier();
@@ -2079,7 +2178,7 @@ function openDossier(node) {
       '<div class="d-kicker"><span class="swatch" style="background:' + col + '"></span>' +
         p.log.length + ' touchpoint' + (p.log.length === 1 ? '' : 's') +
         ' · last ' + (p.log.length ? ago(lt) : 'never') +
-        (nudgeDue(p) ? ' <b class="due">· due a nudge</b>' : '') + '</div>' +
+        '</div>' +
       '<h2 class="d-name"><span class="val" data-field="name" tabindex="0" role="button" title="Click to rename">' + esc(p.name) + '</span></h2>' +
       '<div class="d-sub">' + esc([p.profession, p.company].filter(Boolean).join(' · ') || 'No role recorded') + '</div>' +
     '</div>' +
@@ -2093,8 +2192,6 @@ function openDossier(node) {
           return '<dt>' + esc(k) + '</dt><dd><span class="val" data-custom="' + esc(k) + '" tabindex="0" role="button" ' +
             'title="Click to edit">' + esc(p.custom[k]) + '</span></dd>';
         }).join('') +
-        (p.followUp && p.followUp.date ? '<dt>Follow up</dt><dd><span class="val" data-followup tabindex="0" role="button">' +
-          fmtDate(p.followUp.date) + '</span></dd>' : '') +
       '</dl>' +
       '<button class="addfield" data-newfield>+ another field</button>' +
       '</div>' +
@@ -2116,8 +2213,8 @@ function openDossier(node) {
           schoolsOf(p).map(function (sc, i) {
             return '<span class="cchip school">' +
               '<button class="lbl" data-editschool="' + i + '" title="Click to rename">' + esc(sc.name) + '</button>' +
-              '<button class="lvl' + (sc.level ? '' : ' none') + '" data-level="' + i + '" title="Undergrad, grad, or unspecified">' +
-                (sc.level || 'level') + '</button>' +
+              '<button class="lvl' + (sc.level ? '' : ' none') + '" data-level="' + i + '" title="Pick the degree">' +
+                (sc.level || 'degree') + '</button>' +
               '<button class="x" data-rmschool="' + i + '" aria-label="Remove ' + esc(sc.name) + '">&times;</button></span>';
           }).join('') +
           '<input class="chipinput" data-add="school" placeholder="' + (schoolsOf(p).length ? 'another…' : 'add…') + '" aria-label="Add a school">') +
@@ -2228,14 +2325,6 @@ $('#dossier').addEventListener('click', function (e) {
   var v = e.target.closest('.val');
   if (v && !e.target.closest('[data-keep]')) {
     var field = v.dataset.field, ckey = v.dataset.custom;
-    if (v.hasAttribute('data-followup')) {
-      return editInPlace(v, p.followUp ? new Date(p.followUp.date).toISOString().slice(0, 10) : '', false, function (val) {
-        if (val === null) return openDossier(selected);
-        var d = Date.parse(val);
-        p.followUp = isNaN(d) ? null : { date: d, what: p.followUp ? p.followUp.what : '' };
-        touch(p); save(); renderAll(); openDossier(selected);
-      });
-    }
     if (v.dataset.note) {
       var nid = v.dataset.note;
       var note = p.notes.filter(function (x) { return x.id === nid; })[0];
@@ -2269,7 +2358,9 @@ $('#dossier').addEventListener('click', function (e) {
 
   if (t.dataset.level !== undefined && t.hasAttribute('data-level')) {
     var sc = schoolsOf(p)[+t.dataset.level];
-    if (sc) { sc.level = LEVELS[(LEVELS.indexOf(sc.level) + 1) % LEVELS.length]; touch(p); save(); openDossier(selected); }
+    if (sc) degreePicker(t, sc.level, function (d) {
+      sc.level = d; touch(p); save(); openDossier(selected);
+    });
     return;
   }
   if (t.dataset.rmschool !== undefined && t.hasAttribute('data-rmschool')) {
@@ -2380,6 +2471,49 @@ $('#dossier').addEventListener('click', function (e) {
     touch(p); save(); openDossier(selected); renderAll();
   }
 });
+
+/* What to take out of "Wharton MBA" to leave the school name behind. */
+var DEGREE_STRIP = /\s*\b(?:b\.?b\.?a|b\.?f\.?a|m\.?b\.?a|m\.?p\.?h|m\.?f\.?a|m\.?eng|ed\.?d|ph\.?d|j\.?d|m\.?d|m\.?s\.?c?|m\.?a|b\.?s\.?c?|b\.?a|associates?|masters?(?:'s)?|bachelors?(?:'s)?|undergrad(?:uate)?|grad(?:uate)?(?: school)?|law school|med(?:ical)? school|business school|public health|doctorate)\b\s*/gi;
+
+/* Which degree they took there. */
+function degreePicker(anchor, current, pick) {
+  var old = document.getElementById('cpick');
+  if (old) old.remove();
+  var box = document.createElement('div');
+  box.id = 'cpick';
+  box.className = 'cpick degrees';
+  box.innerHTML = '<div class="ptitle">Degree</div><div class="dgrid">' +
+    DEGREES.map(function (d) {
+      return '<button data-deg="' + d + '"' + (d === current ? ' data-on="1"' : '') + '>' + d + '</button>';
+    }).join('') + '</div>' +
+    '<div class="cnew"><input placeholder="Something else…" aria-label="Degree" value="' + esc(current || '') + '">' +
+      '<button class="btn" data-new>Set</button></div>' +
+    '<div class="mrow"><button data-clear>Leave it blank</button></div>';
+  document.body.appendChild(box);
+
+  var r = anchor.getBoundingClientRect();
+  box.style.left = Math.min(window.innerWidth - box.offsetWidth - 10, r.left) + 'px';
+  box.style.top = Math.min(window.innerHeight - box.offsetHeight - 10, r.bottom + 6) + 'px';
+
+  var field = box.querySelector('input');
+  var done = function (v) { box.remove(); pick(clean(v || '')); };
+  box.addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.deg) return done(b.dataset.deg);
+    if (b.hasAttribute('data-new')) return done(field.value);
+    if (b.hasAttribute('data-clear')) return done('');
+  });
+  field.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); done(field.value); }
+    if (e.key === 'Escape') { e.stopPropagation(); box.remove(); }
+  });
+  setTimeout(function () {
+    document.addEventListener('pointerdown', function off(e) {
+      if (!box.contains(e.target)) { box.remove(); document.removeEventListener('pointerdown', off); }
+    });
+  }, 0);
+}
 
 /* A little popover of the circles that exist, plus a field to name a new one. */
 function circlePicker(anchor, pick) {
@@ -2624,9 +2758,8 @@ $('#dossier').addEventListener('keydown', function (e) {
   }
   if (inp.dataset.add === 'school') {
     // "Wharton mba" or "Lehigh undergrad" sets the level in the same breath
-    var level = '';
-    var stripped = val.replace(/\s*\b(undergrad(?:uate)?|bachelors?)\b\s*/i, function () { level = 'undergrad'; return ' '; })
-      .replace(/\s*\b(grad(?:uate)?(?: school)?|mba|ph\.?d|masters?|jd|md|mfa|law school|med school)\b\s*/i, function () { level = 'grad'; return ' '; });
+    var level = degreeIn(val);
+    var stripped = val.replace(DEGREE_STRIP, ' ');
     addSchool(p.schools, titleCase(clean(stripped) || val), level);
   } else {
     var tag = val.replace(/^#/, '');
@@ -2674,7 +2807,7 @@ function personForm(p) {
     f('profession', 'Profession') + f('company', 'Company') +
     '<div class="field"><label for="f-school">Schools</label><input id="f-school" value="' +
       esc(schoolsOf(p).map(function (x) { return x.name + (x.level ? ' ' + x.level : ''); }).join(', ')) + '">' +
-      '<span class="hint">Comma separated. Add “undergrad” or “grad” after a name.</span></div>' +
+      '<span class="hint">Comma separated. Add a degree after a name — “Rutgers BS, Wharton MBA”.</span></div>' +
     f('location', 'Location') +
     '<div class="field wide"><label for="f-tags">Tags</label><input id="f-tags" value="' + esc(p.tags.join(', ')) + '">' +
       '<span class="hint">Comma separated.</span></div>' +
@@ -2690,9 +2823,8 @@ function personForm(p) {
     ['name', 'email', 'phone', 'profession', 'company', 'location'].forEach(function (k) { p[k] = g(k); });
     p.schools = [];
     g('school').split(',').map(clean).filter(Boolean).forEach(function (bit) {
-      var level = '';
-      var nm = bit.replace(/\s*\b(undergrad(?:uate)?|bachelors?)\b\s*/i, function () { level = 'undergrad'; return ' '; })
-        .replace(/\s*\b(grad(?:uate)?(?: school)?|mba|ph\.?d|masters?|jd|md|mfa)\b\s*/i, function () { level = 'grad'; return ' '; });
+      var level = degreeIn(bit);
+      var nm = bit.replace(DEGREE_STRIP, ' ');
       addSchool(p.schools, titleCase(clean(nm) || bit), level);
     });
     p.circles = g('circle').split(',').map(clean).filter(Boolean);
@@ -3127,75 +3259,6 @@ function exportModal() {
   render();
 }
 
-function helpModal() {
-  var body = '<div class="helpgrid">' +
-    '<section><h5>Just say what happened</h5>' +
-      '<p>One sentence in the bar. Rootwork pulls out the person and the fields, shows you what it caught, and you press Enter to keep it.</p>' +
-      '<div class="ex">Zoom with <b>Dana Okafor</b> — she is a <b>data scientist at Merck</b>, <b>went to Rutgers</b>, <b>dana@merck.com</b>, <b>555-0142</b>. Learned <b>she runs the internal AI guild</b>. Follow up <b>in two weeks</b>. <b>#work</b></div></section>' +
-    '<section><h5>What it looks for</h5>' +
-      '<p>Emails and phone numbers on sight · <em>went to / studied at / Rutgers grad</em> → school · <em>is a X at Y</em>, <em>runs a X</em> → profession and company · <em>lives in</em> → location · <em>learned / turns out / she said</em> → the takeaway · <em>follow up in two weeks</em> → a nudge · <em>#tag</em> → tags · <em>zoom, coffee, lunch, called, texted, conference</em> → how you talked · <em>yesterday, last Tuesday, on 3/14</em> → when.</p></section>' +
-    '<section><h5>Talk about someone already on the map</h5>' +
-      '<p>Open their dossier, or just keep typing after logging them, and pronouns land where you mean:</p>' +
-      '<div class="ex">her location is Bethlehem\nhis birthday is June 3\nchange her email to dana@merck.com\nremove his phone</div>' +
-      '<p>Anything the standard fields do not cover becomes a line of its own — <em>her partner is Sam</em>, <em>his favourite coffee is a cortado</em> — and shows on the card under its own label. A bare fact like these edits the card without logging a touchpoint; say what happened (<em>coffee with…</em>, <em>learned…</em>) and it logs one.</p></section>' +
-    '<section><h5>Your spreadsheet</h5>' +
-      '<p>Import takes a CSV or TSV file — drop it anywhere on the map, or pick it in the Import dialog. It reads the columns, shows you what it thinks each one is with a sample from your own data, and lets you correct any of them. Columns it cannot name are kept as their own labelled fields rather than thrown away, and it can sort everyone into circles by company, by school, by a column of your own, or all into one.</p></section>' +
-    '<section><h5>When it guesses wrong</h5>' +
-      '<p>Click any chip in the preview to fix it, or the × to drop it. Force a field outright with a colon:</p>' +
-      '<div class="ex">school: Lehigh · circle: Family · role: Pastry chef</div></section>' +
-    '<section><h5>The map</h5>' +
-      '<p>You are the centre. Circles branch off you; people branch off circles. Every dot is the same size — only colour and position carry meaning.</p>' +
-      '<p>Seven ways to see it, from the buttons at the top left (or the number keys):</p>' +
-      '<div class="ex"><b>Web</b>     tidied organic — each circle keeps to its own quarter\n' +
-      '<b>Classic</b> the original springs, left to find their own shape\n' +
-      '<b>Venn</b>    each circle a field; anyone in two sits in the overlap\n' +
-      '<b>Arc</b>     everyone on one ring, connections crossing the middle\n' +
-      '<b>Grid</b>    a block per circle, names in tidy rows\n' +
-      '<b>Pulse</b>   distance from you is time since you last spoke\n' +
-      '<b>Stars</b>   led by who introduced whom, so connected people cluster</div>' +
-      '<p>Wherever a name appears, a coloured dot after it marks every other circle that person is in — so a shared person is never hidden, whichever view you are in. Switching view re-frames the map for you.</p>' +
-      '<p>Drag a person onto a circle to file them there, or onto another person to connect them. Let go anywhere else and the layout takes them back — nothing stays pinned. Scroll to zoom, drag to pan, <kbd>T</kbd> to tidy.</p></section>' +
-    '<section><h5>Reshaping the map</h5>' +
-      '<p>The bar takes instructions as well as notes. Anything that changes several people at once is described and counted first, and every one of them can be taken back with <kbd>⌘Z</kbd> or the Undo on the toast.</p>' +
-      '<div class="ex">remove everyone but keep the categories\n' +
-      'create a category called Vendors\n' +
-      'add Ada to Vendors          ·  remove Ada from Work\n' +
-      'rename Neighbors to Bethlehem\n' +
-      'merge Industry into Vendors\n' +
-      'move everyone from Work to Clients\n' +
-      'empty the School circle     ·  delete the School circle\n' +
-      'delete everyone in Vendors  ·  erase the whole map</div></section>' +
-    '<section><h5>Look and settings</h5>' +
-      '<div class="ex">make Work green             ·  turn School gold\n' +
-      'hide Family                 ·  show everything\n' +
-      'switch to light mode        ·  call me Ben Greenberg\n' +
-      'tidy the map</div>' +
-      '<p>Colours can also be set by clicking the dot beside a circle in the list at the lower left.</p></section>' +
-    '<section><h5>Circles</h5>' +
-      '<p>Someone can be in as many as you like, and <b>the order matters</b>: the first is their <em>main</em> circle — the one they are filed under and the colour their dot takes. On their card, drag the chips to reorder them, press <b>‹</b> to move one ahead, or click a chip to make it main outright. × takes them out, <em>+ circle</em> adds another.</p>' +
-      '<p>In Grid, Arc, Pulse and Venn a person sits with their main circle. In Web, Classic and Stars every circle they are in pulls on them, so they settle between — nearest the main one.</p>' +
-      '<p><b>Drag a person onto a circle</b> on the map to file them there; that circle becomes their main one.</p>' +
-      '<p><b>Click a circle on the map</b> to recolour, rename, hide or delete it. The button beside <em>Add person</em> makes a new one, and an empty circle stays as a branch until you delete it — which is what makes “remove everyone but keep the categories” worth saying.</p></section>' +
-    '<section><h5>Schools, tags, connections</h5>' +
-      '<p>Type a school and press <kbd>↵</kbd> — it lands as a chip, and the level next to it cycles between undergrad, grad and unset when you click it. Saying “<em>swarthmore undergrad</em>” or “<em>wharton mba</em>” sets the level as you type, in the bar or in the chip.</p>' +
-      '<p><b>Connections</b> record who put you onto whom, drawn as a dashed arrow pointing from the person who made the introduction to the person you met. <b>Drag one person onto another</b> to join them; the toast offers to flip the direction if you had it the other way round. The bar understands it too — “<em>Marcus introduced me to Rae Kim</em>”, “<em>got her info from Ada</em>”, “<em>met Lila through Priya</em>” — and the Connections row on a card takes a name directly.</p>' +
-      '<p><b>Notes</b> sit under the history on every card — write one and press <kbd>↵</kbd>. Click an existing note to edit it.</p>' +
-      '<p><b>Touchpoints</b> can be logged straight from a card: <em>+ log a touchpoint</em> under History gives you the kind, the date and what happened, without going near the bar at the bottom.</p></section>' +
-    '<section><h5>When the map gets messy</h5>' +
-      '<p>The <b>tidy</b> button (top right, or <kbd>T</kbd>) lets go of everyone you have dragged into place and lets the whole thing settle again. Circles claim room in proportion to how many people they hold, so a School of thirty gets the space it needs.</p></section>' +
-    '<section><h5>When the map gets big</h5>' +
-      '<p>Past a few dozen people not every name can be printed without the map turning to mush, so names are rationed: you, the circles, whatever is selected or hovered, anything matching the search, and then the people you spoke to most recently. The rest stay as dots — hover one, or type a name in the search box, and it is named and ringed on the map.</p></section>' +
-    '<section><h5>Fixing a card</h5>' +
-      '<p>Click any value on someone’s card and type over it — the name at the top too. Empty fields say <em>add</em>; click to fill them. <em>+ another field</em> at the bottom takes anything the standard ones do not cover.</p></section>' +
-    '<section><h5>Commands</h5>' +
-      '<div class="ex">/undo            — take back the last change\n/me Ben Fisher   — name the centre\n/import          — bring in a spreadsheet\n/export          — copy it all back out\n/sample          — load or clear the sample map\n/help            — this</div></section>' +
-    '<section><h5>On your phone</h5>' +
-      '<p>Open the app’s address in Safari or Chrome and use <em>Add to Home Screen</em> — it installs with its own icon and opens fullscreen, working with no signal.</p></section>' +
-    '<section><h5>Where the data lives</h5>' +
-      '<p>In this browser by default — no account, no server. Turn on <em>Sync</em> in the top bar and it also goes to a database you own, encrypted here with a passphrase only you hold, so the same map opens on every device you pair. Either way, keep a JSON backup from Export if it matters.</p></section>' +
-    '</div>';
-  modal('How to talk to it', 'Rootwork', body, '<button class="btn primary" data-close>Got it</button>');
-}
 
 
 /* ------------------------------------------------------- structural work --
@@ -3365,11 +3428,7 @@ function structural(text) {
     };
   }
 
-  // theme
-  if ((m = /\b(?:switch to|use|turn on|go|set)\s+(light|dark)\s*(?:mode|theme)?\b/i.test(t) ? /\b(light|dark)\b/i.exec(t) : null)) {
-    var want = m[1].toLowerCase();
-    return { summary: want.charAt(0).toUpperCase() + want.slice(1) + ' theme', quiet: true, run: function () { applyTheme(want); } };
-  }
+
 
   // showing and hiding branches
   if ((m = /^\s*(?:hide|mute|collapse)\s+(?:the\s+)?(.+?)\s*$/i.exec(t)) && (c = matchCircle(m[1]))) {
@@ -3517,10 +3576,6 @@ function renderPreview() {
     chips.push('<span class="chip"><span class="k">learned</span><span class="v">' + esc(draft.entry.learned) + '</span>' +
       '<button data-droplearned aria-label="Drop takeaway">&times;</button></span>');
   }
-  if (draft.followUp) {
-    chips.push('<span class="chip new"><span class="k">nudge</span><span class="v">' + fmtDate(draft.followUp.date) + '</span>' +
-      '<button data-dropfu aria-label="Drop follow-up">&times;</button></span>');
-  }
   draft.tags.forEach(function (t) { chips.push('<span class="chip"><span class="v">#' + esc(t) + '</span></span>'); });
 
   slot.innerHTML = '<div class="preview">' +
@@ -3575,7 +3630,6 @@ $('#preview-slot').addEventListener('click', function (e) {
     });
   }
   if (t.hasAttribute && t.hasAttribute('data-droplearned')) { draft.entry.learned = ''; renderPreview(); return; }
-  if (t.hasAttribute && t.hasAttribute('data-dropfu')) { draft.followUp = null; renderPreview(); return; }
   if (t.dataset.editk) {
     var k = t.dataset.editk;
     return editChip(t, draft.patch[k], function (v) {
@@ -3617,7 +3671,6 @@ $('#chatform').addEventListener('submit', function (e) {
   if (v[0] === '/') {
     var cmd = v.slice(1).split(' ')[0].toLowerCase(), rest = v.slice(cmd.length + 2).trim();
     chat.value = ''; autosize();
-    if (cmd === 'help') return helpModal();
     if (cmd === 'import') return importModal();
     if (cmd === 'export') return exportModal();
     if (cmd === 'me') {
@@ -3627,7 +3680,7 @@ $('#chatform').addEventListener('submit', function (e) {
     }
     if (cmd === 'sample') { toggleSample(); return; }
     if (cmd === 'undo') { undo(); return; }
-    toast('Unknown command. /help lists them.');
+    toast('Unknown command.');
     return;
   }
 
@@ -3820,25 +3873,6 @@ canvas.addEventListener('wheel', function (e) {
   needsDraw = true;
 }, { passive: false });
 
-/* ---- theme ---- */
-
-var THEME_KEY = 'rootwork.theme';
-function applyTheme(t) {
-  if (t === 'auto') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', t);
-  try { localStorage.setItem(THEME_KEY, t); } catch (e) { }
-  setTimeout(function () { readTokens(); needsDraw = true; }, 20);
-}
-$('#btn-theme').addEventListener('click', function () {
-  var cur = document.documentElement.getAttribute('data-theme') || 'auto';
-  var next = cur === 'auto' ? 'light' : cur === 'light' ? 'dark' : 'auto';
-  applyTheme(next);
-  toast('Theme: ' + next);
-});
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
-  readTokens(); needsDraw = true;
-});
-
 /* ---- sample map ---- */
 
 function sample() {
@@ -3855,27 +3889,27 @@ function sample() {
     return p;
   };
   return [
-    mk({ name: 'Dana Okafor', circle: 'Work', profession: 'Data scientist', company: 'Merck', schools: [{ name: 'Rutgers', level: 'undergrad' }],
+    mk({ name: 'Dana Okafor', circle: 'Work', profession: 'Data scientist', company: 'Merck', schools: [{ name: 'Rutgers', level: 'BS' }],
       email: 'dana.okafor@example.com', phone: '(908) 555-0142', location: 'Rahway, NJ', tags: ['ai'],
       howMet: 'met at the Rutgers alumni mixer' },
       [[4, 'zoom', 'Zoom about the forecasting pilot — she wants a two-week trial.', 'Runs the internal AI guild, 200 people'],
        [38, 'coffee', 'Coffee downtown before the panel.'],
        [96, 'met', 'Met at the Rutgers alumni mixer.']]),
-    mk({ name: 'Marcus Bell', circle: 'Work', profession: 'Engineering manager', company: 'Vanta', schools: [{ name: 'Lehigh', level: 'undergrad' }],
+    mk({ name: 'Marcus Bell', circle: 'Work', profession: 'Engineering manager', company: 'Vanta', schools: [{ name: 'Lehigh', level: 'BS' }],
       email: 'marcus@example.com', location: 'Brooklyn, NY', tags: ['hiring'] },
       [[11, 'call', 'Called about the staff role on his team.', 'Hiring two backend engineers in Q1'],
        [60, 'event', 'Sat next to him at the Philly infra meetup.']]),
     mk({ name: 'Priya Raman', circle: 'Work', profession: 'Product designer', company: 'Figma',
       email: 'priya@example.com', tags: ['design'] },
       [[130, 'coffee', 'Coffee at Monkey + Elf. Talked through the onboarding redesign.', 'Moving to Lisbon in the spring']]),
-    mk({ name: 'Tomás Ferreira', circles: ['School', 'Work'], schools: [{ name: 'Lehigh', level: 'undergrad' }, { name: 'Villanova', level: 'grad' }], profession: 'Attorney', company: 'Reed Smith',
+    mk({ name: 'Tomás Ferreira', circles: ['School', 'Work'], schools: [{ name: 'Lehigh', level: 'BS' }, { name: 'Villanova', level: 'JD' }], profession: 'Attorney', company: 'Reed Smith',
       email: 'tomas@example.com', phone: '(610) 555-0119' },
       [[22, 'meal', 'Dinner at Bolete with the Lehigh crowd.', 'Just made partner'],
        [210, 'call', 'Called for advice on the LLC paperwork.']]),
-    mk({ name: 'Hannah Koenig', circle: 'School', schools: [{ name: 'Lehigh', level: 'undergrad' }], profession: 'Pastry chef', company: 'Bread & Salt',
+    mk({ name: 'Hannah Koenig', circle: 'School', schools: [{ name: 'Lehigh', level: 'BS' }], profession: 'Pastry chef', company: 'Bread & Salt',
       email: 'hannah@example.com', location: 'Jersey City, NJ' },
       [[6, 'message', 'Texted about the croissant lamination class.', 'Teaching a Saturday workshop in March']]),
-    mk({ name: 'Owen Reilly', circle: 'School', schools: [{ name: 'Lehigh', level: 'undergrad' }], profession: 'High school teacher' },
+    mk({ name: 'Owen Reilly', circle: 'School', schools: [{ name: 'Lehigh', level: 'BS' }], profession: 'High school teacher' },
       [[168, 'event', 'Ran into him at homecoming.']]),
     mk({ name: 'Ada Whitfield', circles: ['Industry', 'Neighbors'], profession: 'Roaster', company: 'Deep Roots Coffee',
       email: 'ada@example.com', phone: '(484) 555-0177', location: 'Bethlehem, PA',
@@ -3934,7 +3968,6 @@ $('#btn-newcircle').addEventListener('click', function (e) {
 });
 $('#btn-import').addEventListener('click', importModal);
 $('#btn-export').addEventListener('click', exportModal);
-$('#btn-help').addEventListener('click', helpModal);
 $('#btn-fit').addEventListener('click', fit);
 $('#btn-tidy').addEventListener('click', function () {
   tidyMap();
@@ -3965,7 +3998,6 @@ document.addEventListener('keydown', function (e) {
   if (e.key === 't') tidyMap();
   var numbered = LAYOUTS[parseInt(e.key, 10) - 1];
   if (numbered && /^[1-9]$/.test(e.key)) setLayout(numbered.id);
-  if (e.key === '?') helpModal();
   if (e.key === 'n') { e.preventDefault(); personForm(null); }
 });
 
@@ -4019,17 +4051,13 @@ window.Rootwork = {
 /* ---- go ---- */
 
 (function init() {
-  var t = 'auto';
-  try { t = localStorage.getItem(THEME_KEY) || 'auto'; } catch (e) { }
-  if (t !== 'auto') document.documentElement.setAttribute('data-theme', t);
-
   load();
 
   readTokens();
   resize();
   renderLayouts();
   rebuild();
-  renderStats(); renderLegend(); renderNudges();
+  renderStats(); renderLegend(); renderPad();
 
   for (var i = 0; i < 90; i++) tick();     // land on the targets before framing
   fit();

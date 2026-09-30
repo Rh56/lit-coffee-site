@@ -11,8 +11,9 @@ is on `main` (GitHub Pages already serves the repo root).
 | file | what it is |
 | --- | --- |
 | `index.html` | the page shell |
-| `network.css` | tokens and every component; light and dark are both real themes |
+| `network.css` | tokens and every component; one theme, inked |
 | `app.js` | state, the sentence parser, the spring layout, the canvas plate, the interface |
+| `archive.css`, `archive.js` | the archive: seven ways to read the same map as filed paper |
 | `sync.js` | optional end-to-end encrypted sync across devices |
 | `sw.js`, `manifest.webmanifest`, `icons/` | what makes it installable |
 | `build-artifact.mjs` | inlines the above into one file for previewing as a Claude Artifact |
@@ -227,11 +228,32 @@ device that still has it; the same mechanism has always covered deleted people.
 
 ## Schools
 
-A list, not a field: type one and press enter. Each carries a level —
-undergrad, grad, or unset — cycled by clicking it, or set as you type
-(*"wharton mba"*, *"lehigh undergrad"*). The bar reads them out of a sentence
-the same way, lower case and all: *"swarthmore alumn, did her MBA at Wharton"*
-files both with the right levels.
+A list, not a field: type one and press enter. Each carries a **degree** — BS,
+BA, MS, MBA, JD, MD, PhD and the rest — picked from a list when you click the
+chip, or set as you type (*"wharton mba"*, *"rutgers bs"*). The bar reads them
+out of a sentence the same way, lower case and all: *"swarthmore alumn, did her
+MBA at Wharton"* files both with the right degrees. Anything filed under the
+old undergrad/grad pair is converted on load: undergrad becomes BS, grad
+becomes MS.
+
+## The archive
+
+The folder button in the top bar (or **A**) pulls a drawer out over the map,
+which keeps running, blurred, behind it. The same people and circles, read
+seven ways — pick one from the row of buttons and it is remembered:
+
+| design | what it is |
+| --- | --- |
+| **Drawer** | cut tabs over colour bands; a folder opens and its entries rise into it |
+| **Rolodex** | one card at a time on a ring — drag, scroll, arrow or type a name; click to turn it over |
+| **Light table** | every person a sheet loose on a table, draggable, lit by a lamp that follows the pointer; threads join whoever introduced whom |
+| **Index** | everyone at once, set tight, no colour but the pips; the hovered line types itself out along the bottom |
+| **Sublime** | one name a screen, full frame, dissolving into the next |
+| **Chroma** | no paper at all — each folder a field of its own light, names set huge over it |
+| **Desktop** | folders, files, a preview pane and a status bar; arrow keys walk it, Enter opens the card |
+
+Nothing here edits: *Open the card* hands the person back to the map, where
+everything is editable. Escape steps back out, one level at a time.
 
 ## Editing a card
 
@@ -251,12 +273,11 @@ error, since the next poll usually settles it.
 
 ## Talking to it
 
-The chat bar reads plain sentences — see **How to talk to it** in the app for
-the full list. It also takes instructions that reshape the map (`remove everyone
-but keep the categories`, `merge Industry into Vendors`, `rename Neighbors to
-Bethlehem`, `create a category called Vendors`, `add Ada to Vendors`) and ones
-that change how it looks or behaves (`make Work green`, `hide Family`,
-`switch to light mode`, `call me Ben`). Anything
+The chat bar reads plain sentences. It also takes instructions that reshape the
+map (`remove everyone but keep the categories`, `merge Industry into Vendors`,
+`rename Neighbors to Bethlehem`, `create a category called Vendors`, `add Ada to
+Vendors`) and ones that change how it looks (`make Work green`, `hide Family`,
+`call me Ben`). Anything
 touching more than one person is described and counted before it runs, and
 every change can be taken back with ⌘Z, the Undo on the toast, or `/undo`. Beyond logging a touchpoint it understands direct edits
 (`her location is Bethlehem`, `change his email to …`, `remove her phone`),

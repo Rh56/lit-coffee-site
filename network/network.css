@@ -33,9 +33,12 @@
   --h1:#d07a42; --h2:#4aa189; --h3:#7d8fdd; --h4:#c07aa8;
   --h5:#9bb154; --h6:#4f9cc0; --h7:#d0a545; --h8:#c07878;
 
-  --display: "Instrument Serif", Georgia, serif;
+  /* a didone for names, a typewriter for anything the archive "typed",
+     a grotesk for the working chrome */
+  --display: "Bodoni Moda", "Instrument Serif", Georgia, serif;
   --ui: "Archivo", system-ui, -apple-system, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+  --typed: "Courier Prime", "Courier New", ui-monospace, monospace;
 
   --r: 3px;
   color-scheme: dark;

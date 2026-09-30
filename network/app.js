@@ -2097,6 +2097,8 @@ var PAD_SHUT = 'rootwork.pad.shut';
 function renderAll() {
   renderLayouts();
   rebuild(); renderStats(); renderLegend(); renderPad(); kick();
+  // the archive reads the same state; let it know when it moved
+  document.dispatchEvent(new CustomEvent('rootwork:changed'));
   if (selected && selected.kind === 'person') {
     var still = state.people.filter(function (p) { return p.id === selected.id; })[0];
     if (still) openDossier(byId[still.id] || selected); else closeDossier();
@@ -3743,12 +3745,13 @@ search.addEventListener('keydown', function (e) {
   if (e.key === 'Enter') { var b = results.querySelector('[data-goto]'); if (b) b.click(); }
 });
 document.addEventListener('click', function (e) {
+  if (e.target.closest('#archive')) return;          // the archive answers for itself
   if (!e.target.closest('.searchwrap')) results.innerHTML = '';
   var g = e.target.closest('[data-goto]');
   if (g) { goTo(g.dataset.goto); results.innerHTML = ''; }
   var cc = e.target.closest('[data-color]');
   if (cc) { colorPicker(cc, cc.dataset.color); return; }
-  var c = e.target.closest('[data-circle]');
+  var c = e.target.closest('.legend-list [data-circle]');
   if (c) {
     var name = c.dataset.circle;
     if (hidden[name]) delete hidden[name]; else hidden[name] = true;
@@ -3975,6 +3978,7 @@ $('#btn-tidy').addEventListener('click', function () {
 });
 
 document.addEventListener('keydown', function (e) {
+  if (document.body.classList.contains('archived')) return;   // the archive has the keyboard
   if (e.key === 'Escape') {
     if (!$('#scrim').hidden) return closeModal();
     if (pendingPlan) { pendingPlan = null; return renderPlan(); }
@@ -4038,6 +4042,19 @@ window.Rootwork = {
     return true;
   },
   modal: modal, closeModal: closeModal, toast: toast,
+  // what the archive view needs to read the same map the canvas draws
+  lib: {
+    esc: esc, ago: ago, fmtDate: fmtDate,
+    circleList: circleList, circleIndex: circleIndex, circlesOf: circlesOf,
+    primaryCircle: primaryCircle, inCircle: inCircle,
+    lastTouch: lastTouch, schoolsOf: schoolsOf, tiesOf: tiesOf,
+    channelLabel: function (c) { return CHANNEL_LABEL[c] || c; },
+    openCard: function (id) {
+      var n = byId[id];
+      goTo(id);
+    },
+    save: function () { save(); renderAll(); }
+  },
   parse: parse,                                 // exposed for tests
   nodeScreen: function (id) {
     var n = byId[id] || nodes.filter(function (x) { return x.label === id; })[0];

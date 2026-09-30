@@ -218,6 +218,9 @@ function editValue(el) {
     // a name is on every screen; anything else is patched where it shows,
     // so the surface you are working on is not rebuilt under you
     if (field === 'name') return render(true);
+    // close this box first: patchField leaves alone anything still holding
+    // an input, which would otherwise include the one just finished
+    el.innerHTML = val ? esc(val) : '<span class="none">' + DASH + '</span>';
     patchField(p, field, val);
   }
   box.addEventListener('blur', function () { finish(true); });

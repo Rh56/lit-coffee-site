@@ -326,8 +326,6 @@ var nodes = [], links = [], byId = {};
 
 var LAYOUTS = [
   { id: 'web',     name: 'Web',     hint: 'Tidied organic — tight clusters, each circle keeping to its own quarter' },
-  { id: 'classic', name: 'Classic', hint: 'The original springs, left to find their own shape' },
-  { id: 'venn',    name: 'Venn',    hint: 'Each circle a field; anyone in two sits where they overlap' },
   { id: 'arc',     name: 'Arc',     hint: 'Everyone on one ring, grouped by circle, connections crossing the middle' },
   { id: 'grid',    name: 'Grid',    hint: 'A block per circle, names in tidy rows' },
   { id: 'pulse',   name: 'Pulse',   hint: 'Placed by how long since you spoke — the quietest drift outwards' },
@@ -335,12 +333,12 @@ var LAYOUTS = [
 ];
 
 function layoutId() {
-  var id = state.layout === 'orbit' ? 'web'
-    : (state.layout === 'tree' || state.layout === 'columns') ? 'grid'   // retired
-    : state.layout;
+  var id = (state.layout === 'orbit' || state.layout === 'classic') ? 'web'
+    : (state.layout === 'tree' || state.layout === 'columns' || state.layout === 'venn') ? 'grid'
+    : state.layout;                                   // retired views land somewhere sensible
   return LAYOUTS.some(function (l) { return l.id === id; }) ? id : 'web';
 }
-var LOOSE = { web: 1, classic: 1, stars: 1 };
+var LOOSE = { web: 1, stars: 1 };
 function isLoose() { return !!LOOSE[layoutId()]; }
 
 var R_PERSON = 6, R_HUB = 9, R_ME = 13;
@@ -441,11 +439,10 @@ function computeLayout() {
   var loose = nodes.filter(function (n) { return n.kind === 'person' && n.parent === me; });
 
   hubs.forEach(function (h) { h.arc = null; h.field = null; });
-  if (mode === 'venn') return layoutVenn(me, hubs, loose);
   if (mode === 'arc') return layoutArc(me, hubs, loose);
   if (mode === 'grid') return layoutGrid(me, hubs, loose);
   if (mode === 'pulse') return layoutPulse(me, hubs, loose);
-  return seedLoose(me, hubs, loose);          // web, classic and stars settle themselves
+  return seedLoose(me, hubs, loose);          // web and stars settle themselves
 }
 
 /* Web and Venn are relaxed rather than placed, so they only need a sensible
@@ -474,152 +471,6 @@ function seedLoose(me, hubs, loose) {
    into each other so the shared ones can sit in the lens between them. Placed
    outright rather than relaxed: forces pulling "gather", "separate" and "keep
    non-members out" at the same time only ever fight each other. */
-function layoutVenn(me, hubs, loose) {
-  me.tx = 0; me.ty = 0;
-  var groups = hubs.filter(function (g) { return g.members.length; });
-  if (!groups.length) { hubs.forEach(function (g) { g.tx = 0; g.ty = 160; }); return; }
-
-  var shareCount = function (a, b) {
-    return a.members.filter(function (m) { return b.members.indexOf(m) >= 0; }).length;
-  };
-
-  groups.forEach(function (g) { g.rr = 54 + 22 * Math.sqrt(g.members.length); });
-
-  // Put circles that share people next to each other on the ring, so their
-  // discs are neighbours and can actually overlap.
-  var order = [groups[0]], left = groups.slice(1);
-  while (left.length) {
-    var tail = order[order.length - 1], best = 0, bestScore = -1;
-    left.forEach(function (g, i) {
-      var sc = shareCount(tail, g);
-      if (sc > bestScore) { bestScore = sc; best = i; }
-    });
-    order.push(left.splice(best, 1)[0]);
-  }
-
-  var biggest = order.reduce(function (m, g) { return Math.max(m, g.rr); }, 0);
-  var need = order.reduce(function (sum, g) { return sum + 2 * g.rr + 30; }, 0);
-  var Rring = Math.max(240, biggest + 150, need / (Math.PI * 2));
-  var cursor = -Math.PI / 2;
-  order.forEach(function (g) {
-    var span = ((2 * g.rr + 30) / need) * Math.PI * 2;
-    g.mid = cursor + span / 2;
-    cursor += span;
-    g.cx = Math.cos(g.mid) * Rring;
-    g.cy = Math.sin(g.mid) * Rring;
-  });
-
-  /* Three things have to hold at once: circles that share people overlap,
-     circles that share nobody do not, and nothing closes over you at the
-     centre. Solve them together, or the last one undoes the first. */
-  for (var round = 0; round < 10; round++) {
-    // clearance first, so the pair rules get the last word — the other way
-    // round, two circles that share people never manage to meet
-    order.forEach(function (g) {
-      var d0 = Math.sqrt(g.cx * g.cx + g.cy * g.cy) || 0.01;
-      var clear = g.rr + 74;
-      if (d0 >= clear) return;
-      g.cx += g.cx / d0 * (clear - d0);
-      g.cy += g.cy / d0 * (clear - d0);
-    });
-
-    for (var i = 0; i < order.length; i++) {
-      for (var j = i + 1; j < order.length; j++) {
-        var a = order[i], b = order[j];
-        var sh = shareCount(a, b);
-        var dx = b.cx - a.cx, dy = b.cy - a.cy;
-        var d = Math.sqrt(dx * dx + dy * dy) || 1;
-        var want = sh ? (a.rr + b.rr) * 0.7 : a.rr + b.rr + 26;
-        var diff = sh ? d - want : want - d;
-        if (diff <= 2) continue;
-        var move = Math.min(diff / 2, 80) * (sh ? 1 : -1);
-        a.cx += dx / d * move; a.cy += dy / d * move;
-        b.cx -= dx / d * move; b.cy -= dy / d * move;
-      }
-    }
-  }
-
-  // shared people sit in the lens between the discs they belong to
-  var pinned = [];
-  nodes.forEach(function (n) {
-    if (n.kind !== 'person') return;
-    var mine = (n.circles || []).map(function (c) { return byId['c:' + c]; })
-      .filter(function (g) { return g && g.members.length; });
-    if (mine.length < 2) return;
-    var cx = 0, cy = 0;
-    mine.forEach(function (g) { cx += g.cx; cy += g.cy; });
-    n.tx = cx / mine.length;
-    n.ty = cy / mine.length;
-    n.shared = true;
-    pinned.push(n);
-  });
-
-  // several in the same lens spread along it rather than stacking
-  var byLens = {};
-  pinned.forEach(function (n) {
-    var key = (n.circles || []).slice().sort().join('|');
-    (byLens[key] = byLens[key] || []).push(n);
-  });
-  Object.keys(byLens).forEach(function (key) {
-    var list = byLens[key];
-    if (list.length < 2) return;
-    var mine = list[0].circles.map(function (c) { return byId['c:' + c]; }).filter(Boolean);
-    var ax = mine[1] ? mine[1].cx - mine[0].cx : 1;
-    var ay = mine[1] ? mine[1].cy - mine[0].cy : 0;
-    var len = Math.sqrt(ax * ax + ay * ay) || 1;
-    var px = -ay / len, py = ax / len;
-    list.forEach(function (n, k) {
-      var off = (k - (list.length - 1) / 2) * 38;
-      n.tx += px * off; n.ty += py * off;
-    });
-  });
-
-  // everyone else packs into their own disc, kept clear of the lenses
-  groups.forEach(function (g) {
-    var solo = g.members.filter(function (m) { return !m.shared; });
-    var placed = 0;
-    var away = Math.atan2(g.cy, g.cx);          // outward, away from you
-    for (var k = 0; k < solo.length; k++) {
-      var n = solo[k];
-      var spot = null;
-      for (var t = placed; t < placed + 260 && !spot; t++) {
-        var idx = t + 1;
-        var rad = g.rr * 0.74 * Math.sqrt(idx / (solo.length + 1.2));
-        var ang = away + idx * 2.39996;          // phyllotaxis, opening outward
-        var cand = [g.cx + Math.cos(ang) * rad, g.cy + Math.sin(ang) * rad];
-        var clash = pinned.some(function (q) {
-          return Math.abs(q.tx - cand[0]) < 46 && Math.abs(q.ty - cand[1]) < 34;
-        });
-        if (!clash) { spot = cand; placed = t + 1; }
-      }
-      if (!spot) spot = [g.cx, g.cy];
-      n.tx = spot[0]; n.ty = spot[1];
-    }
-  });
-
-  // a last nudge so no two targets end up on top of each other
-  var people = nodes.filter(function (n) { return n.kind === 'person'; });
-  for (var pass = 0; pass < 24; pass++) {
-    for (var a2 = 0; a2 < people.length; a2++) {
-      for (var b2 = a2 + 1; b2 < people.length; b2++) {
-        var p1 = people[a2], p2 = people[b2];
-        var ddx = p2.tx - p1.tx, ddy = p2.ty - p1.ty;
-        var dd = Math.sqrt(ddx * ddx + ddy * ddy) || 0.01;
-        if (dd >= 44) continue;
-        var push = (44 - dd) / 2;
-        p1.tx -= ddx / dd * push; p1.ty -= ddy / dd * push;
-        p2.tx += ddx / dd * push; p2.ty += ddy / dd * push;
-      }
-    }
-  }
-
-  hubs.forEach(function (g) {
-    if (!g.members.length) { g.tx = 0; g.ty = 0; g.field = null; return; }
-    g.field = { x: g.cx, y: g.cy, r: g.rr };
-    g.tx = g.cx;
-    g.ty = g.cy - g.rr - 20;                    // the field's title, on its rim
-  });
-}
 
 /* Arc — everyone on one ring, grouped by circle, so the connections between
    people cross the middle where you can actually see them. */
@@ -761,21 +612,17 @@ function easeToTargets() {
   return moving;
 }
 
-/* The three relaxed views share one solver; what differs is what pulls.
+/* Both relaxed views share one solver; what differs is what pulls.
 
-   web     — tight clusters, each circle held in its own quarter of the map,
-             with a hard separation pass that always wins
-   classic — the original springs and charge, left to find their own shape
-   stars   — led by who introduced whom, so connected people gather */
+   web   — tight clusters, each circle held in its own quarter of the map,
+           with a hard separation pass that always wins
+   stars — led by who introduced whom, so connected people gather */
 function relax() {
   var mode = layoutId();
   var me = byId['me'];
   var i, j, a, b, dx, dy, d, f;
 
-  var P = mode === 'classic'
-    ? { trunk: 195, member: 104, kTrunk: 0.022, kMember: 0.038, kTie: 0,
-        charge: 1900, damp: 0.84, sep: 0, sector: 0, decay: 0.988 }
-    : mode === 'stars'
+  var P = mode === 'stars'
     ? { trunk: 300, member: 150, kTrunk: 0.012, kMember: 0.016, kTie: 0.09,
         charge: 2400, damp: 0.8, sep: 58, sector: 0, decay: 0.98 }
     : { trunk: 215, member: 84, kTrunk: 0.04, kMember: 0.075, kTie: 0,
@@ -1039,21 +886,6 @@ function convexHull(pts) {
   return hull;
 }
 
-function drawFields() {
-  nodes.forEach(function (h) {
-    if (h.kind !== 'circle' || !h.field) return;
-    var col = C.hues[h.ci] || C.accent;
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(h.field.x, h.field.y, h.field.r, 0, Math.PI * 2);
-    ctx.fillStyle = mix(col, 0.13);
-    ctx.fill();
-    ctx.lineWidth = 1.2 / cam.k;
-    ctx.strokeStyle = mix(col, 0.32);
-    ctx.stroke();
-    ctx.restore();
-  });
-}
 
 function drawRims() {
   nodes.forEach(function (h) {
@@ -1112,7 +944,6 @@ function draw() {
   ctx.translate(-cam.x, -cam.y);
 
   var lay = layoutId();
-  if (lay === 'venn') drawFields();
   if (lay === 'arc') drawRims();
   if (lay === 'pulse') drawPulseRings();
 
@@ -1170,7 +1001,6 @@ function draw() {
     }
     var mode = layoutId();
     var trunk = L.b.kind === 'circle';
-    if (mode === 'venn') return;                // the fields say it, lines only clutter
     if (!isLoose() && L.secondary) return;      // the pips beside the name say it
     var fade = dim * (trunk ? 0.55 : 1) * (L.secondary ? 0.5 : 1);
     var hue = L.secondary ? (C.hues[circleIndex(L.a.label)] || C.accent) : hueOf(L.b);
@@ -1257,7 +1087,7 @@ function draw() {
         ctx.strokeStyle = mix(col, 0.95); ctx.stroke(); ctx.setLineDash([]);
       }
       ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = mix(C.ground, layoutId() === 'venn' ? 0.55 : 1); ctx.fill();
+      ctx.fillStyle = C.ground; ctx.fill();
       ctx.lineWidth = (dropTarget === n ? 2.6 : 1.8) / cam.k;
       ctx.strokeStyle = mix(col, 0.85 * dim); ctx.stroke();
     } else {
@@ -1442,6 +1272,9 @@ var lastNodeCount = 0;
 var raf = null;
 function loop() {
   raf = requestAnimationFrame(loop);
+  // the archive is its own surface, not a lid over this one: while it is up,
+  // the plate is not on screen and there is nothing to spend frames on
+  if (document.body.classList.contains('archived')) return;
   var moving = tick();
   var sprouting = nodes.some(function (n) { return n.born && performance.now() - n.born < 460; });
   if (moving || sprouting || needsDraw) { needsDraw = false; draw(); }
@@ -1552,13 +1385,6 @@ var LAYOUT_ICONS = {
          '<circle cx="19.5" cy="8.6" r="1.7" fill="currentColor" stroke="none"/>' +
          '<circle cx="9.2" cy="19.4" r="1.7" fill="currentColor" stroke="none"/>' +
          '<circle cx="18.8" cy="17.4" r="1.7" fill="currentColor" stroke="none"/>',
-  venn:  '<circle cx="9" cy="12" r="5.6"/><circle cx="15" cy="12" r="5.6"/>' +
-         '<circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>',
-  classic: '<path d="M12 12c-4-2-6-5-4.5-7.5M12 12c4.5-1 7 1 6.5 4M12 12c-1 4-4 5.5-6 4"/>' +
-         '<circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/>' +
-         '<circle cx="6.8" cy="4" r="1.5" fill="currentColor" stroke="none"/>' +
-         '<circle cx="19" cy="16.6" r="1.5" fill="currentColor" stroke="none"/>' +
-         '<circle cx="5.6" cy="16.5" r="1.5" fill="currentColor" stroke="none"/>',
   arc:   '<circle cx="12" cy="12" r="7.6" opacity=".5"/>' +
          '<path d="M6.6 6.6C11 11 13 13 17.4 17.4M17.4 6.6C13 11 11 13 6.6 17.4" opacity=".8"/>' +
          '<circle cx="6.6" cy="6.6" r="1.5" fill="currentColor" stroke="none"/>' +
@@ -1594,7 +1420,7 @@ function renderLayouts() {
   $('#layouts').innerHTML = LAYOUTS.map(function (l, i) {
     return '<button data-layout="' + l.id + '"' + (l.id === here ? ' data-on="1"' : '') +
       ' title="' + esc(l.name + ' — ' + l.hint) + ' (' + (i + 1) + ')" aria-pressed="' + (l.id === here) + '">' +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
       LAYOUT_ICONS[l.id] + '</svg><span>' + esc(l.name) + '</span></button>';
   }).join('');
 }
@@ -1808,8 +1634,8 @@ function openDossier(node) {
         (href === 'mailto:' ? 'Send an email' : 'Call') + '" aria-label="' +
         (href === 'mailto:' ? 'Send an email' : 'Call') + '">' +
         (href === 'mailto:'
-          ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>'
-          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h4l2 5-2.5 1.5a12 12 0 0 0 5 5L15 13l5 2v4a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1z"/></svg>') +
+          ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>'
+          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h4l2 5-2.5 1.5a12 12 0 0 0 5 5L15 13l5 2v4a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1z"/></svg>') +
         '</a>'
       : '';
     return '<dt>' + esc(k) + '</dt>' +
@@ -2604,7 +2430,7 @@ function guessMapping(headers, rows, hasHeader) {
 function importModal(preloaded, filename) {
   var body = '<div class="io import">' +
     '<div class="drop" id="im-drop">' +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
       '<path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>' +
       '<p><b>Drop your spreadsheet here</b> — or <label class="pick" for="im-file">choose a file</label>' +
       '<input type="file" id="im-file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" hidden></p>' +
@@ -3462,9 +3288,15 @@ window.Rootwork = {
     primaryCircle: primaryCircle, inCircle: inCircle,
     lastTouch: lastTouch, schoolsOf: schoolsOf, tiesOf: tiesOf,
     channelLabel: function (c) { return CHANNEL_LABEL[c] || c; },
+    closeCard: function () { closeDossier(); },
+    cardOpen: function () { return !!selected; },
     openCard: function (id) {
       var n = byId[id];
-      goTo(id);
+      if (!n) return;
+      selected = n;
+      openDossier(n);
+      // only chase the camera when the map is the surface being looked at
+      if (!document.body.classList.contains('archived')) glide(n.x + 90, n.y, Math.max(cam.k, 0.9));
     },
     save: function () { save(); renderAll(); }
   },

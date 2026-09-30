@@ -183,7 +183,7 @@ function seed(str) {                       // a stable number per person, for sc
 
 var FIELD_LABELS = {
   name: 'Name', profession: 'Role', company: 'Company', email: 'Email',
-  phone: 'Phone', location: 'Where'
+  phone: 'Phone', location: 'Location'
 };
 
 function editableAttrs(p, field) {
@@ -214,9 +214,11 @@ function editValue(el) {
     var val = box.value.trim();
     if (!keep || val === was) { el.innerHTML = held; return; }
     p[field] = val;
-    p.updated = Date.now();
-    L.save();                                  // writes, re-renders the map
-    render(true);                              // and this surface, without the fanfare
+    commitPerson(p);
+    // a name is on every screen; anything else is patched where it shows,
+    // so the surface you are working on is not rebuilt under you
+    if (field === 'name') return render(true);
+    patchField(p, field, val);
   }
   box.addEventListener('blur', function () { finish(true); });
   box.addEventListener('keydown', function (e) {
@@ -224,6 +226,229 @@ function editValue(el) {
     if (e.key === 'Enter') { e.preventDefault(); finish(true); }
     if (e.key === 'Escape') { e.preventDefault(); finish(false); }
   });
+}
+
+/* Save, and tell the map — but record the new fingerprint first, so the
+   change coming back round does not rebuild the screen we are standing on. */
+function commitPerson(p) {
+  p.updated = Date.now();
+  lastSig = signature();
+  L.save();
+  lastSig = signature();
+}
+
+function patchField(p, field, val) {
+  var sel = '[data-field="' + field + '"][data-for="' + cssEsc(p.id) + '"]';
+  Array.prototype.forEach.call(root.querySelectorAll(sel), function (n) {
+    if (n.querySelector('input')) return;
+    n.innerHTML = val ? esc(val) : '<span class="none">' + DASH + '</span>';
+  });
+}
+
+function cssEsc(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s); }
+var DASH = '\u2014';
+
+/* ---- the three things a record is made of ----
+   Filed under, notes and touchpoints are edited the same way wherever they
+   appear, so they are built and handled in one place and dropped into
+   whichever surface wants them. */
+
+function newId(prefix) {
+  return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+}
+
+function circlesBlock(p) {
+  return '<div class="ed-row"><span class="ed-label">Filed under</span>' +
+    '<div class="ed-chips">' +
+      L.circlesOf(p).map(function (c, i) {
+        return '<span class="ed-chip' + (i === 0 ? ' main' : '') + '" style="--hue:' + hueOfGroup(c) + '">' +
+          '<span>' + esc(c) + '</span>' +
+          '<button data-act="uncircle" data-for="' + p.id + '" data-val="' + esc(c) + '" ' +
+            'aria-label="Take out of ' + esc(c) + '">' + DASH.replace(DASH, '\u00d7') + '</button></span>';
+      }).join('') +
+      '<button class="ed-add" data-act="circle" data-for="' + p.id + '">+ circle</button>' +
+    '</div></div>';
+}
+
+function notesBlock(p) {
+  var notes = p.notes || [];
+  return '<div class="ed-row"><span class="ed-label">Notes</span><div class="ed-list">' +
+    notes.map(function (n) {
+      return '<div class="ed-item"><span class="ed-text" data-act="note" data-for="' + p.id +
+        '" data-id="' + esc(n.id) + '" tabindex="0" role="button">' + esc(n.t) + '</span>' +
+        '<button class="ed-x" data-act="delnote" data-for="' + p.id + '" data-id="' + esc(n.id) +
+        '" aria-label="Delete note">\u00d7</button></div>';
+    }).join('') +
+    '<button class="ed-add" data-act="addnote" data-for="' + p.id + '">+ note</button>' +
+  '</div></div>';
+}
+
+function logBlock(p) {
+  var log = p.log || [];
+  return '<div class="ed-row"><span class="ed-label">Touchpoints</span><div class="ed-list">' +
+    log.map(function (e) {
+      return '<div class="ed-item"><span class="ed-when">' + esc(L.channelLabel(e.channel)) +
+        ' \u00b7 ' + esc(L.fmtDate(e.at)) + '</span>' +
+        '<span class="ed-text" data-act="log" data-for="' + p.id + '" data-id="' + esc(e.id) +
+        '" tabindex="0" role="button">' + esc(e.text) + '</span>' +
+        '<button class="ed-x" data-act="dellog" data-for="' + p.id + '" data-id="' + esc(e.id) +
+        '" aria-label="Delete touchpoint">\u00d7</button></div>';
+    }).join('') +
+    '<button class="ed-add" data-act="addlog" data-for="' + p.id + '">+ touchpoint</button>' +
+  '</div></div>';
+}
+
+function editorBlocks(p) {
+  return '<div class="editor" data-blocks="' + p.id + '">' +
+    circlesBlock(p) + notesBlock(p) + logBlock(p) + '</div>';
+}
+
+function refreshBlocks(p) {
+  var host = root.querySelector('[data-blocks="' + cssEsc(p.id) + '"]');
+  if (host) host.innerHTML = circlesBlock(p) + notesBlock(p) + logBlock(p);
+}
+
+/* One line of text, edited where it sits. */
+function editText(el, current, save) {
+  if (el.querySelector('textarea')) return;
+  var box = document.createElement('textarea');
+  box.className = 'arc-input ed-area';
+  box.rows = Math.min(5, Math.max(1, Math.ceil((current || '').length / 46)));
+  box.value = current || '';
+  var held = el.innerHTML;
+  el.innerHTML = '';
+  el.appendChild(box);
+  box.focus();
+  box.select();
+  var done = false;
+  function finish(keep) {
+    if (done) return;
+    done = true;
+    var val = box.value.trim();
+    if (!keep) { el.innerHTML = held; return; }
+    save(val);
+  }
+  box.addEventListener('blur', function () { finish(true); });
+  box.addEventListener('keydown', function (e) {
+    e.stopPropagation();
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+}
+
+/* Everything the three blocks can do, in one place. */
+function editorAction(btn) {
+  var p = personById(btn.dataset.for);
+  if (!p) return false;
+  var act = btn.dataset.act;
+  var id = btn.dataset.id;
+
+  if (act === 'note' || act === 'log') {
+    var rec = act === 'note'
+      ? (p.notes || []).filter(function (n) { return n.id === id; })[0]
+      : (p.log || []).filter(function (e) { return e.id === id; })[0];
+    if (!rec) return true;
+    editText(btn, act === 'note' ? rec.t : rec.text, function (val) {
+      if (!val) {
+        if (act === 'note') p.notes = p.notes.filter(function (n) { return n.id !== id; });
+        else p.log = p.log.filter(function (e) { return e.id !== id; });
+      } else if (act === 'note') rec.t = val;
+      else rec.text = val;
+      commitPerson(p);
+      refreshBlocks(p);
+    });
+    return true;
+  }
+
+  if (act === 'addnote') {
+    p.notes = p.notes || [];
+    p.notes.push({ id: newId('n'), t: '' });
+    commitPerson(p);
+    refreshBlocks(p);
+    var last = root.querySelectorAll('[data-blocks="' + cssEsc(p.id) + '"] [data-act="note"]');
+    if (last.length) last[last.length - 1].click();
+    return true;
+  }
+
+  if (act === 'addlog') {
+    p.log = p.log || [];
+    p.log.unshift({ id: newId('e'), at: Date.now(), channel: 'note', text: '', learned: '' });
+    commitPerson(p);
+    refreshBlocks(p);
+    var first = root.querySelector('[data-blocks="' + cssEsc(p.id) + '"] [data-act="log"]');
+    if (first) first.click();
+    return true;
+  }
+
+  if (act === 'delnote') {
+    p.notes = (p.notes || []).filter(function (n) { return n.id !== id; });
+    commitPerson(p); refreshBlocks(p);
+    return true;
+  }
+
+  if (act === 'dellog') {
+    p.log = (p.log || []).filter(function (e) { return e.id !== id; });
+    commitPerson(p); refreshBlocks(p);
+    return true;
+  }
+
+  if (act === 'uncircle') {
+    var name = btn.dataset.val;
+    p.circles = L.circlesOf(p).filter(function (c) { return c !== name; });
+    commitPerson(p); refreshBlocks(p);
+    return true;
+  }
+
+  if (act === 'circle') {
+    circleMenu(btn, p);
+    return true;
+  }
+  return false;
+}
+
+/* The circles that exist, plus a field to name a new one. */
+function circleMenu(anchor, p) {
+  var old = document.getElementById('arc-pick');
+  if (old) old.remove();
+  var have = L.circlesOf(p);
+  var box = el('div', 'arc-pick');
+  box.id = 'arc-pick';
+  box.innerHTML = L.circleList().filter(function (c) { return have.indexOf(c.name) < 0; })
+    .map(function (c) {
+      return '<button data-pick="' + esc(c.name) + '">' +
+        '<i style="background:var(--h' + L.circleIndex(c.name) + ')"></i>' + esc(c.name) + '</button>';
+    }).join('') +
+    '<div class="arc-new"><input placeholder="New circle" aria-label="New circle"><button data-new>Add</button></div>';
+  document.body.appendChild(box);
+  var r = anchor.getBoundingClientRect();
+  box.style.left = Math.min(window.innerWidth - box.offsetWidth - 10, r.left) + 'px';
+  box.style.top = Math.min(window.innerHeight - box.offsetHeight - 10, r.bottom + 6) + 'px';
+  var field = box.querySelector('input');
+
+  function take(name) {
+    box.remove();
+    name = (name || '').trim();
+    if (!name) return;
+    p.circles = L.circlesOf(p).concat([name]).filter(function (c, i, a) { return a.indexOf(c) === i; });
+    commitPerson(p);
+    render(true);                 // a new circle changes the folders themselves
+  }
+  box.addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.pick) return take(b.dataset.pick);
+    if (b.hasAttribute('data-new')) return take(field.value);
+  });
+  field.addEventListener('keydown', function (e) {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); take(field.value); }
+    if (e.key === 'Escape') { e.preventDefault(); box.remove(); }
+  });
+  setTimeout(function () {
+    document.addEventListener('pointerdown', function off(e) {
+      if (!box.contains(e.target)) { box.remove(); document.removeEventListener('pointerdown', off); }
+    });
+  }, 0);
 }
 
 /* ---- chrome ---- */
@@ -259,13 +484,17 @@ function build() {
 
   $('#arc-close', root).addEventListener('click', close);
   root.addEventListener('click', function (e) {
+    var a = e.target.closest('[data-act][data-for]');
+    if (a) { e.stopPropagation(); if (editorAction(a)) return; }
     var f = e.target.closest('[data-field][data-for]');
     if (f) { e.stopPropagation(); editValue(f); }
   }, true);
   root.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter') return;
-    var f = e.target.closest && e.target.closest('[data-field][data-for]');
-    if (f && !f.querySelector('input')) { e.preventDefault(); editValue(f); }
+    var t = e.target.closest && e.target.closest('[data-act][data-for], [data-field][data-for]');
+    if (!t || t.querySelector('input, textarea')) return;
+    e.preventDefault();
+    if (t.hasAttribute('data-act')) editorAction(t); else editValue(t);
   });
 
   $('#arc-home', root).addEventListener('click', function () {
@@ -654,6 +883,7 @@ function drawFile(host) {
       (extra.length ? '<div class="edge">' + extra.map(function (c) {
         return '<span style="--c:' + hueVar(c) + '">' + esc(c) + '</span>'; }).join('') + '</div>' : '') +
       '<div class="sheets">' + sheets.join('') + '</div>' +
+      editorBlocks(p) +
       '<div class="acts">' +
         '<button class="btn" data-edit="' + p.id + '">Open the card</button>' +
         '<button class="btn" data-back>Back to the drawer</button>' +
@@ -820,13 +1050,13 @@ function drawChroma(host) {
         esc(p.profession || 'Add a role') + '</span></div>' +
       '<dl>' +
         '<dt>Company</dt><dd class="edit"' + editableAttrs(p, 'company') + '>' + esc(p.company || '—') + '</dd>' +
-        '<dt>Mail</dt><dd class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +
-        '<dt>Ring</dt><dd class="edit"' + editableAttrs(p, 'phone') + '>' + esc(p.phone || '—') + '</dd>' +
-        '<dt>Where</dt><dd class="edit"' + editableAttrs(p, 'location') + '>' + esc(p.location || '—') + '</dd>' +
-        (sch ? '<dt>Read at</dt><dd>' + esc(sch) + '</dd>' : '') +
+        '<dt>Email</dt><dd class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +
+        '<dt>Phone</dt><dd class="edit"' + editableAttrs(p, 'phone') + '>' + esc(p.phone || '—') + '</dd>' +
+        '<dt>Location</dt><dd class="edit"' + editableAttrs(p, 'location') + '>' + esc(p.location || '—') + '</dd>' +
+        (sch ? '<dt>School</dt><dd>' + esc(sch) + '</dd>' : '') +
         '<dt>Last</dt><dd>' + esc(p.log.length ? L.ago(L.lastTouch(p)) : 'no touchpoints') + '</dd>' +
       '</dl>' +
-      (p.log[0] ? '<p class="ch-last">\u201c' + esc(p.log[0].text) + '\u201d</p>' : '') +
+      editorBlocks(p) +
       '<div class="ch-acts">' +
         '<button class="btn" data-edit="' + p.id + '">Open the card</button>' +
         '<button class="btn" data-file="' + p.id + '">See the file</button>' +
@@ -948,7 +1178,7 @@ function drawFinder(host) {
     } else {
       pane.className = 'fw-cols';
       pane.innerHTML =
-        '<div class="fcol" data-col="0">' + cols.map(function (c, ci) {
+        '<div class="fcol" data-col="0"><i class="fw-marker" aria-hidden="true"></i>' + cols.map(function (c, ci) {
           return '<button class="frow' + (sel.circle === c.name ? ' on' : '') + '" data-circle="' + esc(c.name) + '" style="--r:' + ci + '">' +
             '<span class="fic" style="color:' + hueVar(c.name) + '">' + icon('folder') + '</span>' +
             '<span class="fnm">' + esc(c.name) + '</span>' +
@@ -956,7 +1186,7 @@ function drawFinder(host) {
             '<span class="fch">\u203a</span>' +
           '</button>';
         }).join('') + '</div>' +
-        '<div class="fcol" data-col="1">' + (folk.length ? folk.map(function (x, xi) {
+        '<div class="fcol" data-col="1"><i class="fw-marker" aria-hidden="true"></i>' + (folk.length ? folk.map(function (x, xi) {
           return '<button class="frow' + (sel.person === x.id ? ' on' : '') + '" data-person="' + x.id + '" style="--r:' + xi + '">' +
             '<span class="fic">' + icon('file') + '</span>' +
             '<span class="fnm">' + esc(x.name) + '</span>' +
@@ -966,32 +1196,52 @@ function drawFinder(host) {
         '<div class="fcol fprev" data-col="2">' + (p ? preview(p) : '<div class="fempty">no file selected</div>') + '</div>';
     }
 
+    placeMarker();
+
     $('#fw-foot', rig).innerHTML =
       '<span>' + cols.length + ' folder' + (cols.length === 1 ? '' : 's') + '</span>' +
       '<span>' + folk.length + ' item' + (folk.length === 1 ? '' : 's') + (sel.circle ? ' in ' + esc(sel.circle) : '') + '</span>' +
       '<span class="fw-tip">\u2191\u2193 move \u00b7 \u2192 open \u00b7 \u21b5 edit</span>';
   }
 
+  var previewSeq = 0;
+  /* The highlight is one element that moves, so picking a row reads as the
+     selection travelling rather than two rows blinking. */
+  function placeMarker() {
+    Array.prototype.forEach.call(pane.querySelectorAll('.fcol'), function (col) {
+      var marker = col.querySelector('.fw-marker');
+      if (!marker) return;
+      var on = col.querySelector('.frow.on');
+      if (!on) { marker.style.opacity = '0'; return; }
+      var cr = col.getBoundingClientRect(), r = on.getBoundingClientRect();
+      marker.style.opacity = '1';
+      marker.style.transform = 'translate(' + (r.left - cr.left) + 'px,' +
+        (r.top - cr.top + col.scrollTop) + 'px)';
+      marker.style.width = r.width + 'px';
+      marker.style.height = r.height + 'px';
+    });
+  }
+
   function preview(p) {
     var sch = L.schoolsOf(p).map(function (s) { return s.name + (s.level ? ' ' + s.level : ''); }).join(', ');
-    return '<div class="fprev-in">' +
+    return '<div class="fprev-in" data-seq="' + (++previewSeq) + '">' +
       '<span class="fic big">' + icon('file') + '</span>' +
       '<h4><span class="edit"' + editableAttrs(p, 'name') + '>' + esc(p.name) + '</span></h4>' +
       '<div class="fkind"><span class="edit"' + editableAttrs(p, 'profession') + '>' +
         esc(p.profession || 'Add a role') + '</span></div>' +
       '<dl>' +
-        '<dt>Kind</dt><dd>Rootwork entry</dd>' +
-        '<dt>Size</dt><dd>' + esc(sizeOf(p)) + '</dd>' +
-        '<dt>Filed</dt><dd>' + esc(L.circlesOf(p).join(', ')) + '</dd>' +
-        '<dt>Company</dt><dd class="edit"' + editableAttrs(p, 'company') + '>' + esc(p.company || '—') + '</dd>' +
-        '<dt>Mail</dt><dd class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +
-        '<dt>Phone</dt><dd class="edit"' + editableAttrs(p, 'phone') + '>' + esc(p.phone || '—') + '</dd>' +
-        '<dt>Where</dt><dd class="edit"' + editableAttrs(p, 'location') + '>' + esc(p.location || '—') + '</dd>' +
-        (sch ? '<dt>School</dt><dd>' + esc(sch) + '</dd>' : '') +
-        '<dt>Opened</dt><dd>' + esc(p.log.length ? L.fmtDate(L.lastTouch(p)) : 'never') + '</dd>' +
-        '<dt>Entries</dt><dd>' + p.log.length + '</dd>' +
+        '<dt style="--i:0">Kind</dt><dd style="--i:0">Rootwork entry</dd>' +
+        '<dt style="--i:1">Size</dt><dd style="--i:1">' + esc(sizeOf(p)) + '</dd>' +
+        '<dt style="--i:2">Filed</dt><dd style="--i:2">' + esc(L.circlesOf(p).join(', ')) + '</dd>' +
+        '<dt style="--i:3">Company</dt><dd style="--i:3" class="edit"' + editableAttrs(p, 'company') + '>' + esc(p.company || '—') + '</dd>' +
+        '<dt style="--i:4">Email</dt><dd style="--i:4" class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +
+        '<dt style="--i:5">Phone</dt><dd style="--i:5" class="edit"' + editableAttrs(p, 'phone') + '>' + esc(p.phone || '—') + '</dd>' +
+        '<dt style="--i:6">Location</dt><dd style="--i:6" class="edit"' + editableAttrs(p, 'location') + '>' + esc(p.location || '—') + '</dd>' +
+        (sch ? '<dt style="--i:7">School</dt><dd style="--i:7">' + esc(sch) + '</dd>' : '') +
+        '<dt style="--i:8">Opened</dt><dd style="--i:8">' + esc(p.log.length ? L.fmtDate(L.lastTouch(p)) : 'never') + '</dd>' +
+        '<dt style="--i:9">Entries</dt><dd style="--i:9">' + p.log.length + '</dd>' +
       '</dl>' +
-      (p.log[0] ? '<p class="flast">' + esc(p.log[0].text) + '</p>' : '') +
+      editorBlocks(p) +
       '<div class="facts">' +
         '<button class="btn" data-edit="' + p.id + '">Open the card</button>' +
         '<button class="btn" data-file="' + p.id + '">See the file</button>' +

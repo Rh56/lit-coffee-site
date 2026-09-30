@@ -1,7 +1,7 @@
 /* ==========================================================================
    Rootwork — the archive.
 
-   Six ways to read the same network, each a surface of its own rather than a
+   Five ways to read the same network, each a surface of its own rather than a
    panel over the map: its own bar, its own address, its own idea of what a
    folder is. Nothing here owns data — every screen reads the state the map
    draws, and editing happens on the card, which comes to whichever surface
@@ -11,7 +11,6 @@
      Index          everyone at once, set tight, no colour but the pips
      Chroma         no paper at all: each folder a field of its own light
      Desktop        folders, files, a preview pane, a status bar
-     Studio         outliner, nodes and an inspector
      Constellation  everyone on a sphere you can spin
 
    Folders are whatever you say they are — circles, companies, schools or
@@ -31,11 +30,10 @@ var DESIGNS = [
   { id: 'index', name: 'Index', hint: 'Everyone at once, set tight' },
   { id: 'chroma', name: 'Chroma', hint: 'Light and type, no paper at all' },
   { id: 'finder', name: 'Desktop', hint: 'Folders and files, the way a computer keeps them' },
-  { id: 'studio', name: 'Studio', hint: 'Outliner, nodes and an inspector' },
   { id: 'orbit', name: 'Constellation', hint: 'Everyone on a sphere you can spin' }
 ];
 var view = { design: 'drawer', circle: null, person: null };
-var WIDE = { studio: 1, finder: 1, orbit: 1, chroma: 1 };
+var WIDE = { finder: 1, orbit: 1, chroma: 1 };
 var DESIGN_KEY = 'rootwork.archive.design';
 var open = false;
 var query = '', qTimer = null;
@@ -389,7 +387,6 @@ function render(quiet) {
   var fn = view.design === 'index' ? drawIndex
     : view.design === 'chroma' ? drawChroma
     : view.design === 'finder' ? drawFinder
-    : view.design === 'studio' ? drawStudio
     : view.design === 'orbit' ? drawOrbit
     : drawDrawer;
   teardown = fn(body) || null;
@@ -408,6 +405,9 @@ function setGroup(id) {
 function setDesign(id) {
   if (view.design === id) return;
   view.design = id;
+  // only the drawer opens a person on their own page; everywhere else the
+  // name in the header would be describing something not on screen
+  view.person = null;
   try { localStorage.setItem(DESIGN_KEY, id); } catch (e) { }
   scroll.scrollTop = 0;
   render();
@@ -785,6 +785,7 @@ function drawChroma(host) {
         '</div>' +
       '</section>';
     }).join('') +
+    '<div class="ch-scrim" id="ch-scrim" hidden></div>' +
     '<div class="ch-pane" id="ch-pane" hidden></div>';
   host.appendChild(rig);
 
@@ -797,6 +798,7 @@ function drawChroma(host) {
   rig.addEventListener('pointermove', onMove);
 
   var pane = $('#ch-pane', rig);
+  var scrim = $('#ch-scrim', rig);
   function showPane(p, from) {
     var sch = L.schoolsOf(p).map(function (s) { return s.name + (s.level ? ' ' + s.level : ''); }).join(' \u00b7 ');
     pane.style.setProperty('--hue', hueVar(homeGroup(p)));
@@ -819,16 +821,32 @@ function drawChroma(host) {
         '<button class="btn" data-edit="' + p.id + '">Open the card</button>' +
         '<button class="btn" data-file="' + p.id + '">See the file</button>' +
       '</div>';
-    var r = from.getBoundingClientRect(), rr = rig.getBoundingClientRect();
-    pane.style.setProperty('--fx', (r.left - rr.left + r.width / 2) + 'px');
-    pane.style.setProperty('--fy', (r.top - rr.top + r.height / 2) + 'px');
+    // it opens from the name you clicked, wherever that is on screen, and
+    // sits in the middle of the window rather than the middle of the page
+    var r = from.getBoundingClientRect();
+    var cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+    pane.style.setProperty('--fx', ((r.left + r.width / 2) - cx).toFixed(0) + 'px');
+    pane.style.setProperty('--fy', ((r.top + r.height / 2) - cy).toFixed(0) + 'px');
+    scrim.hidden = false;
     pane.hidden = false;
-    requestAnimationFrame(function () { pane.classList.add('on'); });
+    requestAnimationFrame(function () {
+      scrim.classList.add('on');
+      pane.classList.add('on');
+    });
   }
   function hidePane() {
     pane.classList.remove('on');
-    setTimeout(function () { if (!pane.classList.contains('on')) pane.hidden = true; }, reduced() ? 0 : 320);
+    scrim.classList.remove('on');
+    setTimeout(function () {
+      if (pane.classList.contains('on')) return;
+      pane.hidden = true; scrim.hidden = true;
+    }, reduced() ? 0 : 340);
   }
+
+  var onKey = function (e) {
+    if (e.key === 'Escape' && !pane.hidden) { e.stopPropagation(); hidePane(); }
+  };
+  document.addEventListener('keydown', onKey, true);
 
   rig.addEventListener('click', function (e) {
     if (e.target.closest('[data-close]')) return hidePane();
@@ -841,7 +859,10 @@ function drawChroma(host) {
     if (!e.target.closest('.ch-pane')) hidePane();
   });
 
-  return function () { rig.removeEventListener('pointermove', onMove); };
+  return function () {
+    rig.removeEventListener('pointermove', onMove);
+    document.removeEventListener('keydown', onKey, true);
+  };
 }
 
 /* ==========================================================================
@@ -1023,233 +1044,6 @@ function drawFinder(host) {
   return function () { document.removeEventListener('keydown', onKey); };
 }
 
-/* ==========================================================================
-   Design 8 — Studio
-   The shape a mind-map editor takes: an outliner down the left, the nodes
-   themselves in the middle, an inspector on the right. Everything is live —
-   fold the tree, drag a node, and the inspector edits the real record.
-   ========================================================================== */
-
-function drawStudio(host) {
-  var groups = circles();
-  var loose = ungrouped();
-  if (!groups.length && !loose.length) return emptyState(host, 'Nothing to lay out yet.');
-
-  var folded = {};
-  var sel = view.person || null;
-
-  var rig = el('div', 'studio');
-  rig.innerHTML =
-    '<div class="sd-top">' +
-      '<div class="sd-title">' +
-        '<h3>' + esc(meName() === 'Me' ? 'My network' : meName() + '\u2019s network') + '</h3>' +
-        '<span>Filed by ' + esc(grouper().name.toLowerCase()) + ' \u00b7 last edited ' +
-          esc(lastEdited()) + '</span>' +
-      '</div>' +
-      '<div class="sd-count">' +
-        '<div><span>Groups</span><b>' + groups.length + '</b></div>' +
-        '<div><span>People</span><b>' + st().people.length + '</b></div>' +
-        '<div><span>Touchpoints</span><b>' +
-          st().people.reduce(function (a, p) { return a + p.log.length; }, 0) + '</b></div>' +
-      '</div>' +
-    '</div>' +
-    '<div class="sd-rig">' +
-      '<aside class="sd-out" id="sd-out"></aside>' +
-      '<div class="sd-canvas" id="sd-canvas"><svg id="sd-wires"></svg><div class="sd-nodes" id="sd-nodes"></div></div>' +
-      '<aside class="sd-insp" id="sd-insp"></aside>' +
-    '</div>';
-  host.appendChild(rig);
-
-  /* ---- the outliner ---- */
-  function outline() {
-    $('#sd-out', rig).innerHTML =
-      '<div class="sd-panel-head">Outliner</div>' +
-      groups.map(function (g) {
-        var folk = peopleIn(g.name);
-        var shut = folded[g.name];
-        return '<div class="sd-branch' + (shut ? ' shut' : '') + '">' +
-          '<button class="sd-grp" data-fold="' + esc(g.name) + '">' +
-            '<i class="caret">\u203a</i>' +
-            '<span class="dot" style="background:' + hueVar(g.name) + '"></span>' +
-            '<span class="nm">' + esc(g.name) + '</span>' +
-            '<span class="n">' + folk.length + '</span>' +
-          '</button>' +
-          '<div class="sd-kids">' + folk.map(function (p) {
-            return '<button class="sd-leaf' + (sel === p.id ? ' on' : '') + '" data-person="' + p.id + '">' +
-              '<span class="nm">' + esc(p.name) + '</span>' +
-              (p.company || p.location
-                ? '<span class="sub">' + esc(p.company || p.location) + '</span>' : '') +
-            '</button>';
-          }).join('') + '</div>' +
-        '</div>';
-      }).join('') +
-      (loose.length ? '<div class="sd-branch"><button class="sd-grp" data-fold="\u2014"><i class="caret">\u203a</i>' +
-        '<span class="dot" style="background:var(--faint)"></span><span class="nm">Unfiled</span>' +
-        '<span class="n">' + loose.length + '</span></button><div class="sd-kids">' +
-        loose.map(function (p) {
-          return '<button class="sd-leaf" data-person="' + p.id + '"><span class="nm">' + esc(p.name) + '</span></button>';
-        }).join('') + '</div></div>' : '');
-  }
-
-  /* ---- the nodes ---- */
-  var pos = {};                       // id -> {x,y}, kept while this view is up
-  function layout() {
-    var wrap = $('#sd-canvas', rig);
-    var W = wrap.clientWidth || 700;
-    var rows = [];
-    groups.forEach(function (g) { rows.push({ group: g, people: peopleIn(g.name) }); });
-    if (loose.length) rows.push({ group: { name: 'Unfiled' }, people: loose });
-
-    var y = 40, out = [], wires = [];
-    var rootX = 26, rootY = Math.max(60, 40);
-    var widest = 0;
-    rows.forEach(function (r) {
-      var gx = rootX + 190, gy = y;
-      var gid = 'g:' + r.group.name;
-      pos[gid] = pos[gid] || { x: gx, y: gy };
-      out.push({ id: gid, kind: 'group', label: r.group.name, hue: hueVar(r.group.name) });
-      wires.push([ 'me', gid ]);
-      r.people.forEach(function (p, i) {
-        var pid = p.id;
-        pos[pid] = pos[pid] || { x: gx + 210, y: gy + i * 58 };
-        out.push({ id: pid, kind: 'person', label: p.name, sub: roleOf(p), hue: hueVar(r.group.name), ref: p });
-        wires.push([ gid, pid ]);
-      });
-      y += Math.max(1, r.people.length) * 58 + 40;
-    });
-    pos.me = pos.me || { x: rootX, y: Math.max(rootY, y / 2 - 20) };
-    out.unshift({ id: 'me', kind: 'me', label: meName(), hue: 'var(--accent)' });
-    Object.keys(pos).forEach(function (k) { widest = Math.max(widest, pos[k].x + 260); });
-    var inner = $('#sd-nodes', rig);
-    var h = Math.max(420, y + 40);
-    inner.style.width = Math.max(W, widest) + 'px';
-    inner.style.height = h + 'px';
-    wrap.style.height = h + 'px';
-    return { nodes: out, wires: wires, W: Math.max(W, widest), H: h };
-  }
-
-  function paintNodes() {
-    var L2 = layout();
-    $('#sd-nodes', rig).innerHTML = L2.nodes.map(function (n, i) {
-      var p = pos[n.id];
-      return '<div class="sd-node sd-' + n.kind + (sel === n.id ? ' on' : '') + '" data-node="' + esc(n.id) + '"' +
-        ' style="left:' + p.x + 'px; top:' + p.y + 'px; --hue:' + n.hue + '; --d:' + i + '">' +
-        '<span class="lab">' + esc(n.label) + '</span>' +
-        (n.sub ? '<span class="sub">' + esc(n.sub) + '</span>' : '') +
-      '</div>';
-    }).join('');
-    requestAnimationFrame(function () { paintWires(L2.wires); });
-  }
-
-  function paintWires(wires) {
-    var svg = $('#sd-wires', rig);
-    var wrap = $('#sd-canvas', rig);
-    var inner = $('#sd-nodes', rig);
-    var box = inner.getBoundingClientRect();
-    svg.setAttribute('width', inner.clientWidth);
-    svg.setAttribute('height', inner.clientHeight);
-    var d = wires.map(function (w) {
-      var a = rig.querySelector('[data-node="' + cssEsc(w[0]) + '"]');
-      var b = rig.querySelector('[data-node="' + cssEsc(w[1]) + '"]');
-      if (!a || !b) return '';
-      var ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
-      var x1 = ra.right - box.left, y1 = ra.top - box.top + ra.height / 2;
-      var x2 = rb.left - box.left, y2 = rb.top - box.top + rb.height / 2;
-      var mx = (x1 + x2) / 2;
-      return '<path d="M' + x1 + ' ' + y1 + ' C' + mx + ' ' + y1 + ', ' + mx + ' ' + y2 + ', ' + x2 + ' ' + y2 + '"/>';
-    }).join('');
-    svg.innerHTML = d;
-  }
-
-  function cssEsc(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : s; }
-
-  /* ---- the inspector ---- */
-  function inspect() {
-    var box = $('#sd-insp', rig);
-    var p = sel ? personById(sel) : null;
-    if (!p) {
-      box.innerHTML = '<div class="sd-panel-head">Inspector</div>' +
-        '<div class="sd-none">Pick a node</div>';
-      return;
-    }
-    var sch = L.schoolsOf(p);
-    box.innerHTML =
-      '<div class="sd-panel-head">Node<button class="reset" data-open-card="' + p.id + '">Edit</button></div>' +
-      sdField(p, 'name', 'Name') + sdField(p, 'profession', 'Role') + sdField(p, 'company', 'Company') +
-      '<div class="sd-panel-head">Filed</div>' +
-      '<div class="sd-chips">' + L.circlesOf(p).map(function (c, i) {
-        return '<span class="sd-chip' + (i === 0 ? ' main' : '') + '" style="--hue:' + hueOfGroup(c) + '">' +
-          esc(c) + '</span>';
-      }).join('') + '</div>' +
-      (sch.length ? '<div class="sd-chips">' + sch.map(function (s) {
-        return '<span class="sd-chip pale">' + esc(s.name) + (s.level ? ' <i>' + esc(s.level) + '</i>' : '') + '</span>';
-      }).join('') + '</div>' : '') +
-      '<div class="sd-panel-head">Contact</div>' +
-      sdField(p, 'email', 'Mail') + sdField(p, 'phone', 'Phone') + sdField(p, 'location', 'Where') +
-      '<div class="sd-panel-head">History<span class="reset">' + p.log.length + '</span></div>' +
-      '<div class="sd-log">' + (p.log.length ? p.log.slice(0, 4).map(function (e) {
-        return '<div><span>' + esc(L.channelLabel(e.channel)) + ' \u00b7 ' + esc(L.fmtDate(e.at)) + '</span>' +
-          esc(e.text) + '</div>';
-      }).join('') : '<div class="sd-none">Nothing logged</div>') + '</div>';
-  }
-
-  function pick(id) {
-    sel = id;
-    rig.querySelectorAll('.sd-leaf.on, .sd-node.on').forEach(function (x) { x.classList.remove('on'); });
-    var leaf = rig.querySelector('.sd-leaf[data-person="' + cssEsc(id) + '"]');
-    if (leaf) leaf.classList.add('on');
-    var node = rig.querySelector('.sd-node[data-node="' + cssEsc(id) + '"]');
-    if (node) node.classList.add('on');
-    inspect();
-  }
-
-  outline(); paintNodes(); inspect();
-
-  rig.addEventListener('click', function (e) {
-    var f = e.target.closest('[data-fold]');
-    if (f) {
-      folded[f.dataset.fold] = !folded[f.dataset.fold];
-      f.closest('.sd-branch').classList.toggle('shut');
-      return;
-    }
-    var oc = e.target.closest('[data-open-card]');
-    if (oc) return editCard(oc.dataset.openCard);
-    var l = e.target.closest('[data-person]');
-    if (l) return pick(l.dataset.person);
-    var n = e.target.closest('[data-node]');
-    if (n) {
-      if (n.dataset.node.indexOf('g:') === 0) {
-        view.circle = n.dataset.node.slice(2);
-        return render();
-      }
-      if (n.dataset.node !== 'me') pick(n.dataset.node);
-    }
-  });
-
-  // nodes can be dragged, and the wires follow
-  var drag = null;
-  $('#sd-nodes', rig).addEventListener('pointerdown', function (e) {
-    var n = e.target.closest('.sd-node');
-    if (!n) return;
-    drag = { n: n, id: n.dataset.node, dx: e.clientX - pos[n.dataset.node].x, dy: e.clientY - pos[n.dataset.node].y };
-    n.setPointerCapture(e.pointerId);
-    n.classList.add('held');
-  });
-  $('#sd-nodes', rig).addEventListener('pointermove', function (e) {
-    if (!drag) return;
-    pos[drag.id] = { x: e.clientX - drag.dx, y: e.clientY - drag.dy };
-    drag.n.style.left = pos[drag.id].x + 'px';
-    drag.n.style.top = pos[drag.id].y + 'px';
-    paintWires(layout().wires);
-  });
-  var drop = function () { if (drag) { drag.n.classList.remove('held'); drag = null; } };
-  $('#sd-nodes', rig).addEventListener('pointerup', drop);
-  $('#sd-nodes', rig).addEventListener('pointercancel', drop);
-
-  var onResize = function () { paintWires(layout().wires); };
-  window.addEventListener('resize', onResize);
-  return function () { window.removeEventListener('resize', onResize); };
-}
 
 /* ==========================================================================
    Design 9 — Constellation
@@ -1451,12 +1245,6 @@ function drawOrbit(host) {
     scroll.removeEventListener('wheel', onWheel);
     window.removeEventListener('resize', onResize);
   };
-}
-
-function sdField(p, field, label) {
-  return '<div class="sd-field"><label>' + esc(label) + '</label>' +
-    '<div class="val edit"' + editableAttrs(p, field) + '>' +
-      (p[field] ? esc(p[field]) : '\u2014') + '</div></div>';
 }
 
 function meName() { return (st().me && st().me.name) || 'Me'; }

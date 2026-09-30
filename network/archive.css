@@ -229,6 +229,9 @@
 .folder.open .inside{ grid-template-rows:1fr; }
 .folder .inside > div{ overflow:hidden; }
 .entries{ padding:6px 20px 18px; }
+/* the next folder's tab rides up over this one, so an open folder keeps a
+   tab's worth of room under its last entry */
+.folder.open .entries{ padding-bottom:calc(var(--tab-h) + 12px); }
 
 .entry-row{
   display:grid; grid-template-columns:1fr auto;
@@ -617,20 +620,44 @@
   color:rgba(255,255,255,.5);
 }
 
-.ch-pane{
-  position:absolute; z-index:5; left:50%; top:50%;
-  width:min(420px, 84%);
-  transform:translate(-50%, -50%) scale(.92);
-  transform-origin:var(--fx, 50%) var(--fy, 50%);
-  padding:24px 24px 20px; border-radius:5px;
-  background:color-mix(in srgb, var(--hue) 22%, rgba(12,17,22,.86));
-  border:1px solid rgba(255,255,255,.22);
-  backdrop-filter:blur(18px) saturate(1.2);
-  box-shadow:0 50px 90px -40px #000;
-  opacity:0; transition:opacity .3s var(--ease), transform .34s var(--ease);
+/* The pane belongs to the window, not to the page: scroll anywhere and it
+   still opens in front of you, flying out of the name you clicked. */
+.ch-scrim{
+  position:fixed; inset:0; z-index:44;
+  background:rgba(6,9,12,.55);
+  backdrop-filter:blur(3px);
+  opacity:0; transition:opacity .3s var(--ease);
 }
-.ch-pane.on{ opacity:1; transform:translate(-50%, -50%) scale(1); }
+.ch-scrim.on{ opacity:1; }
+.ch-scrim[hidden]{ display:none; }
+
+.ch-pane{
+  position:fixed; z-index:45; left:50%; top:50%;
+  width:min(440px, calc(100% - 32px));
+  padding:24px 24px 20px; border-radius:7px;
+  background:color-mix(in srgb, var(--hue) 26%, rgba(12,17,22,.88));
+  border:1px solid rgba(255,255,255,.24);
+  backdrop-filter:blur(20px) saturate(1.25);
+  box-shadow:0 60px 110px -44px #000, 0 0 0 1px rgba(255,255,255,.05) inset;
+  overflow:hidden;
+  /* starts at the name, arrives in the middle */
+  transform:translate(calc(-50% + var(--fx, 0px)), calc(-50% + var(--fy, 0px))) scale(.5);
+  opacity:0; filter:blur(6px);
+  transition:opacity .34s var(--ease), transform .44s var(--ease), filter .34s var(--ease);
+}
+.ch-pane.on{
+  transform:translate(-50%, -50%) scale(1);
+  opacity:1; filter:none;
+}
 .ch-pane[hidden]{ display:none; }
+/* a light passes across it as it lands */
+.ch-pane::before{
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(105deg, transparent 30%, rgba(255,255,255,.22) 48%, transparent 62%);
+  transform:translateX(-120%);
+}
+.ch-pane.on::before{ animation:sheen .9s var(--ease) .18s 1; }
+@keyframes sheen{ to{ transform:translateX(120%); } }
 .ch-pane .ch-x{
   position:absolute; top:12px; right:14px; color:rgba(255,255,255,.6); font-size:18px; line-height:1;
 }
@@ -869,183 +896,6 @@ body.archived .dossier.open{ box-shadow:-30px 0 80px -40px #000; }
 .grouping button[data-on]{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 45%, transparent); }
 
 /* ==========================================================================
-   Design 8 — Studio
-   Outliner, nodes, inspector. The shape a mind-map editor takes, with the
-   network in it instead of a document.
-   ========================================================================== */
-
-.studio{ margin-top:var(--s4); }
-.sd-top{
-  display:flex; align-items:flex-end; gap:var(--s5); flex-wrap:wrap;
-  padding-bottom:var(--s3);
-}
-.sd-title h3{
-  margin:0; font-family:var(--display); font-weight:var(--wd); font-size:26px; line-height:1.1;
-  color:var(--ink);
-}
-.sd-title span{
-  display:block; margin-top:4px;
-  font-family:var(--typed); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase;
-  color:var(--faint);
-}
-.sd-count{
-  margin-left:auto; display:flex; gap:var(--s1);
-  border:1px solid var(--rule); border-radius:var(--r); padding:var(--s2);
-  background:var(--panel);
-}
-.sd-count div{ padding:4px 12px; text-align:right; }
-.sd-count div + div{ border-left:1px solid var(--rule-soft); }
-.sd-count span{
-  display:block; font-family:var(--typed); font-size:8.5px; letter-spacing:.16em;
-  text-transform:uppercase; color:var(--faint);
-}
-.sd-count b{ font-family:var(--typed); font-size:15px; color:var(--ink); font-weight:500; }
-
-.sd-rig{
-  display:grid; grid-template-columns:232px minmax(0,1fr) 250px;
-  gap:var(--s2);
-  align-items:start;
-}
-.sd-out, .sd-insp{
-  border:1px solid var(--rule); border-radius:6px; background:var(--panel);
-  max-height:min(66vh, 540px); overflow-y:auto;
-  padding-bottom:var(--s2);
-}
-.sd-panel-head{
-  display:flex; align-items:center; gap:var(--s2);
-  position:sticky; top:0; z-index:2;
-  padding:var(--s3) var(--s3) var(--s2);
-  background:var(--panel);
-  border-bottom:1px solid var(--rule-soft);
-  font-family:var(--typed); font-size:9px; letter-spacing:.2em; text-transform:uppercase;
-  color:var(--faint);
-}
-.sd-panel-head .reset{
-  margin-left:auto; font-family:inherit; font-size:8.5px; letter-spacing:.14em;
-  color:var(--accent);
-}
-.sd-panel-head button.reset:hover{ text-decoration:underline; }
-
-.sd-branch{ padding:2px var(--s2); }
-.sd-grp{
-  display:flex; align-items:center; gap:var(--s2); width:100%; text-align:left;
-  padding:6px var(--s2); border-radius:4px; font-size:13px; color:var(--ink-2);
-}
-.sd-grp:hover{ background:var(--panel-2); color:var(--ink); }
-.sd-grp .caret{
-  font-style:normal; color:var(--faint); font-size:12px;
-  transform:rotate(90deg); transition:transform var(--fast) var(--ease);
-}
-.sd-branch.shut .caret{ transform:none; }
-.sd-grp .dot{ width:7px; height:7px; border-radius:50%; flex:none; }
-.sd-grp .nm{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.sd-grp .n{ margin-left:auto; font-family:var(--typed); font-size:9.5px; color:var(--faint); }
-.sd-kids{
-  display:grid; grid-template-rows:1fr;
-  transition:grid-template-rows var(--fast) var(--ease);
-  margin-left:16px; border-left:1px solid var(--rule-soft);
-}
-.sd-branch.shut .sd-kids{ grid-template-rows:0fr; }
-.sd-kids > *{ overflow:hidden; }
-.sd-leaf{
-  display:flex; align-items:baseline; gap:var(--s2); width:100%; text-align:left;
-  padding:5px var(--s2) 5px var(--s3); border-radius:0 4px 4px 0;
-  font-size:12.5px; color:var(--muted);
-}
-.sd-leaf:hover{ background:var(--panel-2); color:var(--ink); }
-.sd-leaf.on{ background:color-mix(in srgb, var(--accent) 22%, transparent); color:var(--ink); }
-.sd-leaf .nm{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.sd-leaf .sub{
-  margin-left:auto; font-family:var(--ui); font-size:11px; letter-spacing:0;
-  color:var(--faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:44%;
-}
-
-.sd-canvas{
-  position:relative; overflow:auto;         /* the tree can be wider than the pane */
-  scrollbar-width:thin;
-  border:1px solid var(--rule); border-radius:6px;
-  background:
-    radial-gradient(60% 60% at 30% 20%, rgba(255,255,255,.028), transparent 70%),
-    var(--ground-2);
-  background-image:
-    radial-gradient(circle at 1px 1px, rgba(232,229,220,.07) 1px, transparent 0);
-  background-size:22px 22px;
-  min-height:420px;
-}
-.sd-canvas svg{ position:absolute; inset:0; pointer-events:none; }
-.sd-canvas svg path{
-  fill:none; stroke:var(--rule); stroke-width:1.2; stroke-dasharray:2 4;
-}
-.sd-nodes{ position:relative; min-width:100%; min-height:100%; }
-.sd-canvas svg{ position:absolute; left:0; top:0; }
-.sd-node{
-  position:absolute; user-select:none; cursor:grab;
-  padding:7px 12px; border-radius:6px;
-  border:1px solid var(--rule);
-  background:var(--panel);
-  font-size:13px; color:var(--ink-2);
-  white-space:nowrap;
-  box-shadow:0 12px 26px -20px #000;
-  opacity:0; transform:translateY(6px);
-  animation:deal .36s var(--ease) forwards;
-  animation-delay:calc(var(--d) * 16ms + 40ms);
-  transition:border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
-}
-.sd-node:hover{ border-color:var(--muted); }
-.sd-node.held{ cursor:grabbing; animation:none; opacity:1; transform:none; z-index:9; }
-.sd-node .lab{ display:block; max-width:190px; overflow:hidden; text-overflow:ellipsis; }
-.sd-node .sub{ max-width:190px; overflow:hidden; text-overflow:ellipsis; }
-.sd-node .sub{
-  display:block; font-family:var(--ui); font-size:11px; letter-spacing:0;
-  color:var(--faint); margin-top:2px;
-}
-.sd-node.sd-me{
-  border-color:var(--accent); color:var(--ink);
-  box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
-}
-.sd-node.sd-group{
-  border-left:3px solid var(--hue);
-  font-family:var(--display); font-weight:var(--wd-b); font-size:15px; color:var(--ink);
-}
-.sd-node.on{ border-color:var(--hue); box-shadow:0 0 0 2px color-mix(in srgb, var(--hue) 40%, transparent); }
-
-.sd-field{ padding:var(--s2) var(--s3) 0; }
-.sd-field label{
-  display:block; font-family:var(--typed); font-size:8.5px; letter-spacing:.16em;
-  text-transform:uppercase; color:var(--faint); margin-bottom:2px;
-}
-.sd-field .val{ font-size:13px; color:var(--ink-2); word-break:break-word; }
-.sd-chips{ display:flex; flex-wrap:wrap; gap:4px; padding:var(--s2) var(--s3) 0; }
-.sd-chip{
-  font-size:11px; padding:3px 8px; border-radius:999px;
-  border:1px solid color-mix(in srgb, var(--hue, var(--rule)) 55%, transparent);
-  color:var(--ink-2);
-}
-.sd-chip.main{ background:color-mix(in srgb, var(--hue) 26%, transparent); color:var(--ink); }
-.sd-chip.pale{ border-color:var(--rule); color:var(--muted); font-family:var(--typed); font-size:10px; }
-.sd-chip i{ font-style:normal; color:var(--faint); }
-.sd-log{ padding:var(--s2) var(--s3) 0; display:flex; flex-direction:column; gap:var(--s2); }
-.sd-log div{ font-size:12px; line-height:1.5; color:var(--ink-2); }
-.sd-log span{
-  display:block; font-family:var(--typed); font-size:8.5px; letter-spacing:.12em;
-  text-transform:uppercase; color:var(--faint);
-}
-.sd-none{
-  padding:var(--s3); font-family:var(--typed); font-size:10px; letter-spacing:.1em;
-  text-transform:uppercase; color:var(--faint);
-}
-
-@media (max-width:1100px){
-  .sd-rig{ grid-template-columns:200px minmax(0,1fr); }
-  .sd-insp{ grid-column:1 / -1; max-height:none; }
-}
-@media (max-width:880px){
-  .sd-rig{ grid-template-columns:1fr; }
-  .sd-out{ max-height:240px; }
-  .sd-canvas{ min-height:340px; }
-}
-
-/* ==========================================================================
    Design 9 — Constellation
    A sphere projected by hand rather than by CSS 3D: every point is a flat
    element placed where the maths says, sorted back to front and faded with
@@ -1177,7 +1027,6 @@ dd.edit{ display:block; }
 .arc-body.still .ix-row,
 .arc-body.still .ch-band,
 .arc-body.still .ch-name,
-.arc-body.still .sd-node,
 .arc-body.still .or-pt,
 .arc-body.still .file,
 .arc-body.still .fw{

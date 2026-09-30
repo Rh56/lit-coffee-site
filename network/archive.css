@@ -1400,3 +1400,42 @@ dd.edit{ display:block; }
 @media (prefers-reduced-motion:reduce){
   .sheet-adds{ animation:none; opacity:1; }
 }
+
+/* ---------- desktop: the preview turns like a rolodex ---------- */
+
+.fprev{ perspective:1100px; }
+/* a card that has already been introduced does not introduce itself again */
+.fprev-in.settled, .fprev-in.settled dl dt, .fprev-in.settled dl dd,
+.fprev-in.settled .fic.big{ animation:none; opacity:1; transform:none; }
+.fprev-in.settled::after{ display:none; }
+.fprev-in.settled .fic.big svg{ animation:float 5s ease-in-out .6s infinite; }
+
+.fprev-in.roll-in, .fempty.roll-in{
+  transform-origin:50% calc(50% + var(--dir, 0) * 40%);
+  animation:rollin .44s var(--ease) both;
+}
+@keyframes rollin{
+  from{
+    opacity:0;
+    transform:translateY(calc(var(--dir, 0) * 28px)) rotateX(calc(var(--dir, 0) * -16deg)) scale(.985);
+  }
+}
+.fprev-in.roll-out, .fempty.roll-out{
+  position:absolute; left:0; right:0; pointer-events:none;
+  transform-origin:50% calc(50% - var(--dir, 0) * 40%);
+  animation:rollout .3s var(--ease) forwards;
+}
+@keyframes rollout{
+  to{
+    opacity:0;
+    transform:translateY(calc(var(--dir, 0) * -22px)) rotateX(calc(var(--dir, 0) * 14deg)) scale(.985);
+  }
+}
+/* the name on the new card catches a little light as it lands */
+.fprev-in.roll-in h4{ animation:namein .5s var(--ease) .06s both; }
+@keyframes namein{ from{ opacity:0; letter-spacing:.04em; filter:blur(2px); } }
+
+@media (prefers-reduced-motion:reduce){
+  .fprev-in.roll-in, .fprev-in.roll-out, .fempty.roll-in, .fempty.roll-out,
+  .fprev-in.roll-in h4{ animation:none !important; }
+}

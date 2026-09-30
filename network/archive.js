@@ -797,7 +797,15 @@ function setGroup(id) {
 }
 
 function setDesign(id) {
-  if (view.design === id) return;
+  if (view.design === id) {
+    // pressing the design you are already in, from inside a file or folder,
+    // takes you back to the top of it
+    if (!view.person && !view.circle) return;
+    view.person = null; view.circle = null;
+    scroll.scrollTop = 0;
+    render();
+    return writeRoute();
+  }
   view.design = id;
   // only the drawer opens a person on their own page; everywhere else the
   // name in the header would be describing something not on screen
@@ -1329,10 +1337,7 @@ function drawFinder(host) {
   }
 
   var lastPath = [], lastFoot = [];
-  function paint() {
-    var folk = sel.circle ? peopleIn(sel.circle) : [];
-    var p = sel.person ? personById(sel.person) : null;
-
+  function chrome(folk, p) {
     // the path: a segment that is new slides in, the ones that stayed stay
     var path = ['Rootwork'].concat(sel.circle ? [sel.circle] : [], p ? [p.name + '.card'] : []);
     $('#fw-path', rig).innerHTML = path.map(function (bit, i) {
@@ -1348,6 +1353,32 @@ function drawFinder(host) {
       b.toggleAttribute('data-on', b.dataset.mode === finderMode);
     });
     placePill();
+
+    var foot = [
+      cols.length + ' folder' + (cols.length === 1 ? '' : 's'),
+      folk.length + ' item' + (folk.length === 1 ? '' : 's') + (sel.circle ? ' in ' + sel.circle : '')
+    ];
+    $('#fw-foot', rig).innerHTML = foot.map(function (t, i) {
+      return '<span' + (lastFoot[i] !== undefined && lastFoot[i] !== t ? ' class="tick"' : '') + '>' + esc(t) + '</span>';
+    }).join('') + '<span class="fw-tip">\u2191\u2193 move \u00b7 \u2192 open \u00b7 \u21b5 edit</span>';
+    lastFoot = foot;
+  }
+
+  function peopleCol(folk) {
+    return '<i class="fw-marker" aria-hidden="true"></i>' + (folk.length ? folk.map(function (x, xi) {
+      return '<button class="frow' + (sel.person === x.id ? ' on' : '') + '" data-person="' + x.id + '" style="--r:' + xi + '">' +
+        '<span class="fic">' + icon('file') + '</span>' +
+        '<span class="fnm">' + esc(x.name) + '</span>' +
+        '<span class="fct">' + esc(sizeOf(x)) + '</span>' +
+      '</button>';
+    }).join('') : '<div class="fempty">empty folder</div>');
+  }
+  function previewOf(p) { return p ? preview(p) : '<div class="fempty">no file selected</div>'; }
+
+  function paint() {
+    var folk = sel.circle ? peopleIn(sel.circle) : [];
+    var p = sel.person ? personById(sel.person) : null;
+    chrome(folk, p);
 
     if (finderMode === 'icons') {
       pane.className = 'fw-icons';
@@ -1375,26 +1406,79 @@ function drawFinder(host) {
             '<span class="fch">\u203a</span>' +
           '</button>';
         }).join('') + '</div>' +
-        '<div class="fcol" data-col="1"><i class="fw-marker" aria-hidden="true"></i>' + (folk.length ? folk.map(function (x, xi) {
-          return '<button class="frow' + (sel.person === x.id ? ' on' : '') + '" data-person="' + x.id + '" style="--r:' + xi + '">' +
-            '<span class="fic">' + icon('file') + '</span>' +
-            '<span class="fnm">' + esc(x.name) + '</span>' +
-            '<span class="fct">' + esc(sizeOf(x)) + '</span>' +
-          '</button>';
-        }).join('') : '<div class="fempty">empty folder</div>') + '</div>' +
-        '<div class="fcol fprev" data-col="2">' + (p ? preview(p) : '<div class="fempty">no file selected</div>') + '</div>';
+        '<div class="fcol" data-col="1">' + peopleCol(folk) + '</div>' +
+        '<div class="fcol fprev" data-col="2">' + previewOf(p) + '</div>';
     }
 
     placeMarker();
+  }
 
-    var foot = [
-      cols.length + ' folder' + (cols.length === 1 ? '' : 's'),
-      folk.length + ' item' + (folk.length === 1 ? '' : 's') + (sel.circle ? ' in ' + sel.circle : '')
-    ];
-    $('#fw-foot', rig).innerHTML = foot.map(function (t, i) {
-      return '<span' + (lastFoot[i] !== undefined && lastFoot[i] !== t ? ' class="tick"' : '') + '>' + esc(t) + '</span>';
-    }).join('') + '<span class="fw-tip">\u2191\u2193 move \u00b7 \u2192 open \u00b7 \u21b5 edit</span>';
-    lastFoot = foot;
+  /* Moving between people is not a new screen, so it is not drawn as one:
+     the list stays where it is, the marker slides to the new row, and the
+     preview turns over like a rolodex card in the direction you moved. */
+  function roll(p, dir) {
+    var col = pane.querySelector('.fcol[data-col="2"]');
+    if (!col) return;
+    var old = col.querySelector('.fprev-in, .fempty');
+    var tmp = document.createElement('div');
+    tmp.innerHTML = previewOf(p);
+    var next = tmp.firstElementChild;
+    if (reduced() || !old) {
+      if (old) old.remove();
+      next.classList.add('settled');
+      col.appendChild(next);
+      return;
+    }
+    next.style.setProperty('--dir', dir);
+    next.classList.add('settled', 'roll-in');
+    old.style.setProperty('--dir', dir);
+    old.style.top = (old.offsetTop - col.scrollTop) + 'px';
+    old.classList.add('roll-out');
+    col.appendChild(next);
+    col.scrollTop = 0;                        // a new card is read from its name down
+    setTimeout(function () { old.remove(); }, 320);
+  }
+
+  function pickPerson(id) {
+    if (finderMode !== 'columns' || !pane.querySelector('.fcol[data-col="2"]')) {
+      sel.person = id; return paint();
+    }
+    var folk = sel.circle ? peopleIn(sel.circle) : [];
+    var ids = folk.map(function (x) { return x.id; });
+    var dir = sel.person && id ? (ids.indexOf(id) > ids.indexOf(sel.person) ? 1 : -1) : 0;
+    if (id === sel.person) return;
+    sel.person = id;
+    Array.prototype.forEach.call(pane.querySelectorAll('.fcol[data-col="1"] .frow'), function (r) {
+      r.classList.toggle('on', r.dataset.person === id);
+    });
+    placeMarker();
+    chrome(folk, id ? personById(id) : null);
+    roll(id ? personById(id) : null, dir);
+  }
+
+  /* A new folder redraws the people and the preview; the folders stay put. */
+  function pickCircle(name) {
+    var col1 = pane.querySelector('.fcol[data-col="1"]');
+    if (finderMode !== 'columns' || !col1) {
+      sel.circle = name; sel.person = null; return paint();
+    }
+    var names = cols.map(function (c) { return c.name; });
+    var dir = names.indexOf(name) > names.indexOf(sel.circle) ? 1 : -1;
+    sel.circle = name; sel.person = null;
+    var folk = peopleIn(name);
+    Array.prototype.forEach.call(pane.querySelectorAll('.fcol[data-col="0"] .frow'), function (r) {
+      r.classList.toggle('on', r.dataset.circle === name);
+    });
+    col1.innerHTML = peopleCol(folk);
+    col1.scrollTop = 0;
+    if (!reduced()) {
+      col1.removeAttribute('data-fresh'); void col1.offsetWidth;
+      col1.setAttribute('data-fresh', '');
+      setTimeout(function () { col1.removeAttribute('data-fresh'); }, 360);
+    }
+    placeMarker();
+    chrome(folk, null);
+    roll(null, dir);
   }
 
   /* The mode buttons share one pill that slides to whichever is on. */
@@ -1511,17 +1595,11 @@ function drawFinder(host) {
     if (fi) { view.design = 'drawer'; return openPerson(fi.dataset.file); }
     var c = e.target.closest('[data-circle]');
     if (c) {
-      sel.circle = c.dataset.circle; sel.person = null;
-      paint();
-      var col = rig.querySelector('.fcol[data-col="1"]');
-      if (col && !reduced()) {
-        col.setAttribute('data-fresh', '');
-        setTimeout(function () { col.removeAttribute('data-fresh'); }, 360);
-      }
-      return;
+      if (c.dataset.circle === sel.circle && finderMode === 'columns') return;
+      return pickCircle(c.dataset.circle);
     }
     var pr = e.target.closest('[data-person]');
-    if (pr) { sel.person = pr.dataset.person; return paint(); }
+    if (pr && !e.target.closest('.fprev-in')) return pickPerson(pr.dataset.person);
   });
   rig.addEventListener('dblclick', function (e) {
     var pr = e.target.closest('[data-person]');
@@ -1539,17 +1617,16 @@ function drawFinder(host) {
       var step = e.key === 'ArrowDown' ? 1 : -1;
       var next = Math.max(0, Math.min(list.length - 1, cur + step));
       if (next === cur) return bump(step);
-      if (inPeople) sel.person = list[next]; else { sel.circle = list[next]; sel.person = null; }
-      return paint();
+      return inPeople ? pickPerson(list[next]) : pickCircle(list[next]);
     }
     if (e.key === 'ArrowRight') {
       e.preventDefault();
-      if (!inPeople && folk.length) { sel.person = folk[0].id; return paint(); }
+      if (!inPeople && folk.length) return pickPerson(folk[0].id);
       return;
     }
     if (e.key === 'ArrowLeft') {
       e.preventDefault();
-      if (inPeople) { sel.person = null; return paint(); }
+      if (inPeople) return pickPerson(null);
       return;
     }
     if (e.key === 'Enter' && sel.person) { e.preventDefault(); launch(sel.person); }

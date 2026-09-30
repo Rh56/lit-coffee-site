@@ -317,12 +317,6 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 .note .del{ float:right; color:var(--faint); font-size:12px; }
 .d-actions{ display:flex; gap:6px; padding-top:18px; }
 
-.tagrow{ display:flex; flex-wrap:wrap; gap:5px; }
-.tagrow span{
-  font-family:var(--mono); font-size:10.5px; letter-spacing:.06em;
-  border:1px solid var(--rule); border-radius:2px; padding:2px 6px; color:var(--muted);
-}
-
 /* ---------- modal ---------- */
 
 .scrim{
@@ -676,7 +670,7 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 /* ---------- chip lists (schools, tags) ---------- */
 
 .chiplist{ display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
-.cchip.school .lbl, .cchip.tag .lbl{ padding:3px 7px; font-size:12.5px; }
+.cchip.school .lbl{ padding:3px 7px; font-size:12.5px; }
 .cchip.school .lvl{
   padding:2px 6px; font-family:var(--mono); font-size:9.5px; letter-spacing:.1em;
   text-transform:uppercase; color:var(--muted);
@@ -684,7 +678,6 @@ button{ cursor:pointer; background:none; border:none; padding:0; }
 }
 .cchip.school .lvl:hover{ color:var(--accent); }
 .cchip.school .lvl.none{ color:var(--faint); opacity:.6; }
-.cchip.tag .lbl{ font-family:var(--mono); font-size:11px; color:var(--muted); }
 .chipinput{
   flex:1; min-width:110px;
   background:none; border:none; border-bottom:1px dashed var(--rule);

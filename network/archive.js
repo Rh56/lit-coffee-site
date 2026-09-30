@@ -40,11 +40,14 @@ var query = '', qTimer = null;
 
 /* Each design has its own address, so one can be opened cold — bookmarked,
    shared, pinned to a phone's home screen — without going through the map. */
+/* A person is marked as one. Without that, #drawer/p34m20 read the id back
+   as a folder name — which is how a person's id ended up looking like a new
+   circle. */
 function routeOf() {
   if (!open) return '';
   var bits = ['#' + view.design];
   if (view.circle) bits.push(encodeURIComponent(view.circle));
-  if (view.person) bits.push(encodeURIComponent(view.person));
+  if (view.person) bits.push('~' + encodeURIComponent(view.person));
   return bits.join('/');
 }
 function writeRoute(replace) {
@@ -59,11 +62,19 @@ function readRoute() {
   var bits = h.split('/');
   var d = DESIGNS.filter(function (x) { return x.id === bits[0]; })[0];
   if (!d) return null;
-  return {
-    design: d.id,
-    circle: bits[1] ? decodeURIComponent(bits[1]) : null,
-    person: bits[2] ? decodeURIComponent(bits[2]) : null
-  };
+  var circle = null, person = null;
+  bits.slice(1).forEach(function (bit) {
+    if (!bit) return;
+    if (bit.charAt(0) === '~') person = decodeURIComponent(bit.slice(1));
+    else if (circle === null) circle = decodeURIComponent(bit);
+  });
+  // an address can be stale or hand-typed: only take what the map still has
+  if (circle && L && L.knownCircle && !L.knownCircle(circle)) {
+    if (!person && L.hasPerson && L.hasPerson(circle)) person = circle;
+    circle = null;
+  }
+  if (person && L && L.hasPerson && !L.hasPerson(person)) person = null;
+  return { design: d.id, circle: circle, person: person };
 }
 
 function esc(s) { return L.esc(s); }
@@ -83,7 +94,7 @@ function hueVar(circle) { return hueOfGroup(circle); }
 function matches(p) {
   if (!query) return true;
   return [p.name, p.profession, p.company, p.location, p.email,
-    L.circlesOf(p).join(' '), (p.tags || []).join(' '),
+    L.circlesOf(p).join(' '),
     L.schoolsOf(p).map(function (s) { return s.name; }).join(' '),
     (p.log || []).map(function (e) { return e.text; }).join(' ')]
     .join(' ').toLowerCase().indexOf(query) >= 0;
@@ -596,8 +607,7 @@ function drawFile(host) {
     ['Profession', p.profession, 'profession'], ['Company', p.company, 'company'],
     ['Location', p.location, 'location'],
     ['Schools', L.schoolsOf(p).map(function (s) { return s.name + (s.level ? ' (' + s.level + ')' : ''); }).join(', ')],
-    ['Filed under', L.circlesOf(p).join(' · ')],
-    ['Tags', (p.tags || []).map(function (t) { return '#' + t; }).join(' ')]
+    ['Filed under', L.circlesOf(p).join(' · ')]
   ];
   Object.keys(p.custom || {}).forEach(function (k) { facts.push([k, p.custom[k]]); });
   var ties = L.tiesOf(p);
@@ -1292,12 +1302,14 @@ var wired = false;
 function wire() {
   if (wired) return;
   wired = true;
+  if (window.Rootwork) { R = window.Rootwork; L = R.lib; }
   var btn = document.getElementById('btn-archive');
   if (btn) btn.addEventListener('click', function () { show(null, null); });
 
   var landed = readRoute();
   if (landed) show(landed.circle, landed.person, landed.design);
   else if (location.hash !== '#map') show(null, null);       // opens here, not on the map
+
   document.addEventListener('keydown', function (e) {
     if (open) return;
     var t = document.activeElement;

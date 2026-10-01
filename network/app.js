@@ -2177,9 +2177,13 @@ $('#scrim').addEventListener('click', function (e) {
   if (e.target === e.currentTarget || e.target.closest('[data-close]')) closeModal();
 });
 
-function personForm(p) {
+/* opts.circle starts a new person in that circle; opts.done(p) takes over
+   from opening the card, for a surface (the archive) that shows them itself. */
+function personForm(p, opts) {
+  opts = opts || {};
   var isNew = !p;
   p = p || blankPerson('');
+  if (isNew && opts.circle) p.circles = [opts.circle];
   var f = function (k, label, type) {
     return '<div class="field' + (type === 'area' ? ' wide' : '') + '"><label for="f-' + k + '">' + label + '</label>' +
       (type === 'area'
@@ -2217,7 +2221,8 @@ function personForm(p) {
     if (isNew) state.people.push(p);
     circlesOf(p).forEach(circleIndex);
     touch(p); save(); closeModal(); renderAll();
-    if (byId[p.id]) openDossier(byId[p.id]);
+    if (opts.done) opts.done(p);
+    else if (byId[p.id]) openDossier(byId[p.id]);
     toast(isNew ? p.name + ' added' : 'Saved');
   });
   m.addEventListener('keydown', function (e) {
@@ -3192,6 +3197,7 @@ window.Rootwork = {
     primaryCircle: primaryCircle, inCircle: inCircle,
     lastTouch: lastTouch, schoolsOf: schoolsOf, tiesOf: tiesOf,
     degrees: DEGREES, addSchool: addSchool,
+    newPerson: function (circle, done) { personForm(null, { circle: circle, done: done }); },
     // "Wharton mba" -> { name: 'Wharton', level: 'MBA' }, the card's own reading
     parseSchool: function (val) {
       val = clean(val || '');

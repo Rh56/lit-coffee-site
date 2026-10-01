@@ -832,6 +832,7 @@ function build() {
         '<input id="arc-q" type="search" placeholder="find anyone" autocomplete="off" spellcheck="false" aria-label="Find anyone">' +
         '<kbd aria-hidden="true">/</kbd>' +
       '</label>' +
+      '<button class="arc-add" id="arc-add" title="Add someone (N)">+ Person</button>' +
       '<button class="arc-map" id="arc-close" title="Back to the map (Esc)">The map</button>' +
     '</header>' +
     '<div class="arc-scroll" id="arc-scroll"><div class="arc-wrap">' +
@@ -844,6 +845,21 @@ function build() {
   body = $('#arc-body', root);
 
   $('#arc-close', root).addEventListener('click', close);
+  $('#arc-add', root).addEventListener('click', function () { addPerson(currentFolder()); });
+  // any "+ add" inside a design, with the folder it belongs to
+  root.addEventListener('click', function (e) {
+    var a = e.target.closest('[data-addto]');
+    if (!a) return;
+    e.stopPropagation();
+    addPerson(a.dataset.addto || null);
+  }, true);
+  document.addEventListener('keydown', function (e) {
+    if (!open || e.key.toLowerCase() !== 'n' || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target.closest && e.target.closest('input, textarea, [contenteditable]')) return;
+    if (document.querySelector('#scrim:not([hidden])')) return;
+    e.preventDefault();
+    addPerson(currentFolder());
+  });
   root.addEventListener('click', function (e) {
     var a = e.target.closest('[data-act][data-for]');
     if (a) { e.stopPropagation(); if (editorAction(a)) return; }
@@ -1138,6 +1154,39 @@ function openPerson(id, hue) {
 }
 function openCircle(name) { view.circle = name; view.person = null; render(); writeRoute(); scroll.scrollTop = 0; }
 
+/* ---- adding someone ----
+   The map's own form, started in whichever folder you are in (when folders
+   are circles), and the new person then opens right here rather than on the
+   map behind. */
+var finderSel = null;            // the desktop's open folder, while it is on screen
+
+function currentFolder() {
+  if (groupMode !== 'circle') return null;
+  if (view.design === 'finder' && finderSel) return finderSel.circle;
+  return view.circle || null;
+}
+
+function addPerson(circle) {
+  if (groupMode !== 'circle') circle = null;
+  L.newPerson(circle, function (p) {
+    var home = L.circlesOf(p)[0] || null;
+    if (view.design === 'drawer') {
+      view.circle = home;
+      return openPerson(p.id, home ? hueVar(home) : null);
+    }
+    if (view.design === 'index' || view.design === 'finder') {
+      view.circle = view.design === 'finder' ? home : view.circle;
+      view.person = p.id;
+      render(true);
+      return writeRoute();
+    }
+    // chroma: draw them in, then open their pane from their own name
+    render(true);
+    var n = body.querySelector('.ch-name[data-person="' + cssEsc(p.id) + '"]');
+    if (n) { n.scrollIntoView({ block: 'center' }); n.click(); }
+  });
+}
+
 /* The card is the one place anything is edited, so it comes to whichever
    surface you are on rather than sending you back to the map.
 
@@ -1210,6 +1259,8 @@ function drawDrawer(host) {
               '<span class="stamp">' + esc(p.log.length ? L.ago(L.lastTouch(p)) : 'no touchpoints') + '</span>' +
             '</button>';
           }).join('') : '<div class="empty-note">Nobody filed here yet</div>') +
+          (groupMode === 'circle' ? '<button class="entry-add" data-addto="' + esc(c.name) + '" style="--d:' + folk.length + '">' +
+            '+ add someone to ' + esc(c.name) + '</button>' : '') +
         '</div></div></div>' +
       '</div>';
     wrap.appendChild(f);
@@ -1555,7 +1606,9 @@ function drawChroma(host) {
       return '<section class="ch-band" style="--hue:' + hueVar(g.name) + ';--gi:' + gi + '">' +
         '<div class="ch-wash"></div>' +
         '<header><h3>' + esc(g.name) + '</h3>' +
-          '<span>' + String(g.people.length).padStart(2, '0') + ' entries</span></header>' +
+          '<span>' + String(g.people.length).padStart(2, '0') + ' entries</span>' +
+          (groupMode === 'circle' ? '<button class="ch-add" data-addto="' + esc(g.name) + '" aria-label="Add someone to ' + esc(g.name) + '">+</button>' : '') +
+        '</header>' +
         '<div class="ch-names">' +
           (g.people.length ? g.people.map(function (p, i) {
             return '<button class="ch-name" data-person="' + p.id + '" style="--d:' + i + '">' +
@@ -1721,6 +1774,7 @@ function drawFinder(host) {
     if (first) sel.person = first.id;
   }
 
+  finderSel = sel;
   var rig = el('div', 'finder');
   rig.innerHTML =
     '<div class="fw-desk" aria-hidden="true"></div>' +
@@ -1785,7 +1839,9 @@ function drawFinder(host) {
         '<span class="fic">' + icon('file') + '</span>' +
         '<span class="fnm">' + esc(x.name) + '</span>' +
       '</button>';
-    }).join('') : '<div class="fempty">empty folder</div>');
+    }).join('') : '<div class="fempty">empty folder</div>') +
+      (sel.circle && groupMode === 'circle' ? '<button class="frow fnew" data-addto="' + esc(sel.circle) + '">' +
+        '<span class="fic">+</span><span class="fnm">New file</span></button>' : '');
   }
   function previewOf(p) { return p ? preview(p) : '<div class="fempty">no file selected</div>'; }
 

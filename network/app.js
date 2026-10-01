@@ -161,6 +161,15 @@ function normalizePerson(p) {
   if (p.birthday) { p.custom.birthday = p.custom.birthday || p.birthday; delete p.birthday; }
   if (p.howMet) { p.custom['met via'] = p.custom['met via'] || p.howMet; delete p.howMet; }
   p.notes = p.notes || [];
+  // phone is gone as a field; a number already on file becomes a note, with
+  // an id fixed per person so two devices migrating it do not make two
+  if (p.phone !== undefined) {
+    var num = clean(String(p.phone || ''));
+    if (num && !p.notes.some(function (n) { return n.t && n.t.indexOf(num) >= 0; })) {
+      p.notes.push({ id: 'n-phone-' + p.id, t: 'Phone: ' + num, at: p.created || Date.now() });
+    }
+    delete p.phone;
+  }
   p.log = p.log || [];
   if (!Array.isArray(p.circles)) p.circles = [];
   if (p.circle && !p.circles.length) p.circles = [p.circle];   // from the single-circle days
@@ -173,7 +182,7 @@ function normalizePerson(p) {
 
 function blankPerson(name) {
   return normalizePerson({
-    id: uid(), name: name || '', email: '', phone: '', profession: '', company: '',
+    id: uid(), name: name || '', email: '', profession: '', company: '',
     schools: [], location: '', circles: [], custom: {},
     notes: [], log: [], created: Date.now()
   });
@@ -1699,7 +1708,7 @@ function openDossier(node) {
 
     '<div class="d-body">' +
       '<div class="d-sec"><h4>Details</h4><dl class="fields">' +
-        row('Email', 'email', p.email, 'mailto:') + row('Phone', 'phone', p.phone, 'tel:') +
+        row('Email', 'email', p.email, 'mailto:') +
         row('Profession', 'profession', p.profession) + row('Company', 'company', p.company) +
         row('Location', 'location', p.location) +
         Object.keys(p.custom || {}).map(function (k) {
@@ -2315,7 +2324,7 @@ function personForm(p) {
     f('name', 'Name') +
     '<div class="field"><label for="f-circle">Circles</label><input id="f-circle" value="' + esc(circlesOf(p).join(', ')) + '">' +
       '<span class="hint">Comma separated. The first one colours their dot.</span></div>' +
-    f('email', 'Email', 'email') + f('phone', 'Phone', 'tel') +
+    f('email', 'Email', 'email') +
     f('profession', 'Profession') + f('company', 'Company') +
     '<div class="field"><label for="f-school">Schools</label><input id="f-school" value="' +
       esc(schoolsOf(p).map(function (x) { return x.name + (x.level ? ' ' + x.level : ''); }).join(', ')) + '">' +
@@ -2330,7 +2339,7 @@ function personForm(p) {
   m.querySelector('#f-save').addEventListener('click', function () {
     var g = function (k) { return m.querySelector('#f-' + k).value.trim(); };
     if (!g('name')) { m.querySelector('#f-name').focus(); return; }
-    ['name', 'email', 'phone', 'profession', 'company', 'location'].forEach(function (k) { p[k] = g(k); });
+    ['name', 'email', 'profession', 'company', 'location'].forEach(function (k) { p[k] = g(k); });
     p.schools = [];
     g('school').split(',').map(clean).filter(Boolean).forEach(function (bit) {
       var level = degreeIn(bit);
@@ -2372,7 +2381,7 @@ function splitRows(text) {
 
 var FIELDS = [
   ['name', 'Name'], ['firstName', 'First name'], ['lastName', 'Last name'],
-  ['email', 'Email'], ['phone', 'Phone'], ['profession', 'Profession'],
+  ['email', 'Email'], ['phone', 'Phone (kept as a note)'], ['profession', 'Profession'],
   ['company', 'Company'], ['school', 'School'], ['location', 'Location'],
   ['circle', 'Circle'],
   ['notes', 'Notes'], ['custom', 'Keep as its own field'],
@@ -2459,7 +2468,7 @@ function importModal(preloaded, filename) {
       '<p class="fine">A CSV or TSV exported from Sheets, Excel or Numbers. Nothing is uploaded — it is read here in the browser.</p>' +
     '</div>' +
     '<details id="im-paste-wrap"><summary>or paste the rows instead</summary>' +
-      '<textarea id="io-in" placeholder="name,phone,email,profession,notes"></textarea></details>' +
+      '<textarea id="io-in" placeholder="name,email,profession,notes"></textarea></details>' +
     '<div id="im-map" hidden></div>' +
     '<div class="status" id="io-status">&nbsp;</div></div>';
 
@@ -2618,9 +2627,13 @@ function importModal(preloaded, filename) {
       if (!p) { p = blankPerson(name); state.people.push(p); added++; } else merged++;
       p.name = name;
 
-      ['email', 'phone', 'profession', 'company', 'location'].forEach(function (k) {
+      ['email', 'profession', 'company', 'location'].forEach(function (k) {
         if (rec[k]) p[k] = rec[k];
       });
+      // there is no phone field; a number in the sheet is kept as a note
+      if (rec.phone && !p.notes.some(function (n) { return n.t && n.t.indexOf(rec.phone) >= 0; })) {
+        p.notes.unshift({ id: uid(), t: 'Phone: ' + rec.phone, at: Date.now() });
+      }
       if (rec.school) rec.school.split(/[,;|/]/).map(clean).filter(Boolean)
         .forEach(function (nm) { addSchool(p.schools, titleCase(nm), ''); });
       Object.keys(rec.custom).forEach(function (k) { p.custom[k] = rec.custom[k]; });
@@ -2669,7 +2682,7 @@ function importModal(preloaded, filename) {
 })();
 
 function toCSV() {
-  var cols = ['name', 'phone', 'email', 'profession', 'company', 'schools', 'location', 'circles', 'lastTouch', 'touchpoints', 'notes'];
+  var cols = ['name', 'email', 'profession', 'company', 'schools', 'location', 'circles', 'lastTouch', 'touchpoints', 'notes'];
   var q = function (v) { v = String(v === undefined || v === null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
   var lines = [cols.join(',')];
   state.people.forEach(function (p) {
@@ -2678,7 +2691,7 @@ function toCSV() {
       .join(' | ');
     var extra = Object.keys(p.custom || {}).map(function (k) { return k + ': ' + p.custom[k]; });
     var sch = schoolsOf(p).map(function (x) { return x.name + (x.level ? ' (' + x.level + ')' : ''); }).join(' / ');
-    lines.push([p.name, p.phone, p.email, p.profession, p.company, sch, p.location, circlesOf(p).join(' / '),
+    lines.push([p.name, p.email, p.profession, p.company, sch, p.location, circlesOf(p).join(' / '),
       p.log.length ? new Date(lastTouch(p)).toISOString().slice(0, 10) : '',
       p.log.length, extra.concat(notes ? [notes] : []).join(' | ')].map(q).join(','));
   });
@@ -3008,7 +3021,7 @@ function sample() {
   };
   return [
     mk({ name: 'Dana Okafor', circle: 'Work', profession: 'Data scientist', company: 'Merck', schools: [{ name: 'Rutgers', level: 'BS' }],
-      email: 'dana.okafor@example.com', phone: '(908) 555-0142', location: 'Rahway, NJ',
+      email: 'dana.okafor@example.com', location: 'Rahway, NJ',
       howMet: 'met at the Rutgers alumni mixer' },
       [[4, 'zoom', 'Zoom about the forecasting pilot — she wants a two-week trial.', 'Runs the internal AI guild, 200 people'],
        [38, 'coffee', 'Coffee downtown before the panel.'],
@@ -3021,7 +3034,7 @@ function sample() {
       email: 'priya@example.com' },
       [[130, 'coffee', 'Coffee at Monkey + Elf. Talked through the onboarding redesign.', 'Moving to Lisbon in the spring']]),
     mk({ name: 'Tomás Ferreira', circles: ['School', 'Work'], schools: [{ name: 'Lehigh', level: 'BS' }, { name: 'Villanova', level: 'JD' }], profession: 'Attorney', company: 'Reed Smith',
-      email: 'tomas@example.com', phone: '(610) 555-0119' },
+      email: 'tomas@example.com' },
       [[22, 'meal', 'Dinner at Bolete with the Lehigh crowd.', 'Just made partner'],
        [210, 'call', 'Called for advice on the LLC paperwork.']]),
     mk({ name: 'Hannah Koenig', circle: 'School', schools: [{ name: 'Lehigh', level: 'BS' }], profession: 'Pastry chef', company: 'Bread & Salt',
@@ -3030,7 +3043,7 @@ function sample() {
     mk({ name: 'Owen Reilly', circle: 'School', schools: [{ name: 'Lehigh', level: 'BS' }], profession: 'High school teacher' },
       [[168, 'event', 'Ran into him at homecoming.']]),
     mk({ name: 'Ada Whitfield', circles: ['Industry', 'Neighbors'], profession: 'Roaster', company: 'Deep Roots Coffee',
-      email: 'ada@example.com', phone: '(484) 555-0177', location: 'Bethlehem, PA',
+      email: 'ada@example.com', location: 'Bethlehem, PA',
       howMet: 'intro through Marcus Bell' },
       [[2, 'coffee', 'Cupping session at her roastery — she walked me through the Ethiopia lots.', 'Has spare capacity on the Loring in Q2'],
        [30, 'email', 'Emailed about wholesale pricing.']]),
@@ -3039,15 +3052,14 @@ function sample() {
     mk({ name: 'Sofia Marchetti', circle: 'Industry', profession: 'Green coffee buyer', company: 'Cafe Imports',
       email: 'sofia@example.com' },
       [[300, 'event', 'Met at Coffee Fest in Baltimore.']]),
-    mk({ name: 'Grace Lin', circle: 'Family', profession: 'Nurse practitioner', location: 'Allentown, PA',
-      phone: '(610) 555-0163' },
+    mk({ name: 'Grace Lin', circle: 'Family', profession: 'Nurse practitioner', location: 'Allentown, PA' },
       [[9, 'call', 'Sunday call.', 'Starting the DNP program in the fall']]),
     mk({ name: 'Robert Lin', circle: 'Family', profession: 'Retired machinist', location: 'Allentown, PA' },
       [[9, 'meal', 'Sunday dinner.']]),
     mk({ name: 'Nadia Haddad', circle: 'Neighbors', profession: 'Architect', company: 'Spillman Farmer',
       email: 'nadia@example.com', location: 'Bethlehem, PA' },
       [[16, 'met', 'Ran into her on Broad Street — she offered to look at the floor plan.', 'Did the tenant fit-out on the SteelStacks cafe']]),
-    mk({ name: 'Eli Brandt', circle: 'Neighbors', profession: 'Contractor', phone: '(610) 555-0188' },
+    mk({ name: 'Eli Brandt', circle: 'Neighbors', profession: 'Contractor' },
       [[110, 'call', 'Called about the back patio quote.']])
   ];
 }

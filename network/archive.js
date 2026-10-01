@@ -183,7 +183,7 @@ function seed(str) {                       // a stable number per person, for sc
 
 var FIELD_LABELS = {
   name: 'Name', profession: 'Role', company: 'Company', email: 'Email',
-  phone: 'Phone', location: 'Location'
+  location: 'Location'
 };
 
 function editableAttrs(p, field) {
@@ -269,8 +269,9 @@ function circlesBlock(p) {
 function circleChipsIn(p) {
   return '' +
       L.circlesOf(p).map(function (c, i) {
-        return '<span class="ed-chip' + (i === 0 ? ' main' : '') + '" style="--hue:' + hueOfGroup(c) + '">' +
-          '<span>' + esc(c) + '</span>' +
+        return '<span class="ed-chip circ' + (i === 0 ? ' main' : '') + '" data-ci="' + i + '" style="--hue:' + hueOfGroup(c) + '">' +
+          '<span class="ed-lbl" data-act="primary" data-for="' + p.id + '" data-val="' + esc(c) + '" tabindex="0" role="button" title="' +
+            (i === 0 ? 'Primary circle. Drag to reorder' : 'Make primary. Drag to reorder') + '">' + esc(c) + '</span>' +
           '<button data-act="uncircle" data-for="' + p.id + '" data-val="' + esc(c) + '" ' +
             'aria-label="Take out of ' + esc(c) + '">' + DASH.replace(DASH, '\u00d7') + '</button></span>';
       }).join('') +
@@ -458,6 +459,14 @@ function editorAction(btn) {
     return true;
   }
 
+  // the first circle is the primary one: it colours their dot and files them
+  if (act === 'primary') {
+    if (chipDrag.ended) return true;           // the end of a drag is not a click
+    var list = L.circlesOf(p), at = list.indexOf(btn.dataset.val);
+    if (at > 0) { moveCircle(p, at, 0); }
+    return true;
+  }
+
   if (act === 'school' || act === 'degree' || act === 'unschool') {
     var idx = +btn.dataset.idx;
     var sc = L.schoolsOf(p)[idx];
@@ -560,6 +569,68 @@ function pickMenu(anchor, options, current, take) {
   setTimeout(function () { document.addEventListener('pointerdown', off); }, 0);
 }
 
+function moveCircle(p, from, to) {
+  var list = L.circlesOf(p).slice();
+  if (from === to || from < 0 || from >= list.length) return;
+  var item = list.splice(from, 1)[0];
+  list.splice(Math.max(0, Math.min(list.length, to)), 0, item);
+  p.circles = list;
+  commitPerson(p);
+  refreshBlocks(p);
+}
+
+/* Circles reorder by dragging the chip, with a mouse or a finger: pointer
+   events rather than HTML drag and drop, which phones do not do. */
+var chipDrag = { chip: null, ended: false };
+
+function chipDown(e) {
+  var chip = e.target.closest('[data-chips="circles"] .ed-chip[data-ci]');
+  if (!chip || e.target.closest('button') || e.button > 0) return;
+  chipDrag = { chip: chip, x: e.clientX, y: e.clientY, id: e.pointerId, moving: false, over: null, ended: false };
+}
+function chipMove(e) {
+  var d = chipDrag;
+  if (!d.chip || e.pointerId !== d.id) return;
+  var dx = e.clientX - d.x, dy = e.clientY - d.y;
+  if (!d.moving) {
+    if (Math.abs(dx) + Math.abs(dy) < 6) return;
+    d.moving = true;
+    d.chip.classList.add('dragging');
+    try { d.chip.setPointerCapture(e.pointerId); } catch (err) { }
+  }
+  e.preventDefault();
+  d.chip.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+  var over = null;
+  Array.prototype.forEach.call(d.chip.parentNode.querySelectorAll('.ed-chip[data-ci]'), function (c) {
+    if (c === d.chip) return;
+    var r = c.getBoundingClientRect();
+    if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top - 4 && e.clientY <= r.bottom + 4) over = c;
+    c.classList.remove('over', 'before', 'after');
+  });
+  if (over) {
+    // which side of it you are on is where it lands
+    var rr = over.getBoundingClientRect();
+    over.classList.add('over', e.clientX < rr.left + rr.width / 2 ? 'before' : 'after');
+  }
+  d.over = over;
+}
+function chipUp(e) {
+  var d = chipDrag;
+  if (!d.chip || e.pointerId !== d.id) return;
+  chipDrag = { chip: null, ended: d.moving };
+  if (!d.moving) return;
+  setTimeout(function () { chipDrag.ended = false; }, 0);
+  d.chip.classList.remove('dragging');
+  d.chip.style.transform = '';
+  if (!d.over || e.type === 'pointercancel') return;
+  var p = personById(d.chip.parentNode.dataset.for);
+  var from = +d.chip.dataset.ci, to = +d.over.dataset.ci;
+  if (d.over.classList.contains('after')) to += 1;
+  if (from < to) to -= 1;
+  d.over.classList.remove('over', 'before', 'after');
+  if (p) moveCircle(p, from, to);
+}
+
 /* The circles that exist, plus a field to name a new one. */
 function circleMenu(anchor, p) {
   var old = document.getElementById('arc-pick');
@@ -643,6 +714,10 @@ function build() {
     var f = e.target.closest('[data-field][data-for]');
     if (f) { e.stopPropagation(); editValue(f); }
   }, true);
+  root.addEventListener('pointerdown', chipDown);
+  document.addEventListener('pointermove', chipMove, { passive: false });
+  document.addEventListener('pointerup', chipUp);
+  document.addEventListener('pointercancel', chipUp);
   root.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter') return;
     var t = e.target.closest && e.target.closest('[data-act][data-for], [data-field][data-for]');
@@ -994,7 +1069,7 @@ function drawFile(host) {
   file.style.setProperty('--tab-x', '18px');
 
   var facts = [
-    ['Email', p.email, 'email'], ['Phone', p.phone, 'phone'],
+    ['Email', p.email, 'email'],
     ['Profession', p.profession, 'profession'], ['Company', p.company, 'company'],
     ['Location', p.location, 'location'],
     ['Schools', '', '', schoolChips(p)],
@@ -1229,7 +1304,6 @@ function drawChroma(host) {
       '<dl>' +
         '<dt>Company</dt><dd class="edit"' + editableAttrs(p, 'company') + '>' + esc(p.company || '—') + '</dd>' +
         '<dt>Email</dt><dd class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +
-        '<dt>Phone</dt><dd class="edit"' + editableAttrs(p, 'phone') + '>' + esc(p.phone || '—') + '</dd>' +
         '<dt>Location</dt><dd class="edit"' + editableAttrs(p, 'location') + '>' + esc(p.location || '—') + '</dd>' +
         '<dt>School</dt><dd>' + schoolChips(p) + '</dd>' +
         '<dt>Filed</dt><dd>' + circleChips(p) + '</dd>' +
@@ -1565,7 +1639,6 @@ function drawFinder(host) {
         '<dt style="--i:2">Filed</dt><dd style="--i:2">' + circleChips(p) + '</dd>' +
         '<dt style="--i:3">Company</dt><dd style="--i:3" class="edit"' + editableAttrs(p, 'company') + '>' + esc(p.company || '—') + '</dd>' +
         '<dt style="--i:4">Email</dt><dd style="--i:4" class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +
-        '<dt style="--i:5">Phone</dt><dd style="--i:5" class="edit"' + editableAttrs(p, 'phone') + '>' + esc(p.phone || '—') + '</dd>' +
         '<dt style="--i:6">Location</dt><dd style="--i:6" class="edit"' + editableAttrs(p, 'location') + '>' + esc(p.location || '—') + '</dd>' +
         '<dt style="--i:7">School</dt><dd style="--i:7">' + schoolChips(p) + '</dd>' +
         '<dt style="--i:8">Opened</dt><dd style="--i:8">' + esc(p.log.length ? L.fmtDate(L.lastTouch(p)) : 'never') + '</dd>' +

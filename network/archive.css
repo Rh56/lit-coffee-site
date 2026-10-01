@@ -1439,3 +1439,17 @@ dd.edit{ display:block; }
   .fprev-in.roll-in, .fprev-in.roll-out, .fempty.roll-in, .fempty.roll-out,
   .fprev-in.roll-in h4{ animation:none !important; }
 }
+
+/* ---------- circles: tap for primary, drag to reorder ---------- */
+
+.ed-chip.circ{ cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none;
+  transition:box-shadow var(--fast) var(--ease); }
+.ed-chip.circ .ed-lbl{ cursor:pointer; }
+.ed-chip.circ:not(.main) .ed-lbl:hover{ text-decoration:underline; text-underline-offset:3px; }
+.ed-chip.circ.main .ed-lbl{ font-weight:600; }
+.ed-chip.circ.dragging{
+  cursor:grabbing; position:relative; z-index:5; opacity:.9;
+  box-shadow:0 8px 20px -8px rgba(0,0,0,.6);
+}
+.ed-chip.circ.over.before{ box-shadow:-3px 0 0 var(--accent); }
+.ed-chip.circ.over.after{ box-shadow:3px 0 0 var(--accent); }

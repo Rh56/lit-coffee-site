@@ -2176,6 +2176,13 @@ function confirmAction(summary, detail, run) {
 $('#scrim').addEventListener('click', function (e) {
   if (e.target === e.currentTarget || e.target.closest('[data-close]')) closeModal();
 });
+// Escape closes any dialog, the archive's included (the map's keys stand
+// aside while the archive is open, so the dialog listens for itself)
+$('#scrim').addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return;
+  e.preventDefault(); e.stopPropagation();
+  closeModal();
+});
 
 /* opts.circle starts a new person in that circle; opts.done(p) takes over
    from opening the card, for a surface (the archive) that shows them itself. */
@@ -2184,31 +2191,87 @@ function personForm(p, opts) {
   var isNew = !p;
   p = p || blankPerson('');
   if (isNew && opts.circle) p.circles = [opts.circle];
-  var f = function (k, label, type) {
-    return '<div class="field' + (type === 'area' ? ' wide' : '') + '"><label for="f-' + k + '">' + label + '</label>' +
-      (type === 'area'
-        ? '<textarea id="f-' + k + '">' + esc(p[k]) + '</textarea>'
-        : '<input id="f-' + k + '" type="' + (type || 'text') + '" value="' + esc(p[k]) + '">') + '</div>';
+
+  /* An index card rather than a form: the name set large in the display
+     face, the rest typed on hairlines, circles as chips you tap in the
+     order that matters (the first is primary). Enter files it. */
+  var line = function (k, label, ph, type, val) {
+    return '<label class="pf-line"><span class="pf-lbl">' + label + '</span>' +
+      '<input id="f-' + k + '" type="' + (type || 'text') + '" autocomplete="off" spellcheck="false" placeholder="' + esc(ph) + '" value="' +
+      esc(val !== undefined ? val : p[k]) + '"></label>';
   };
-  var body = '<div class="grid2">' +
-    f('name', 'Name') +
-    '<div class="field"><label for="f-circle">Circles</label><input id="f-circle" value="' + esc(circlesOf(p).join(', ')) + '">' +
-      '<span class="hint">Comma separated. The first one colours their dot.</span></div>' +
-    f('email', 'Email', 'email') +
-    f('profession', 'Profession') + f('company', 'Company') +
-    '<div class="field"><label for="f-school">Schools</label><input id="f-school" value="' +
-      esc(schoolsOf(p).map(function (x) { return x.name + (x.level ? ' ' + x.level : ''); }).join(', ')) + '">' +
-      '<span class="hint">Comma separated. Add a degree after a name — “Rutgers BS, Wharton MBA”.</span></div>' +
-    f('location', 'Location') +
-    '<div class="field wide"><label for="f-note">Add a note</label><textarea id="f-note" placeholder="Anything worth remembering"></textarea></div>' +
+  var chosen = (p.circles || []).filter(function (c) { return c && c !== 'Unsorted'; });
+  var known = circleList().map(function (c) { return c.name; }).filter(function (c) { return c !== 'Unsorted'; });
+  chosen.forEach(function (c) { if (known.indexOf(c) < 0) known.push(c); });
+
+  var today = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  var body =
+    '<div class="pf">' +
+      '<div class="pf-top"><span class="pf-tab">' + (isNew ? 'New entry' : 'Entry') + '</span>' +
+        '<span class="pf-date">' + esc(isNew ? today : fmtDate(p.created || Date.now())) + '</span>' +
+        '<button class="pf-x" data-close aria-label="Close">&times;</button></div>' +
+      '<input id="f-name" class="pf-name" autocomplete="off" spellcheck="false" placeholder="Their name" value="' + esc(p.name) + '" aria-label="Name">' +
+      '<div class="pf-lines">' +
+        line('profession', 'Role', 'what they do') +
+        line('company', 'Company', 'where') +
+        line('email', 'Email', 'name@example.com', 'email') +
+        line('location', 'Location', 'city') +
+        line('school', 'Schools', 'Rutgers BS, Wharton MBA', 'text',
+          schoolsOf(p).map(function (x) { return x.name + (x.level ? ' ' + x.level : ''); }).join(', ')) +
+      '</div>' +
+      '<div class="pf-sec"><span class="pf-lbl">Circles</span>' +
+        '<div class="pf-chips" id="pf-chips"></div>' +
+      '</div>' +
+      '<div class="pf-sec"><span class="pf-lbl">Note</span>' +
+        '<textarea id="f-note" rows="2" placeholder="how you met, what to remember"></textarea></div>' +
     '</div>';
-  var m = modal(isNew ? 'New person' : 'Edit ' + p.name, isNew ? 'Only the name is required.' : '', body,
-    '<button class="btn primary" id="f-save">' + (isNew ? 'Add to map' : 'Save') + '</button>' +
-    '<button class="btn" data-close>Cancel</button>');
+  var m = modal(isNew ? 'New person' : 'Edit ' + p.name, '', body,
+    '<span class="pf-key">↵ to ' + (isNew ? 'file' : 'save') + ' · esc to close</span>' +
+    '<button class="pf-cancel" data-close>Cancel</button>' +
+    '<button class="pf-go" id="f-save">' + (isNew ? 'File them' : 'Save') + '</button>');
+  m.classList.add('pform');
+  var nameBox = m.querySelector('#f-name');
+  nameBox.focus();
+
+  var chips = m.querySelector('#pf-chips');
+  function paintChips() {
+    chips.innerHTML = known.map(function (c) {
+      var at = chosen.indexOf(c);
+      return '<button type="button" class="pf-chip" data-c="' + esc(c) + '"' + (at >= 0 ? ' data-on' : '') +
+        ' style="--hue:var(--h' + hueIndex(c) + ')">' +
+        '<i></i>' + esc(c) + (at === 0 ? '<b>primary</b>' : '') + '</button>';
+    }).join('') +
+    '<input class="pf-newc" placeholder="+ new circle" aria-label="New circle" spellcheck="false">';
+  }
+  paintChips();
+  chips.addEventListener('click', function (e) {
+    var b = e.target.closest('.pf-chip');
+    if (!b) return;
+    var c = b.dataset.c, at = chosen.indexOf(c);
+    if (at >= 0) chosen.splice(at, 1); else chosen.push(c);
+    paintChips();
+    var again = chips.querySelector('.pf-chip[data-c="' + (window.CSS && CSS.escape ? CSS.escape(c) : c) + '"]');
+    if (again) { again.focus(); if (at < 0) again.classList.add('pop'); }
+  });
+  chips.addEventListener('keydown', function (e) {
+    var inp = e.target.closest('.pf-newc');
+    if (!inp || e.key !== 'Enter') return;
+    e.preventDefault(); e.stopPropagation();
+    var c = clean(inp.value);
+    if (!c) return;
+    var hit = known.filter(function (k) { return k.toLowerCase() === c.toLowerCase(); })[0];
+    if (!hit) { known.push(c); hit = c; }
+    if (chosen.indexOf(hit) < 0) chosen.push(hit);
+    paintChips();
+    chips.querySelector('.pf-newc').focus();
+  });
 
   m.querySelector('#f-save').addEventListener('click', function () {
     var g = function (k) { return m.querySelector('#f-' + k).value.trim(); };
-    if (!g('name')) { m.querySelector('#f-name').focus(); return; }
+    if (!g('name')) {
+      nameBox.classList.remove('want'); void nameBox.offsetWidth; nameBox.classList.add('want');
+      nameBox.focus(); return;
+    }
     ['name', 'email', 'profession', 'company', 'location'].forEach(function (k) { p[k] = g(k); });
     p.schools = [];
     g('school').split(',').map(clean).filter(Boolean).forEach(function (bit) {
@@ -2216,7 +2279,10 @@ function personForm(p, opts) {
       var nm = bit.replace(DEGREE_STRIP, ' ');
       addSchool(p.schools, titleCase(clean(nm) || bit), level);
     });
-    p.circles = g('circle').split(',').map(clean).filter(Boolean);
+    // a circle typed but not yet entered still counts
+    var pending = clean((m.querySelector('.pf-newc') || {}).value || '');
+    if (pending && chosen.indexOf(pending) < 0) chosen.push(pending);
+    p.circles = chosen.slice();
     if (g('note')) p.notes.unshift({ id: uid(), t: g('note'), at: Date.now() });
     if (isNew) state.people.push(p);
     circlesOf(p).forEach(circleIndex);
@@ -2226,7 +2292,9 @@ function personForm(p, opts) {
     toast(isNew ? p.name + ' added' : 'Saved');
   });
   m.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); m.querySelector('#f-save').click(); }
+    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && !e.target.closest('.pf-newc, .pf-chip, [data-close]')) {
+      e.preventDefault(); m.querySelector('#f-save').click();
+    }
   });
 }
 

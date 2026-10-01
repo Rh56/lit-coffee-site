@@ -1675,36 +1675,6 @@ dd.edit{ display:block; }
 .arc-add:active{ transform:scale(.95); }
 .arc-add + .arc-map{ margin-left:0; }
 
-/* the drawer: the last line in an open folder */
-.entry-add{
-  display:block; width:100%; text-align:left;
-  padding:10px 0; margin-top:2px;
-  font-family:var(--typed); font-size:10px; letter-spacing:.14em; text-transform:uppercase;
-  color:inherit; opacity:0;
-  border-top:1px dashed color-mix(in srgb, currentColor 30%, transparent);
-  animation:liftin .42s var(--ease) forwards;
-  animation-delay:calc(var(--d, 0) * 40ms + 120ms);
-  transition:background var(--fast) var(--ease), padding-left var(--fast) var(--ease);
-}
-.folder:not(.open) .entry-add{ animation:none; }
-.entry-add:hover{ opacity:1; padding-left:8px; }
-
-/* chroma: a + in each band's head */
-.ch-band header{ position:relative; }
-.ch-add{
-  width:28px; height:28px; border-radius:50%; margin-left:12px; flex:none;
-  font-size:17px; line-height:1; color:rgba(255,255,255,.75);
-  border:1px solid rgba(255,255,255,.3);
-  transition:transform .3s var(--ease), background var(--fast) var(--ease), color var(--fast) var(--ease);
-}
-.ch-add:hover{ background:rgba(255,255,255,.16); color:#fff; transform:rotate(90deg); }
-
-/* desktop: a new file at the foot of the open folder */
-.frow.fnew{ color:var(--faint); }
-.frow.fnew .fic{ font-family:var(--typed); font-size:14px; width:15px; color:var(--faint); }
-.frow.fnew:hover{ color:var(--ink); }
-.frow.fnew:hover .fic{ color:var(--accent); }
-
 @media (max-width:880px){
   .arc-add{ padding:7px 10px; }
 }

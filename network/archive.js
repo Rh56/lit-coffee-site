@@ -510,7 +510,10 @@ function editText(el, current, save) {
     if (done) return;
     done = true;
     var val = box.value.trim();
-    if (!keep) { el.innerHTML = held; return; }
+    // leaving a line unchanged is not an edit: nothing saves and nothing is
+    // redrawn, so a click that took the focus (onto a date, say) still lands,
+    // and a touchpoint just added is not thrown away for being empty yet
+    if (!keep || val === (current || '').trim()) { el.innerHTML = held; return; }
     save(val);
   }
   box.addEventListener('blur', function () { finish(true); });
@@ -1168,6 +1171,7 @@ function currentFolder() {
 
 function addPerson(circle) {
   if (groupMode !== 'circle') circle = null;
+  ['arc-cal', 'arc-pick'].forEach(function (id) { var o = document.getElementById(id); if (o) o.remove(); });
   L.newPerson(circle, function (p) {
     var home = L.circlesOf(p)[0] || null;
     if (view.design === 'drawer') {
@@ -1259,8 +1263,6 @@ function drawDrawer(host) {
               '<span class="stamp">' + esc(p.log.length ? L.ago(L.lastTouch(p)) : 'no touchpoints') + '</span>' +
             '</button>';
           }).join('') : '<div class="empty-note">Nobody filed here yet</div>') +
-          (groupMode === 'circle' ? '<button class="entry-add" data-addto="' + esc(c.name) + '" style="--d:' + folk.length + '">' +
-            '+ add someone to ' + esc(c.name) + '</button>' : '') +
         '</div></div></div>' +
       '</div>';
     wrap.appendChild(f);
@@ -1607,7 +1609,6 @@ function drawChroma(host) {
         '<div class="ch-wash"></div>' +
         '<header><h3>' + esc(g.name) + '</h3>' +
           '<span>' + String(g.people.length).padStart(2, '0') + ' entries</span>' +
-          (groupMode === 'circle' ? '<button class="ch-add" data-addto="' + esc(g.name) + '" aria-label="Add someone to ' + esc(g.name) + '">+</button>' : '') +
         '</header>' +
         '<div class="ch-names">' +
           (g.people.length ? g.people.map(function (p, i) {
@@ -1808,7 +1809,7 @@ function drawFinder(host) {
   var lastPath = [], lastFoot = [];
   function chrome(folk, p) {
     // the path: a segment that is new slides in, the ones that stayed stay
-    var path = ['Rootwork'].concat(sel.circle ? [sel.circle] : [], p ? [p.name + '.card'] : []);
+    var path = ['Rootwork'].concat(sel.circle ? [sel.circle] : [], p ? [p.name] : []);
     $('#fw-path', rig).innerHTML = path.map(function (bit, i) {
       var fresh = lastPath[i] !== bit;
       return (i ? '<span class="sep">\u203a</span>' : '') +
@@ -1839,9 +1840,7 @@ function drawFinder(host) {
         '<span class="fic">' + icon('file') + '</span>' +
         '<span class="fnm">' + esc(x.name) + '</span>' +
       '</button>';
-    }).join('') : '<div class="fempty">empty folder</div>') +
-      (sel.circle && groupMode === 'circle' ? '<button class="frow fnew" data-addto="' + esc(sel.circle) + '">' +
-        '<span class="fic">+</span><span class="fnm">New file</span></button>' : '');
+    }).join('') : '<div class="fempty">empty folder</div>');
   }
   function previewOf(p) { return p ? preview(p) : '<div class="fempty">no file selected</div>'; }
 
@@ -2029,7 +2028,6 @@ function drawFinder(host) {
       '<div class="fkind"><span class="edit"' + editableAttrs(p, 'profession') + '>' +
         esc(p.profession || 'Add a role') + '</span></div>' +
       '<dl>' +
-        '<dt style="--i:0">Kind</dt><dd style="--i:0">Rootwork entry</dd>' +
         '<dt style="--i:2">Filed</dt><dd style="--i:2">' + circleChips(p) + '</dd>' +
         '<dt style="--i:3">Company</dt><dd style="--i:3" class="edit"' + editableAttrs(p, 'company') + '>' + esc(p.company || '—') + '</dd>' +
         '<dt style="--i:4">Email</dt><dd style="--i:4" class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +

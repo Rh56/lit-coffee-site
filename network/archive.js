@@ -31,7 +31,6 @@ var DESIGNS = [
   { id: 'finder', name: 'Desktop', hint: 'Folders and files, the way a computer keeps them' }
 ];
 var view = { design: 'drawer', circle: null, person: null };
-var WIDE = { finder: 1, chroma: 1 };
 var DESIGN_KEY = 'rootwork.archive.design';
 var open = false;
 var query = '', qTimer = null;
@@ -339,43 +338,132 @@ function dateChip(p, e) {
   return '<span class="ed-date" data-act="logdate" data-for="' + p.id + '" data-id="' + esc(e.id) +
     '" tabindex="0" role="button" title="Change the date">' + esc(L.fmtDate(e.at)) + '</span>';
 }
-function ymd(t) {
-  var d = new Date(t);
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-}
 
 function editDate(el, p, rec) {
-  if (el.querySelector('input')) return;
-  var box = document.createElement('input');
-  box.type = 'date';
-  box.className = 'arc-input ed-dateinput';
-  box.value = ymd(rec.at);
-  box.max = ymd(Date.now());
-  box.setAttribute('aria-label', 'Touchpoint date');
-  var held = el.innerHTML;
-  el.innerHTML = '';
-  el.appendChild(box);
-  box.focus();
-  try { if (box.showPicker) box.showPicker(); } catch (err) { }
-  var done = false;
-  function finish(keep) {
-    if (done) return;
-    done = true;
-    var bits = box.value.split('-').map(Number);
-    if (!keep || bits.length !== 3 || !bits[0] || box.value === ymd(rec.at)) { el.innerHTML = held; return; }
+  calendar(el, rec.at, function (day) {
     // the day changes; the time of day it was logged at stays
     var was = new Date(rec.at);
-    rec.at = new Date(bits[0], bits[1] - 1, bits[2], was.getHours(), was.getMinutes()).getTime();
+    rec.at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), was.getHours(), was.getMinutes()).getTime();
     p.log.sort(function (a, b) { return b.at - a.at; });
     commitPerson(p);
     refreshBlocks(p);
+  });
+}
+
+/* A month on a card, in the archive's own type: the month set in the
+   display face, the days typed. Today is ringed, the chosen day is filled,
+   days that have not happened yet are not offered. Arrows walk the days,
+   Page Up and Down turn the month, Enter picks, Escape puts it away. */
+var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+  'August', 'September', 'October', 'November', 'December'];
+
+function calendar(anchor, at, take) {
+  var old = document.getElementById('arc-cal');
+  if (old) old.remove();
+  var picked = new Date(at); picked.setHours(0, 0, 0, 0);
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  var focus = new Date(picked);
+  var shown = new Date(picked.getFullYear(), picked.getMonth(), 1);
+  var box = el('div', 'arc-cal');
+  box.id = 'arc-cal';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-label', 'Choose a date');
+  document.body.appendChild(box);
+  var turn = 0;
+
+  function same(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+
+  function paint() {
+    var y = shown.getFullYear(), m = shown.getMonth();
+    var start = new Date(y, m, 1).getDay();
+    var days = new Date(y, m + 1, 0).getDate();
+    var cells = '';
+    for (var i = 0; i < start; i++) cells += '<span></span>';
+    for (var d = 1; d <= days; d++) {
+      var dt = new Date(y, m, d);
+      var cls = [same(dt, picked) ? 'picked' : '', same(dt, today) ? 'today' : '', same(dt, focus) ? 'focus' : ''].join(' ');
+      cells += '<button data-day="' + d + '" class="' + cls + '"' + (dt > today ? ' disabled' : '') +
+        ' tabindex="' + (same(dt, focus) ? 0 : -1) + '" style="--k:' + (start + d) + '">' + d + '</button>';
+    }
+    var nextOff = new Date(y, m + 1, 1) > today;
+    box.innerHTML =
+      '<div class="cal-head">' +
+        '<button data-step="-1" aria-label="Previous month">‹</button>' +
+        '<div class="cal-title' + (turn ? ' turn' : '') + '" style="--turn:' + turn + '"><em>' + MONTHS[m] + '</em> <span>' + y + '</span></div>' +
+        '<button data-step="1" aria-label="Next month"' + (nextOff ? ' disabled' : '') + '>›</button>' +
+      '</div>' +
+      '<div class="cal-week">' + ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(function (w) { return '<span>' + w + '</span>'; }).join('') + '</div>' +
+      '<div class="cal-days' + (turn ? ' turn' : '') + '" style="--turn:' + turn + '">' + cells + '</div>' +
+      '<div class="cal-foot">' +
+        '<button data-quick="0">Today</button><button data-quick="1">Yesterday</button><button data-quick="7">A week ago</button>' +
+      '</div>';
+    turn = 0;
+    var f = box.querySelector('button.focus');
+    if (f) f.focus({ preventScroll: true });
   }
-  box.addEventListener('blur', function () { finish(true); });
+
+  function place() {
+    var r = anchor.getBoundingClientRect();
+    var w = box.offsetWidth, h = box.offsetHeight;
+    var top = r.bottom + 8;
+    if (top + h > window.innerHeight - 10) top = Math.max(10, r.top - h - 8);
+    box.style.left = Math.max(10, Math.min(window.innerWidth - w - 10, r.left - 12)) + 'px';
+    box.style.top = top + 'px';
+    box.style.transformOrigin = (r.left - parseFloat(box.style.left) + 20) + 'px ' + (top > r.top ? '0' : '100%');
+  }
+
+  function month(step) {
+    var n = new Date(shown.getFullYear(), shown.getMonth() + step, 1);
+    if (n > today) return;
+    shown = n; turn = step;
+    focus = new Date(n.getFullYear(), n.getMonth(), Math.min(focus.getDate(), new Date(n.getFullYear(), n.getMonth() + 1, 0).getDate()));
+    if (focus > today) focus = new Date(today);
+    paint();
+  }
+
+  function finish(day) {
+    done();
+    if (day && !same(day, picked)) take(day);
+  }
+  function done() {
+    box.classList.add('out');
+    document.removeEventListener('pointerdown', off, true);
+    setTimeout(function () { box.remove(); }, reduced() ? 0 : 160);
+    if (anchor.isConnected) anchor.focus({ preventScroll: true });
+  }
+  function off(e) { if (!box.contains(e.target) && e.target !== anchor) done(); }
+
+  box.addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b || b.disabled) return;
+    e.stopPropagation();
+    if (b.dataset.step) return month(+b.dataset.step);
+    if (b.dataset.day) return finish(new Date(shown.getFullYear(), shown.getMonth(), +b.dataset.day));
+    if (b.dataset.quick !== undefined) { var q = new Date(today); q.setDate(q.getDate() - +b.dataset.quick); return finish(q); }
+  });
   box.addEventListener('keydown', function (e) {
     e.stopPropagation();
-    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
-    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    var move = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
+    if (move) {
+      e.preventDefault();
+      var n = new Date(focus); n.setDate(n.getDate() + move);
+      if (n > today) return;
+      focus = n;
+      if (n.getMonth() !== shown.getMonth() || n.getFullYear() !== shown.getFullYear()) {
+        turn = n < shown ? -1 : 1;
+        shown = new Date(n.getFullYear(), n.getMonth(), 1);
+      }
+      return paint();
+    }
+    if (e.key === 'PageUp') { e.preventDefault(); return month(-1); }
+    if (e.key === 'PageDown') { e.preventDefault(); return month(1); }
+    if (e.key === 'Escape') { e.preventDefault(); return done(); }
+    if (e.key === 'Enter' && e.target.dataset && e.target.dataset.day) { e.preventDefault(); return finish(new Date(focus)); }
   });
+
+  paint();
+  place();
+  setTimeout(function () { document.addEventListener('pointerdown', off, true); }, 0);
 }
 
 function editorBlocks(p, parts) {
@@ -441,7 +529,6 @@ function editorAction(btn) {
   var id = btn.dataset.id;
 
   if (act === 'logdate') {
-    if (btn.querySelector('input')) return true;
     var entry = (p.log || []).filter(function (e) { return e.id === id; })[0];
     if (entry) editDate(btn, p, entry);
     return true;
@@ -741,10 +828,10 @@ function build() {
           '<circle cx="17.8" cy="5" r="1.6"/><circle cx="6.2" cy="5" r="1.6"/></svg>' +
         '<span>Rootwork</span><em id="arc-mode">Archive</em>' +
       '</button>' +
-      '<div class="arc-find">' +
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>' +
-        '<input id="arc-q" type="search" placeholder="Find anyone" autocomplete="off" aria-label="Find anyone">' +
-      '</div>' +
+      '<label class="arc-find">' +
+        '<input id="arc-q" type="search" placeholder="find anyone" autocomplete="off" spellcheck="false" aria-label="Find anyone">' +
+        '<kbd aria-hidden="true">/</kbd>' +
+      '</label>' +
       '<button class="arc-map" id="arc-close" title="Back to the map (Esc)">The map</button>' +
     '</header>' +
     '<div class="arc-scroll" id="arc-scroll"><div class="arc-wrap">' +
@@ -784,7 +871,18 @@ function build() {
     clearTimeout(qTimer);
     qTimer = setTimeout(render, 140);
   });
-  qbox.addEventListener('keydown', function (e) { e.stopPropagation(); });
+  qbox.addEventListener('keydown', function (e) {
+    e.stopPropagation();
+    if (e.key === 'Escape' && qbox.value) { e.preventDefault(); qbox.value = ''; query = ''; render(); }
+    else if (e.key === 'Escape') qbox.blur();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (!open || e.key !== '/' || e.metaKey || e.ctrlKey) return;
+    if (e.target.closest && e.target.closest('input, textarea, [contenteditable]')) return;
+    e.preventDefault();
+    qbox.focus();
+    qbox.select();
+  });
   root.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
     e.stopPropagation();
@@ -804,7 +902,7 @@ function build() {
 }
 
 function titleFor() {
-  if (view.person) {
+  if (view.person && view.design !== 'index') {
     var p = personById(view.person);
     return p ? p.name : 'Missing entry';
   }
@@ -823,21 +921,23 @@ function words(text) {
 
 function renderHead() {
   var s = st();
+  // the index opens a person inside its own list, so its head stays the list's
+  var vp = view.design === 'index' ? null : view.person;
   var crumbs = ['<button data-crumb="root">Rootwork</button>'];
   if (view.circle) {
     crumbs.push('<span class="sep">/</span>');
-    crumbs.push(view.person
+    crumbs.push(vp
       ? '<button data-crumb="circle">' + esc(view.circle) + '</button>'
       : '<span class="here">' + esc(view.circle) + '</span>');
   }
-  if (view.person) {
-    var pp = personById(view.person);
+  if (vp) {
+    var pp = personById(vp);
     crumbs.push('<span class="sep">/</span><span class="here">' + esc(pp ? pp.name : '?') + '</span>');
   }
 
   var sub;
-  if (view.person) {
-    var p = personById(view.person);
+  if (vp) {
+    var p = personById(vp);
     sub = p ? [
       esc(roleOf(p) || 'no role recorded'),
       '<b>' + p.log.length + '</b> touchpoint' + (p.log.length === 1 ? '' : 's'),
@@ -862,17 +962,18 @@ function renderHead() {
   if (label && mode) label.textContent = mode.name;
 
   head.innerHTML =
-    '<div class="crumb">' + crumbs.join('') + '</div>' +
+    '<div class="crumb">' + (crumbs.length > 1 ? crumbs.join('') : '') + '</div>' +
     '<h1 class="arc-title">' + words(titleFor()) + '</h1>' +
     '<div class="apparatus">' +
       '<div class="arc-sub">' + sub.map(function (x) { return '<span>' + x + '</span>'; }).join('') + '</div>' +
-      '<div class="designs" role="group" aria-label="Archive design">' +
+      '<div class="designs" role="group" aria-label="Archive design"><i class="design-pill" aria-hidden="true"></i>' +
         DESIGNS.map(function (d) {
           return '<button data-design="' + d.id + '"' + (view.design === d.id ? ' data-on="1"' : '') +
             ' title="' + esc(d.hint) + '">' + esc(d.name) + '</button>';
         }).join('') +
       '</div>' +
     '</div>';
+  placeDesignPill();
 }
 
 /* A cheap fingerprint of everything a screen draws. Sync polls every few
@@ -892,14 +993,11 @@ var lastSig = '';
    A quiet render is one nobody asked for — data caught up underneath — so it
    arrives without the animations a navigation deserves. */
 var teardown = null;
-function render(quiet) {
+function render(quiet, keepHead) {
   if (!open) return;
   if (teardown) { try { teardown(); } catch (e) { } teardown = null; }
   lastSig = signature();
-  // a workspace wants the whole window; a document wants a column
-  var wrap = root.querySelector('.arc-wrap');
-  if (wrap) wrap.classList.toggle('wide', WIDE[view.design] && !view.person);
-  renderHead();
+  if (!keepHead) renderHead();
   body.className = 'arc-body' + (quiet ? ' still' : '');
   body.innerHTML = '';
   var fn = view.design === 'index' ? drawIndex
@@ -919,6 +1017,27 @@ function setGroup(id) {
   writeRoute();
 }
 
+/* The pill starts where it was before the head was redrawn and glides to
+   the design now on. */
+var pillAt = null;
+function placeDesignPill() {
+  var pill = head.querySelector('.design-pill'), on = head.querySelector('.designs [data-on]');
+  if (!pill || !on) return;
+  var to = { x: on.offsetLeft, w: on.offsetWidth, h: on.offsetHeight };
+  if (pillAt && !reduced()) {
+    pill.style.transition = 'none';
+    pill.style.transform = 'translateX(' + pillAt.x + 'px)';
+    pill.style.width = pillAt.w + 'px';
+    void pill.offsetWidth;
+    pill.style.transition = '';
+  }
+  pill.style.transform = 'translateX(' + to.x + 'px)';
+  pill.style.width = to.w + 'px';
+  pill.style.height = to.h + 'px';
+  pillAt = to;
+}
+
+var switching = 0;
 function setDesign(id) {
   if (view.design === id) {
     // pressing the design you are already in, from inside a file or folder,
@@ -929,14 +1048,35 @@ function setDesign(id) {
     render();
     return writeRoute();
   }
+  var fromDesign = view.design;
   view.design = id;
-  // only the drawer opens a person on their own page; everywhere else the
-  // name in the header would be describing something not on screen
-  view.person = null;
+  // the drawer and the index open a person; elsewhere the name in the header
+  // would be describing something not on screen
+  if (id !== 'drawer' && id !== 'index') view.person = null;
   try { localStorage.setItem(DESIGN_KEY, id); } catch (e) { }
-  scroll.scrollTop = 0;
-  render();
+  if (reduced()) { scroll.scrollTop = 0; render(); return writeRoute(); }
+
+  // which way you are going along the row of designs
+  var ids = DESIGNS.map(function (d) { return d.id; });
+  var dir = ids.indexOf(id) >= ids.indexOf(fromDesign) ? 1 : -1;
+  var token = ++switching;
+  body.style.setProperty('--dir', dir);
+  body.classList.add('leaving');
+  // the head (and its pill) moves straight away; the body follows once out
+  renderHead();
   writeRoute();
+  setTimeout(function () {
+    if (token !== switching || !open) return;
+    scroll.scrollTop = 0;
+    render(false, true);                      // the head was redrawn at the click
+    body.style.setProperty('--dir', dir);
+    body.classList.add('arriving');
+    var line = el('i', 'arc-sweep');
+    line.style.setProperty('--dir', dir);
+    line.style.top = body.offsetTop + 'px';
+    body.parentNode.appendChild(line);
+    setTimeout(function () { line.remove(); body.classList.remove('arriving'); }, 720);
+  }, 190);
 }
 
 function show(circle, person, design) {
@@ -973,7 +1113,9 @@ function close() {
   if (teardown) { try { teardown(); } catch (e) { } teardown = null; }
 }
 
+var indexClose = null;           // set while the index is on screen
 function back() {
+  if (view.person && view.design === 'index' && indexClose) return indexClose();
   if (view.person) { view.person = null; render(); return writeRoute(); }
   if (view.circle) { view.circle = null; render(); return writeRoute(); }
   close();
@@ -1280,14 +1422,109 @@ function drawIndex(host) {
     type(personById(r.dataset.person));
   });
   rig.addEventListener('pointerleave', function () { type(null); cross.removeAttribute('data-on'); });
+  /* A row opens into its own entry, set the way the index sets everything:
+     a catalogue number, the name, two columns of typed facts, and the record
+     underneath, all editable where it sits. One entry open at a time; the
+     rows below make room rather than the page changing. */
+  var grid = $('#ix-grid', rig);
+  var openId = null;
+
+  function entryHtml(p, no) {
+    var f = function (label, field) {
+      return '<dt>' + label + '</dt><dd><span class="edit"' + editableAttrs(p, field) + '>' +
+        (p[field] ? esc(p[field]) : '<span class="none">' + DASH + '</span>') + '</span></dd>';
+    };
+    return '<div class="ix-entry" data-entry="' + p.id + '"><div class="ix-entry-in"><div class="ix-sheet">' +
+      '<div class="ix-e-head">' +
+        '<span class="ix-e-no">No. ' + no + '</span>' +
+        '<h3><span class="edit"' + editableAttrs(p, 'name') + '>' + esc(p.name) + '</span></h3>' +
+        '<button class="ix-e-x" data-ixclose aria-label="Close the entry">\u00d7</button>' +
+      '</div>' +
+      '<div class="ix-e-cols">' +
+        '<dl>' + f('Role', 'profession') + f('Company', 'company') + f('Email', 'email') + f('Location', 'location') + '</dl>' +
+        '<dl>' +
+          '<dt>Schools</dt><dd>' + schoolChips(p) + '</dd>' +
+          '<dt>Filed</dt><dd>' + circleChips(p) + '</dd>' +
+          '<dt>Last</dt><dd>' + esc(p.log.length ? L.fmtDate(L.lastTouch(p)) + ', ' + L.ago(L.lastTouch(p)) : 'never') + '</dd>' +
+        '</dl>' +
+      '</div>' +
+      editorBlocks(p) +
+      '<div class="ix-e-acts"><button class="btn" data-edit="' + p.id + '">Open the card</button></div>' +
+    '</div></div></div>';
+  }
+
+  function shut(entry, now) {
+    if (!entry) return;
+    var row = entry.previousElementSibling;
+    if (row) row.removeAttribute('data-open');
+    entry.classList.remove('open');
+    if (now || reduced()) return entry.remove();
+    setTimeout(function () { entry.remove(); }, 380);
+  }
+
+  function openEntry(id, quiet) {
+    var row = grid.querySelector('.ix-row[data-person="' + cssEsc(id) + '"]');
+    var p = personById(id);
+    if (!row || !p) return;
+    shut(grid.querySelector('.ix-entry'), quiet);
+    openId = id;
+    view.person = id;
+    row.setAttribute('data-open', '');
+    var tmp = document.createElement('div');
+    tmp.innerHTML = entryHtml(p, row.querySelector('.ix-n').textContent);
+    var entry = tmp.firstElementChild;
+    row.after(entry);
+    if (quiet || reduced()) entry.classList.add('open', 'settled');
+    else { void entry.offsetHeight; entry.classList.add('open'); }   // laid out closed, then opened
+    lastSig = signature();
+    if (!quiet) writeRoute();
+    // keep the row and its entry in view, without jumping if they already are
+    var rr = row.getBoundingClientRect(), sr = scroll.getBoundingClientRect();
+    if (rr.top < sr.top + 60 || rr.top > sr.bottom - 160) {
+      scroll.scrollTo({ top: scroll.scrollTop + rr.top - sr.top - 90, behavior: reduced() || quiet ? 'auto' : 'smooth' });
+    }
+  }
+
+  function closeEntry() {
+    shut(grid.querySelector('.ix-entry'));
+    openId = null;
+    view.person = null;
+    lastSig = signature();
+    writeRoute();
+  }
+  indexClose = closeEntry;
+
   rig.addEventListener('click', function (e) {
+    if (e.target.closest('[data-ixclose]')) return closeEntry();
+    var ed = e.target.closest('[data-edit]');
+    if (ed) return editCard(ed.dataset.edit);
     var f = e.target.closest('[data-folder]');
     if (f) { view.circle = f.dataset.folder || null; return render(); }
-    var r = e.target.closest('[data-person]');
-    if (r) { view.design = 'drawer'; return openPerson(r.dataset.person); }
+    var r = e.target.closest('.ix-row[data-person]');
+    if (r) return r.dataset.person === openId ? closeEntry() : openEntry(r.dataset.person);
   });
 
-  return function () { clearInterval(typer); };
+  // with an entry open, up and down walk to the next one
+  var onKey = function (e) {
+    if (!open || view.design !== 'index' || !openId) return;
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    if (e.target.closest && e.target.closest('input, textarea, [contenteditable]')) return;
+    var rows = Array.prototype.slice.call(grid.querySelectorAll('.ix-row'));
+    var at = rows.findIndex(function (x) { return x.dataset.person === openId; });
+    var next = rows[at + (e.key === 'ArrowDown' ? 1 : -1)];
+    if (!next) return;
+    e.preventDefault();
+    openEntry(next.dataset.person);
+  };
+  document.addEventListener('keydown', onKey);
+
+  if (view.person) openEntry(view.person, true);
+
+  return function () {
+    clearInterval(typer);
+    document.removeEventListener('keydown', onKey);
+    if (indexClose === closeEntry) indexClose = null;
+  };
 }
 
 
@@ -1364,26 +1601,82 @@ function drawChroma(host) {
         '<button class="btn" data-edit="' + p.id + '">Open the card</button>' +
         '<button class="btn" data-file="' + p.id + '">See the file</button>' +
       '</div>';
-    // it opens from the name you clicked, wherever that is on screen, and
-    // sits in the middle of the window rather than the middle of the page
+    /* It opens as an iris of the folder's colour out of the name you
+       clicked: a ring of light goes off where you clicked, the circle opens
+       from there, the name itself flies up to be the pane's title, and the
+       facts rise in after it. Closing draws the circle back into the name. */
     var r = from.getBoundingClientRect();
-    var cx = window.innerWidth / 2, cy = window.innerHeight / 2;
-    pane.style.setProperty('--fx', ((r.left + r.width / 2) - cx).toFixed(0) + 'px');
-    pane.style.setProperty('--fy', ((r.top + r.height / 2) - cy).toFixed(0) + 'px');
+    var ox = r.left + r.width / 2, oy = r.top + r.height / 2;
+    pane.classList.remove('on', 'enter');
     scrim.hidden = false;
     pane.hidden = false;
-    requestAnimationFrame(function () {
-      scrim.classList.add('on');
-      pane.classList.add('on');
+    var box = pane.getBoundingClientRect();           // its resting place; the iris only clips it
+    pane.style.setProperty('--ox', (ox - box.left).toFixed(0) + 'px');
+    pane.style.setProperty('--oy', (oy - box.top).toFixed(0) + 'px');
+    // the rows come in one after another, a fact and its value together
+    var k = 0;
+    Array.prototype.forEach.call(pane.querySelectorAll('.ch-kicker, .ch-role, dl > dt, dl > dd, .editor .ed-row, .ch-acts'), function (n) {
+      if (n.tagName !== 'DD') k++;
+      n.style.setProperty('--k', k);
     });
+    lastFrom = from;
+    if (!reduced()) {
+      ring(ox, oy, pane.style.getPropertyValue('--hue'));
+      flyName(from, pane.querySelector('h3'));
+      pane.classList.add('enter');
+      clearTimeout(enterTimer);
+      enterTimer = setTimeout(function () { pane.classList.remove('enter'); }, 1100);
+    }
+    void pane.offsetWidth;                   // laid out closed, then opened
+    scrim.classList.add('on');
+    pane.classList.add('on');
   }
+  var lastFrom = null, enterTimer = null;
+
+  function ring(x, y, hue) {
+    var o = el('i', 'ch-ring');
+    o.style.cssText = 'left:' + x + 'px;top:' + y + 'px;--hue:' + hue;
+    root.appendChild(o);
+    setTimeout(function () { o.remove(); }, 800);
+  }
+
+  /* The name you clicked is the name that becomes the title: a copy of it
+     travels from the list to where the title sits and grows into it. */
+  function flyName(from, title) {
+    var src = from.querySelector('.ch-t') || from;
+    if (!title || !src.animate) return;
+    var a = src.getBoundingClientRect(), b = title.getBoundingClientRect();
+    var ghost = src.cloneNode(true);
+    ghost.className = 'ch-fly';
+    var cs = getComputedStyle(src);
+    ghost.style.cssText = 'left:' + a.left + 'px;top:' + a.top + 'px;font-family:' + cs.fontFamily +
+      ';font-size:' + cs.fontSize + ';font-weight:' + cs.fontWeight + ';font-style:' + cs.fontStyle +
+      ';letter-spacing:' + cs.letterSpacing + ';line-height:' + cs.lineHeight;
+    root.appendChild(ghost);
+    var s = b.height / Math.max(1, a.height);
+    title.classList.add('landing');
+    ghost.animate([
+      { transform: 'none', opacity: 1 },
+      { transform: 'translate(' + (b.left - a.left) + 'px,' + (b.top - a.top) + 'px) scale(' + s + ')', opacity: 1, offset: .85 },
+      { transform: 'translate(' + (b.left - a.left) + 'px,' + (b.top - a.top) + 'px) scale(' + s + ')', opacity: 0 }
+    ], { duration: 620, easing: 'cubic-bezier(.16,.84,.32,1)' }).onfinish = function () { ghost.remove(); };
+    setTimeout(function () { ghost.remove(); }, 900);   // even if the animation never ran
+    setTimeout(function () { title.classList.remove('landing'); }, 520);
+  }
+
   function hidePane() {
-    pane.classList.remove('on');
+    // close back into the name it came from, if that name is still on screen
+    if (lastFrom && lastFrom.isConnected) {
+      var r = lastFrom.getBoundingClientRect(), box = pane.getBoundingClientRect();
+      pane.style.setProperty('--ox', (r.left + r.width / 2 - box.left).toFixed(0) + 'px');
+      pane.style.setProperty('--oy', (r.top + r.height / 2 - box.top).toFixed(0) + 'px');
+    }
+    pane.classList.remove('on', 'enter');
     scrim.classList.remove('on');
     setTimeout(function () {
       if (pane.classList.contains('on')) return;
       pane.hidden = true; scrim.hidden = true;
-    }, reduced() ? 0 : 340);
+    }, reduced() ? 0 : 420);
   }
 
   var onKey = function (e) {
@@ -1684,8 +1977,6 @@ function drawFinder(host) {
         '<dt style="--i:4">Email</dt><dd style="--i:4" class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +
         '<dt style="--i:6">Location</dt><dd style="--i:6" class="edit"' + editableAttrs(p, 'location') + '>' + esc(p.location || '—') + '</dd>' +
         '<dt style="--i:7">School</dt><dd style="--i:7">' + schoolChips(p) + '</dd>' +
-        '<dt style="--i:8">Opened</dt><dd style="--i:8">' + esc(p.log.length ? L.fmtDate(L.lastTouch(p)) : 'never') + '</dd>' +
-        '<dt style="--i:9">Entries</dt><dd style="--i:9">' + p.log.length + '</dd>' +
       '</dl>' +
       editorBlocks(p) +
       '<div class="facts">' +

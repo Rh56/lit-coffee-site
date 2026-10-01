@@ -374,15 +374,12 @@ var nodes = [], links = [], byId = {};
 var LAYOUTS = [
   { id: 'web',     name: 'Web',     hint: 'Tidied organic — tight clusters, each circle keeping to its own quarter' },
   { id: 'arc',     name: 'Arc',     hint: 'Everyone on one ring, grouped by circle, connections crossing the middle' },
-  { id: 'grid',    name: 'Grid',    hint: 'A block per circle, names in tidy rows' },
-  { id: 'pulse',   name: 'Pulse',   hint: 'Placed by how long since you spoke — the quietest drift outwards' },
   { id: 'stars',   name: 'Stars',   hint: 'Led by who introduced whom, so connected people cluster' }
 ];
 
 function layoutId() {
-  var id = (state.layout === 'orbit' || state.layout === 'classic') ? 'web'
-    : (state.layout === 'tree' || state.layout === 'columns' || state.layout === 'venn') ? 'grid'
-    : state.layout;                                   // retired views land somewhere sensible
+  // retired views (Orbit, Classic, Tree, Columns, Venn, Grid, Pulse) land on Web
+  var id = state.layout;
   return LAYOUTS.some(function (l) { return l.id === id; }) ? id : 'web';
 }
 var LOOSE = { web: 1, stars: 1 };
@@ -487,8 +484,6 @@ function computeLayout() {
 
   hubs.forEach(function (h) { h.arc = null; h.field = null; });
   if (mode === 'arc') return layoutArc(me, hubs, loose);
-  if (mode === 'grid') return layoutGrid(me, hubs, loose);
-  if (mode === 'pulse') return layoutPulse(me, hubs, loose);
   return seedLoose(me, hubs, loose);          // web and stars settle themselves
 }
 
@@ -554,82 +549,6 @@ function layoutArc(me, hubs, loose) {
   hubs.forEach(function (g) {
     if (!g.members.length) { g.tx = 0; g.ty = R + 74; g.arc = null; }
   });
-}
-
-/* Grid — a block per circle, names in rows. The tidiest way to read a lot of
-   people at once, and blocks wrap rather than marching off the side. */
-function layoutGrid(me, hubs, loose) {
-  var COL = 196, ROW = 30, HEAD = 46, GAPX = 40, GAPY = 46;
-  var groups = hubs.slice().sort(function (a, b) { return b.members.length - a.members.length; });
-  if (loose.length) groups.push({ synthetic: true, members: loose });
-  if (!groups.length) { me.tx = 0; me.ty = 0; return; }
-
-  var MAXROWS = 14;
-  var perRow = Math.max(1, Math.round(Math.sqrt(groups.length * 1.5)));
-  var x = 0, y = 0, rowTall = 0, col = 0, widest = 0;
-
-  groups.forEach(function (g) {
-    var own = g.members.filter(function (n) { return n.parent === g || g.synthetic; });
-    var subCols = Math.max(1, Math.ceil(own.length / MAXROWS));
-    var rows = Math.ceil(own.length / subCols) || 1;
-    var blockW = COL * subCols;
-    if (col >= perRow) { col = 0; x = 0; y += rowTall + GAPY; rowTall = 0; }
-    if (!g.synthetic) { g.tx = x; g.ty = y; }
-    own.forEach(function (n, i) {
-      n.tx = x + Math.floor(i / rows) * COL;
-      n.ty = y + HEAD + (i % rows) * ROW;
-    });
-    rowTall = Math.max(rowTall, HEAD + rows * ROW);
-    widest = Math.max(widest, x + blockW);
-    x += blockW + GAPX; col++;
-  });
-
-  var bottom = y + rowTall;
-  nodes.forEach(function (n) { n.tx -= widest / 2; n.ty -= bottom / 2; });
-  me.tx = -widest / 2 - 150; me.ty = -bottom / 2 - 20;
-}
-
-/* Pulse — distance from you is time since you last spoke. The people drifting
-   to the edge are the ones going quiet, which is the whole point of the map. */
-function layoutPulse(me, hubs, loose) {
-  me.tx = 0; me.ty = 0;
-  var people = nodes.filter(function (n) { return n.kind === 'person'; });
-  if (!people.length) return;
-
-  var groups = hubs.filter(function (g) { return g.members.length; });
-  if (loose.length) groups.push({ synthetic: true, members: loose });
-
-  var ringFor = function (n) {
-    if (!n.ref || !n.ref.log.length) return 640;       // never spoken
-    var days = daysSince(lastTouch(n.ref));
-    return 170 + Math.min(470, Math.log10(Math.max(1, days) + 1) * 215);
-  };
-
-  var weights = groups.map(function (g) { return Math.max(1, g.members.length); });
-  var total = weights.reduce(function (a, b) { return a + b; }, 0);
-  var cursor = -Math.PI / 2;
-
-  groups.forEach(function (g, gi) {
-    var span = (weights[gi] / total) * Math.PI * 2;
-    var inner = cursor + span * 0.08, usable = span * 0.84;
-    cursor += span;
-    var sorted = g.members.slice().sort(function (a, b) { return ringFor(a) - ringFor(b); });
-    var lanes = Math.max(1, Math.ceil(sorted.length / 9));
-    sorted.forEach(function (n, i) {
-      var a = inner + (sorted.length > 1 ? usable * (i / (sorted.length - 1)) : usable / 2);
-      var r = ringFor(n) + (i % lanes) * 30;         // a lane each, so none collide
-      n.tx = Math.cos(a) * r;
-      n.ty = Math.sin(a) * r;
-      n.angle = a;
-    });
-    if (!g.synthetic) {
-      var mid = inner + usable / 2;
-      g.angle = mid;
-      g.tx = Math.cos(mid) * 120;
-      g.ty = Math.sin(mid) * 120;
-    }
-  });
-  hubs.forEach(function (g) { if (!g.members.length) { g.tx = 0; g.ty = 120; } });
 }
 
 /* ---------------------------------------------------------------- motion --
@@ -948,40 +867,6 @@ function drawRims() {
   });
 }
 
-/* Pulse measures distance in time, so the rings are labelled in time. */
-function drawPulseRings() {
-  var marks = [[30, '1 month'], [90, '3 months'], [365, '1 year']];
-  ctx.save();
-  ctx.lineWidth = 1 / cam.k;
-  ctx.setLineDash([3 / cam.k, 7 / cam.k]);
-  marks.forEach(function (m) {
-    var r = 170 + Math.min(470, Math.log10(m[0] + 1) * 215);
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.strokeStyle = mix(C.rule, 0.85);
-    ctx.stroke();
-  });
-  ctx.restore();
-
-  ctx.save();
-  ctx.setLineDash([]);
-  ctx.textAlign = 'center';
-  ctx.font = '500 9.5px "JetBrains Mono", monospace';
-  marks.forEach(function (m) {
-    var r = 170 + Math.min(470, Math.log10(m[0] + 1) * 215);
-    var p = toScreen(0, -r);
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.lineWidth = 3.4; ctx.lineJoin = 'round';
-    ctx.strokeStyle = mix(C.ground, 0.92);
-    ctx.strokeText(m[1], p[0], p[1] - 7);
-    ctx.fillStyle = mix(C.faint, 0.95);
-    ctx.fillText(m[1], p[0], p[1] - 7);
-    ctx.restore();
-  });
-  ctx.restore();
-}
-
 function draw() {
   if (!W) return;
   ctx.clearRect(0, 0, W, H);
@@ -992,7 +877,6 @@ function draw() {
 
   var lay = layoutId();
   if (lay === 'arc') drawRims();
-  if (lay === 'pulse') drawPulseRings();
 
   var focus = hover || selected;
   var DIM = hover ? 0.24 : 0.72;   // hovering focuses hard; a card open only softens
@@ -1063,18 +947,6 @@ function draw() {
       ctx.save();
       ctx.lineWidth = 1.1 / cam.k;
       ctx.strokeStyle = mix(hue, 0.3 * fade);
-      ctx.beginPath();
-      ctx.moveTo(L.a.x, L.a.y);
-      ctx.lineTo(L.b.x, L.b.y);
-      ctx.stroke();
-      ctx.restore();
-      return;
-    }
-
-    if (mode === 'pulse') {                     // a spoke, straight out from you
-      ctx.save();
-      ctx.lineWidth = (trunk ? 1.6 : 1) / cam.k;
-      ctx.strokeStyle = mix(hue, (trunk ? 0.45 : 0.36) * fade);
       ctx.beginPath();
       ctx.moveTo(L.a.x, L.a.y);
       ctx.lineTo(L.b.x, L.b.y);
@@ -1438,12 +1310,6 @@ var LAYOUT_ICONS = {
          '<circle cx="17.4" cy="6.6" r="1.5" fill="currentColor" stroke="none"/>' +
          '<circle cx="6.6" cy="17.4" r="1.5" fill="currentColor" stroke="none"/>' +
          '<circle cx="17.4" cy="17.4" r="1.5" fill="currentColor" stroke="none"/>',
-  grid:  '<rect x="4" y="4.5" width="7" height="6" rx="1.2"/><rect x="13" y="4.5" width="7" height="6" rx="1.2"/>' +
-         '<rect x="4" y="13.5" width="7" height="6" rx="1.2"/><rect x="13" y="13.5" width="7" height="6" rx="1.2"/>',
-  pulse: '<circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>' +
-         '<circle cx="12" cy="12" r="5.4" opacity=".65"/><circle cx="12" cy="12" r="8.8" opacity=".35"/>' +
-         '<circle cx="18.4" cy="8.4" r="1.4" fill="currentColor" stroke="none"/>' +
-         '<circle cx="7" cy="15.4" r="1.4" fill="currentColor" stroke="none"/>',
   stars: '<path d="M7 7l5 2.5L17.5 6M7 7l1.5 6M8.5 13l6 4M17.5 6l-3 11" opacity=".55"/>' +
          '<circle cx="7" cy="7" r="1.6" fill="currentColor" stroke="none"/>' +
          '<circle cx="17.5" cy="6" r="1.6" fill="currentColor" stroke="none"/>' +

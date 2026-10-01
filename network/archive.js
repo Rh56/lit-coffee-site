@@ -1570,13 +1570,15 @@ function drawChroma(host) {
     '<div class="ch-pane" id="ch-pane" hidden></div>';
   host.appendChild(rig);
 
+  // the light covers the whole window and follows the pointer anywhere in
+  // the archive, so it never shows the edge of a box
   var aura = $('#ch-aura', rig);
   var onMove = function (e) {
-    var r = rig.getBoundingClientRect();
+    var r = aura.getBoundingClientRect();
     aura.style.setProperty('--ax', (e.clientX - r.left) + 'px');
     aura.style.setProperty('--ay', (e.clientY - r.top) + 'px');
   };
-  rig.addEventListener('pointermove', onMove);
+  root.addEventListener('pointermove', onMove);
 
   var pane = $('#ch-pane', rig);
   var scrim = $('#ch-scrim', rig);
@@ -1625,7 +1627,7 @@ function drawChroma(host) {
       flyName(from, pane.querySelector('h3'));
       pane.classList.add('enter');
       clearTimeout(enterTimer);
-      enterTimer = setTimeout(function () { pane.classList.remove('enter'); }, 1100);
+      enterTimer = setTimeout(function () { pane.classList.remove('enter'); }, 650);
     }
     void pane.offsetWidth;                   // laid out closed, then opened
     scrim.classList.add('on');
@@ -1637,7 +1639,7 @@ function drawChroma(host) {
     var o = el('i', 'ch-ring');
     o.style.cssText = 'left:' + x + 'px;top:' + y + 'px;--hue:' + hue;
     root.appendChild(o);
-    setTimeout(function () { o.remove(); }, 800);
+    setTimeout(function () { o.remove(); }, 520);
   }
 
   /* The name you clicked is the name that becomes the title: a copy of it
@@ -1659,9 +1661,9 @@ function drawChroma(host) {
       { transform: 'none', opacity: 1 },
       { transform: 'translate(' + (b.left - a.left) + 'px,' + (b.top - a.top) + 'px) scale(' + s + ')', opacity: 1, offset: .85 },
       { transform: 'translate(' + (b.left - a.left) + 'px,' + (b.top - a.top) + 'px) scale(' + s + ')', opacity: 0 }
-    ], { duration: 620, easing: 'cubic-bezier(.16,.84,.32,1)' }).onfinish = function () { ghost.remove(); };
-    setTimeout(function () { ghost.remove(); }, 900);   // even if the animation never ran
-    setTimeout(function () { title.classList.remove('landing'); }, 520);
+    ], { duration: 400, easing: 'cubic-bezier(.16,.84,.32,1)' }).onfinish = function () { ghost.remove(); };
+    setTimeout(function () { ghost.remove(); }, 600);   // even if the animation never ran
+    setTimeout(function () { title.classList.remove('landing'); }, 330);
   }
 
   function hidePane() {
@@ -1676,7 +1678,7 @@ function drawChroma(host) {
     setTimeout(function () {
       if (pane.classList.contains('on')) return;
       pane.hidden = true; scrim.hidden = true;
-    }, reduced() ? 0 : 420);
+    }, reduced() ? 0 : 280);
   }
 
   var onKey = function (e) {
@@ -1696,7 +1698,7 @@ function drawChroma(host) {
   });
 
   return function () {
-    rig.removeEventListener('pointermove', onMove);
+    root.removeEventListener('pointermove', onMove);
     document.removeEventListener('keydown', onKey, true);
   };
 }

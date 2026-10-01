@@ -108,7 +108,7 @@
   position:relative; z-index:4;
   display:flex; align-items:center; gap:var(--s5);
   padding:0 clamp(16px, 4vw, 48px);
-  height:48px; flex:none;
+  height:56px; flex:none;
   border-bottom:1px solid var(--rule);
   background:var(--ground-2);
   opacity:0; transform:translateY(-6px);
@@ -130,7 +130,7 @@
 
 .arc-find{
   /* no box: typed words on one hairline that draws in when you are in it */
-  position:relative; flex:0 1 auto; width:200px; max-width:40vw;
+  position:relative; flex:0 1 auto; width:240px; max-width:40vw;
   display:flex; align-items:center; gap:8px;
   padding:4px 0; cursor:text;
   border-bottom:1px solid var(--rule-soft);
@@ -141,11 +141,11 @@
   background:var(--accent); transform:scaleX(0); transform-origin:0 50%;
   transition:transform .42s var(--ease);
 }
-.arc-find:focus-within{ width:320px; }
+.arc-find:focus-within{ width:360px; }
 .arc-find:focus-within::after{ transform:scaleX(1); }
 .arc-find input{
   flex:1; min-width:0; background:none; border:none; outline:none; padding:0;
-  font-family:var(--typed); font-size:12px; letter-spacing:.04em; color:var(--ink);
+  font-family:var(--typed); font-size:13px; letter-spacing:.04em; color:var(--ink);
   -webkit-appearance:none; appearance:none;
 }
 .arc-find input::-webkit-search-cancel-button{ -webkit-appearance:none; }
@@ -557,7 +557,7 @@
 
 .chroma{ position:relative; margin-top:18px; display:flex; flex-direction:column; gap:14px; }
 .ch-aura{
-  position:absolute; inset:0; pointer-events:none; z-index:0;   /* the bands' own box: no edge shows */
+  position:fixed; inset:0; pointer-events:none; z-index:0;   /* the whole window: its edges are the window's */
   background:radial-gradient(420px 420px at var(--ax, 50%) var(--ay, 30%), rgba(255,255,255,.07), transparent 70%);
 }
 .ch-band{
@@ -1625,11 +1625,13 @@ dd.edit{ display:block; }
 
 /* ---------- a compact head: the archive sits high ---------- */
 .arc-head{
-  padding:var(--s3) 0 var(--s4);
+  padding:var(--s5) 0 var(--s5);
   grid-template-areas:"crumb crumb" "title apparatus";
-  align-items:center;
+  align-items:end;
 }
-.arc-head .arc-title{ font-size:clamp(26px, 3.2vw, 38px); margin:0; }
+/* between the old 68px and the cramped 38px */
+.arc-head .arc-title{ font-size:clamp(36px, 5.2vw, 56px); margin:0; }
+.arc-head .apparatus{ padding-bottom:8px; }
 .arc-head .apparatus{
   flex-direction:row; align-items:center; gap:var(--s5); padding-bottom:0;
 }
@@ -1638,3 +1640,24 @@ dd.edit{ display:block; }
 @media (max-width:880px){
   .arc-head .apparatus{ flex-direction:column; align-items:flex-start; gap:var(--s2); }
 }
+
+/* ---------- chroma pane: quicker and lighter ---------- */
+/* the glass blur is the expensive part, so it waits until the pane has landed */
+.ch-pane{ backdrop-filter:none; -webkit-backdrop-filter:none; will-change:clip-path;
+  background:color-mix(in srgb, var(--hue) 30%, rgba(12,17,22,.94)); }
+.ch-pane.on:not(.enter){ backdrop-filter:blur(20px) saturate(1.25); -webkit-backdrop-filter:blur(20px) saturate(1.25); }
+.ch-pane.on{ transition:clip-path .44s var(--ease); }
+.ch-pane{ transition:clip-path .24s cubic-bezier(.5,0,.75,0); }
+.ch-scrim{ backdrop-filter:none; -webkit-backdrop-filter:none; background:rgba(6,9,12,.62); transition:opacity .2s var(--ease); }
+.ch-pane.enter::after{ animation:flood .5s var(--ease) both; }
+.ch-pane.enter .ch-kicker, .ch-pane.enter .ch-role,
+.ch-pane.enter dl > dt, .ch-pane.enter dl > dd,
+.ch-pane.enter .editor .ed-row, .ch-pane.enter .ch-acts{
+  animation:chrise2 .3s var(--ease) both;
+  animation-delay:calc(var(--k, 0) * 22ms + 90ms);
+}
+@keyframes chrise2{ from{ opacity:0; transform:translateY(8px); } }
+.ch-pane.enter .ch-x{ animation:chrise2 .3s var(--ease) .2s both; }
+.ch-pane.on::before{ animation:sheen .6s var(--ease) .1s 1; }
+.ch-ring{ animation-duration:.5s; }
+.ch-fly{ will-change:transform; }

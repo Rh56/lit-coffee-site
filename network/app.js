@@ -1190,10 +1190,11 @@ var lastNodeCount = 0;
 
 var raf = null;
 function loop() {
+  // the archive is its own surface, not a lid over this one: while it is up
+  // the plate is not on screen, so the loop stops outright rather than
+  // waking every frame to find nothing to do (see mapWakes below)
+  if (document.body.classList.contains('archived')) { raf = null; return; }
   raf = requestAnimationFrame(loop);
-  // the archive is its own surface, not a lid over this one: while it is up,
-  // the plate is not on screen and there is nothing to spend frames on
-  if (document.body.classList.contains('archived')) return;
   var moving = tick();
   var sprouting = nodes.some(function (n) { return n.born && performance.now() - n.born < 460; });
   if (moving || sprouting || needsDraw) { needsDraw = false; draw(); }
@@ -1481,11 +1482,20 @@ var PAD_SHUT = 'rootwork.pad.shut';
   });
 })();
 
-function renderAll() {
+/* While the archive is up the map is not drawn, so an edit there (or a
+   sync landing) only marks the map stale; it catches up once, on return. */
+var mapStale = false;
+function renderMap() {
+  mapStale = false;
   renderLayouts();
   rebuild(); renderStats(); renderLegend(); renderPad(); kick();
+}
+function renderAll() {
+  if (document.body.classList.contains('archived')) mapStale = true;
+  else renderMap();
   // the archive reads the same state; let it know when it moved
   document.dispatchEvent(new CustomEvent('rootwork:changed'));
+  if (mapStale) return;
   if (selected && selected.kind === 'person') {
     var still = state.people.filter(function (p) { return p.id === selected.id; })[0];
     if (still) openDossier(byId[still.id] || selected); else closeDossier();
@@ -3323,6 +3333,14 @@ window.Rootwork = {
 
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { needsDraw = true; });
   loop();
+  // the map wakes when the archive goes: catch up on anything that changed
+  // while it slept, then start the loop again
+  new MutationObserver(function () {
+    if (document.body.classList.contains('archived') || raf) return;
+    if (mapStale) renderMap();
+    needsDraw = true;
+    loop();
+  }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
   if (window.RootworkSync) window.RootworkSync.attach(window.Rootwork);
 

@@ -536,20 +536,6 @@
   font-family:var(--typed); font-size:9.5px; letter-spacing:.12em; text-transform:uppercase;
   color:var(--faint); text-align:right;
 }
-.ix-read{
-  position:fixed; left:0; right:0; bottom:0; z-index:3;
-  padding:13px clamp(24px, 6vw, 80px); min-height:44px;
-  border-top:1px solid var(--rule);
-  background:color-mix(in srgb, var(--ground-2) 92%, transparent);
-  backdrop-filter:blur(10px);
-  font-family:var(--typed); font-size:11px; letter-spacing:.06em;
-  color:var(--faint); opacity:0; transition:opacity .2s var(--ease);
-}
-.ix-read[data-on]{ opacity:1; color:var(--accent); }
-.ix-read[data-on]::after{
-  content:"\2588"; margin-left:2px; animation:blink 1s steps(2) infinite;
-}
-@keyframes blink{ 50%{ opacity:0; } }
 
 /* ==========================================================================
    Design 6 — Chroma
@@ -1252,13 +1238,7 @@ dd.edit{ display:block; }
 }
 @keyframes scan{ to{ transform:translateY(260%); opacity:0; } }
 
-/* the ghost a file leaves as it opens */
-.fw-ghost{
-  position:fixed; z-index:40; pointer-events:none; border-radius:6px;
-  background:color-mix(in srgb, var(--hue) 35%, var(--panel));
-  box-shadow:0 0 0 1px color-mix(in srgb, var(--hue) 60%, transparent);
-  transform-origin:center;
-}
+
 
 .arc-body.still .fw-desk, .arc-body.still .fw-bar .lights i,
 .arc-body.still .fprev-in::after{ animation:none; }
@@ -1704,3 +1684,8 @@ dd.edit{ display:block; }
 @media (prefers-reduced-motion:reduce){
   .ch-pane{ transform:translate(-50%, -50%); transition:opacity .15s linear; }
 }
+
+/* ---------- the map sleeps under the archive ---------- */
+/* once the archive has faded in over it, the map is not painted at all;
+   it comes back before the archive fades out again */
+body.archive-settled .shell{ visibility:hidden; }

@@ -4,8 +4,7 @@
    Four ways to read the same network, each a surface of its own rather than a
    panel over the map: its own bar, its own address, its own idea of what a
    folder is. Nothing here owns data — every screen reads the state the map
-   draws, and editing happens on the card, which comes to whichever surface
-   you are looking at.
+   draws, and each one shows and edits the whole record itself.
 
      Drawer         cut tabs and colour bands — a filing drawer from above
      Index          everyone at once, set tight, no colour but the pips
@@ -33,6 +32,7 @@ var DESIGNS = [
 var view = { design: 'drawer', circle: null, person: null };
 var DESIGN_KEY = 'rootwork.archive.design';
 var open = false;
+var settleTimer = null;
 var query = '', qTimer = null;
 
 /* Each design has its own address, so one can be opened cold — bookmarked,
@@ -1112,6 +1112,9 @@ function show(circle, person, design) {
   open = true;
   root.hidden = false;
   document.body.classList.add('archived');
+  // once the archive has covered the map, stop painting the map at all
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(function () { if (open) document.body.classList.add('archive-settled'); }, 450);
   render();
   writeRoute(true);
   requestAnimationFrame(function () { root.classList.add('in'); });
@@ -1123,9 +1126,10 @@ function close() {
   if (!open) return;
   open = false;
   root.classList.remove('in');
+  clearTimeout(settleTimer);
+  document.body.classList.remove('archive-settled');   // the map shows through as the archive fades
   document.body.classList.remove('archived');
   if (L && L.closeCard) L.closeCard();
-  releaseCard();
   try { history.pushState(null, '', '#map'); } catch (e) { }
   var done = function () { if (!open) root.hidden = true; };
   if (reduced()) done(); else setTimeout(done, 300);
@@ -1189,33 +1193,6 @@ function addPerson(circle) {
     var n = body.querySelector('.ch-name[data-person="' + cssEsc(p.id) + '"]');
     if (n) { n.scrollIntoView({ block: 'center' }); n.click(); }
   });
-}
-
-/* The card is the one place anything is edited, so it comes to whichever
-   surface you are on rather than sending you back to the map.
-
-   A fixed element makes its own stacking context, so the card cannot simply
-   be raised above this one — it is moved into it while the archive is the
-   surface in front, and handed back when the archive closes. Moving the node
-   keeps its handlers and its contents; only its parent changes. */
-var cardHome = null;
-
-function holdCard() {
-  var d = document.getElementById('dossier');
-  if (!d || d.parentNode === root) return;
-  cardHome = d.parentNode;
-  root.appendChild(d);
-}
-
-function releaseCard() {
-  var d = document.getElementById('dossier');
-  if (d && cardHome && d.parentNode === root) cardHome.appendChild(d);
-  cardHome = null;
-}
-
-function editCard(id) {
-  holdCard();
-  L.openCard(id);
 }
 
 /* ==========================================================================
@@ -1353,15 +1330,12 @@ function drawFile(host) {
         '<div class="sheets-live" data-sheets="' + p.id + '">' + fileSheets(p, d) + '</div>' +
       '</div>' +
       '<div class="acts">' +
-        '<button class="btn" data-edit="' + p.id + '">Open the card</button>' +
         '<button class="btn" data-back>Back to the drawer</button>' +
       '</div>' +
     '</div>';
   host.appendChild(file);
 
   file.addEventListener('click', function (e) {
-    var b = e.target.closest('[data-edit]');
-    if (b) return editCard(b.dataset.edit);
     if (e.target.closest('[data-back]')) back();
   });
 }
@@ -1415,8 +1389,7 @@ function emptyState(host, text) {
    Design 4 — Index
    No pictures, no colour, no room wasted. Everyone set in one tight grid the
    way a catalogue raisonné lists works: number, name, one line of fact.
-   A crosshair tracks the row you are on and the detail types itself out in
-   the margin.
+   A crosshair tracks the row you are on; a row opens into its own entry.
    ========================================================================== */
 
 function drawIndex(host) {
@@ -1440,30 +1413,11 @@ function drawIndex(host) {
           '<span class="ix-when">' + esc(p.log.length ? L.ago(L.lastTouch(p)) : '\u2014') + '</span>' +
         '</button>';
       }).join('') +
-    '</div>' +
-    '<div class="ix-read" id="ix-read" aria-hidden="true"></div>';
+    '</div>';
   host.appendChild(rig);
 
   var cross = el('div', 'ix-cross');
   $('#ix-grid', rig).appendChild(cross);
-
-  var read = $('#ix-read', rig);
-  var typer = null;
-  function type(p) {
-    clearInterval(typer);
-    if (!p) { read.textContent = ''; read.removeAttribute('data-on'); return; }
-    var bits = [p.name, roleOf(p), p.location, L.circlesOf(p).join(' / '),
-      p.log.length ? 'last touched ' + L.ago(L.lastTouch(p)) : 'no touchpoints'];
-    var line = bits.filter(Boolean).join('  \u00b7  ');
-    read.setAttribute('data-on', '');
-    if (reduced()) { read.textContent = line; return; }
-    var i = 0;
-    read.textContent = '';
-    typer = setInterval(function () {
-      read.textContent = line.slice(0, ++i);
-      if (i >= line.length) clearInterval(typer);
-    }, 11);
-  }
 
   rig.addEventListener('pointerover', function (e) {
     var r = e.target.closest('.ix-row');
@@ -1472,9 +1426,8 @@ function drawIndex(host) {
     r.setAttribute('data-on', '');
     cross.style.top = (r.offsetTop + r.offsetHeight - 1) + 'px';
     cross.setAttribute('data-on', '');
-    type(personById(r.dataset.person));
   });
-  rig.addEventListener('pointerleave', function () { type(null); cross.removeAttribute('data-on'); });
+  rig.addEventListener('pointerleave', function () { cross.removeAttribute('data-on'); });
   /* A row opens into its own entry, set the way the index sets everything:
      a catalogue number, the name, two columns of typed facts, and the record
      underneath, all editable where it sits. One entry open at a time; the
@@ -1502,7 +1455,6 @@ function drawIndex(host) {
         '</dl>' +
       '</div>' +
       editorBlocks(p) +
-      '<div class="ix-e-acts"><button class="btn" data-edit="' + p.id + '">Open the card</button></div>' +
     '</div></div></div>';
   }
 
@@ -1549,8 +1501,6 @@ function drawIndex(host) {
 
   rig.addEventListener('click', function (e) {
     if (e.target.closest('[data-ixclose]')) return closeEntry();
-    var ed = e.target.closest('[data-edit]');
-    if (ed) return editCard(ed.dataset.edit);
     var f = e.target.closest('[data-folder]');
     if (f) { view.circle = f.dataset.folder || null; return render(); }
     var r = e.target.closest('.ix-row[data-person]');
@@ -1574,7 +1524,6 @@ function drawIndex(host) {
   if (view.person) openEntry(view.person, true);
 
   return function () {
-    clearInterval(typer);
     document.removeEventListener('keydown', onKey);
     if (indexClose === closeEntry) indexClose = null;
   };
@@ -1652,15 +1601,7 @@ function drawChroma(host) {
         '<dt>Filed</dt><dd>' + circleChips(p) + '</dd>' +
         '<dt>Last</dt><dd>' + esc(p.log.length ? L.ago(L.lastTouch(p)) : 'no touchpoints') + '</dd>' +
       '</dl>' +
-      editorBlocks(p) +
-      '<div class="ch-acts">' +
-        '<button class="btn" data-edit="' + p.id + '">Open the card</button>' +
-        '<button class="btn" data-file="' + p.id + '">See the file</button>' +
-      '</div>';
-    /* It opens as an iris of the folder's colour out of the name you
-       clicked: a ring of light goes off where you clicked, the circle opens
-       from there, the name itself flies up to be the pane's title, and the
-       facts rise in after it. Closing draws the circle back into the name. */
+      editorBlocks(p);
     var r = from.getBoundingClientRect();
     var ox = r.left + r.width / 2, oy = r.top + r.height / 2;
     pane.classList.remove('on', 'enter');
@@ -1671,7 +1612,7 @@ function drawChroma(host) {
     aimAt(ox, oy);
     // the rows come in one after another, a fact and its value together
     var k = 0;
-    Array.prototype.forEach.call(pane.querySelectorAll('.ch-kicker, .ch-role, dl > dt, dl > dd, .editor .ed-row, .ch-acts'), function (n) {
+    Array.prototype.forEach.call(pane.querySelectorAll('.ch-kicker, .ch-role, dl > dt, dl > dd, .editor .ed-row'), function (n) {
       if (n.tagName !== 'DD') k++;
       n.style.setProperty('--k', k);
     });
@@ -1713,10 +1654,6 @@ function drawChroma(host) {
 
   rig.addEventListener('click', function (e) {
     if (e.target.closest('[data-close]')) return hidePane();
-    var ed = e.target.closest('[data-edit]');
-    if (ed) return editCard(ed.dataset.edit);
-    var fi = e.target.closest('[data-file]');
-    if (fi) { view.design = 'drawer'; return openPerson(fi.dataset.file); }
     var n = e.target.closest('[data-person]');
     if (n) return showPane(personById(n.dataset.person), n);
     if (!e.target.closest('.ch-pane')) hidePane();
@@ -1929,25 +1866,11 @@ function drawFinder(host) {
     pill.style.width = on.offsetWidth + 'px';
   }
 
-  /* Opening a file zooms out of the row it was in, the way an app launches
-     from its icon, and the card arrives where the zoom ends. */
-  function launch(id, from) {
-    var row = from || rig.querySelector('[data-person="' + cssEsc(id) + '"]');
-    if (!row || reduced() || !row.animate) return editCard(id);
-    var r = row.getBoundingClientRect();
-    var ghost = el('div', 'fw-ghost');
-    var hue = sel.circle ? hueVar(sel.circle) : 'var(--accent)';
-    ghost.style.cssText = 'left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;--hue:' + hue;
-    root.appendChild(ghost);
-    var dx = window.innerWidth / 2 - (r.left + r.width / 2);
-    var dy = window.innerHeight / 2 - (r.top + r.height / 2);
-    var sx = Math.min(420, window.innerWidth * .8) / r.width;
-    var sy = Math.min(360, window.innerHeight * .6) / r.height;
-    ghost.animate([
-      { transform: 'none', opacity: .9 },
-      { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(' + sx + ',' + sy + ')', opacity: 0 }
-    ], { duration: 320, easing: 'cubic-bezier(.16,.84,.32,1)' }).onfinish = function () { ghost.remove(); };
-    setTimeout(function () { editCard(id); }, 140);
+  /* Enter (or a double click) starts editing the file where it is shown,
+     at its role, the first thing under the name. */
+  function editHere() {
+    var f = pane.querySelector('.fprev-in [data-field="profession"]');
+    if (f) f.click();
   }
 
   /* Walking off either end of a list gives a little, rather than nothing. */
@@ -2006,10 +1929,6 @@ function drawFinder(host) {
         '<dt style="--i:7">School</dt><dd style="--i:7">' + schoolChips(p) + '</dd>' +
       '</dl>' +
       editorBlocks(p) +
-      '<div class="facts">' +
-        '<button class="btn" data-edit="' + p.id + '">Open the card</button>' +
-        '<button class="btn" data-file="' + p.id + '">See the file</button>' +
-      '</div>' +
     '</div>';
   }
   paint();
@@ -2023,10 +1942,6 @@ function drawFinder(host) {
       if (!reduced()) { pane.classList.remove('swap'); void pane.offsetWidth; pane.classList.add('swap'); }
       return;
     }
-    var ed = e.target.closest('[data-edit]');
-    if (ed) return launch(ed.dataset.edit, ed);
-    var fi = e.target.closest('[data-file]');
-    if (fi) { view.design = 'drawer'; return openPerson(fi.dataset.file); }
     var c = e.target.closest('[data-circle]');
     if (c) {
       if (c.dataset.circle === sel.circle && finderMode === 'columns') return;
@@ -2037,7 +1952,7 @@ function drawFinder(host) {
   });
   rig.addEventListener('dblclick', function (e) {
     var pr = e.target.closest('[data-person]');
-    if (pr) launch(pr.dataset.person, pr);
+    if (pr && !e.target.closest('.fprev-in')) { pickPerson(pr.dataset.person); editHere(); }
   });
 
   var onKey = function (e) {
@@ -2063,7 +1978,7 @@ function drawFinder(host) {
       if (inPeople) return pickPerson(null);
       return;
     }
-    if (e.key === 'Enter' && sel.person) { e.preventDefault(); launch(sel.person); }
+    if (e.key === 'Enter' && sel.person) { e.preventDefault(); editHere(); }
   };
   document.addEventListener('keydown', onKey);
   // fonts, the window's entrance and the page's width all settle after the

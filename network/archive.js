@@ -620,7 +620,7 @@ function editorAction(btn) {
     editText(btn, sc.name, function (val) {
       if (!val) p.schools.splice(idx, 1);
       else {
-        // "Lehigh MBA" typed over a name sets the degree too
+        // "Penn State MBA" typed over a name sets the degree too
         var got = L.parseSchool(val);
         sc.name = got.name;
         if (got.level) sc.level = got.level;

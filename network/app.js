@@ -2144,7 +2144,7 @@ $('#dossier').addEventListener('keydown', function (e) {
     return;
   }
   if (inp.dataset.add === 'school') {
-    // "Wharton mba" or "Lehigh undergrad" sets the level in the same breath
+    // "Wharton mba" or "Penn State undergrad" sets the level in the same breath
     var level = degreeIn(val);
     var stripped = val.replace(DEGREE_STRIP, ' ');
     addSchool(p.schools, titleCase(clean(stripped) || val), level);
@@ -2975,24 +2975,24 @@ function sample() {
       [[4, 'zoom', 'Zoom about the forecasting pilot — she wants a two-week trial.', 'Runs the internal AI guild, 200 people'],
        [38, 'coffee', 'Coffee downtown before the panel.'],
        [96, 'met', 'Met at the Rutgers alumni mixer.']]),
-    mk({ name: 'Marcus Bell', circle: 'Work', profession: 'Engineering manager', company: 'Vanta', schools: [{ name: 'Lehigh', level: 'BS' }],
+    mk({ name: 'Marcus Bell', circle: 'Work', profession: 'Engineering manager', company: 'Vanta', schools: [{ name: 'Penn State', level: 'BS' }],
       email: 'marcus@example.com', location: 'Brooklyn, NY' },
       [[11, 'call', 'Called about the staff role on his team.', 'Hiring two backend engineers in Q1'],
        [60, 'event', 'Sat next to him at the Philly infra meetup.']]),
     mk({ name: 'Priya Raman', circle: 'Work', profession: 'Product designer', company: 'Figma',
       email: 'priya@example.com' },
       [[130, 'coffee', 'Coffee at Monkey + Elf. Talked through the onboarding redesign.', 'Moving to Lisbon in the spring']]),
-    mk({ name: 'Tomás Ferreira', circles: ['School', 'Work'], schools: [{ name: 'Lehigh', level: 'BS' }, { name: 'Villanova', level: 'JD' }], profession: 'Attorney', company: 'Reed Smith',
+    mk({ name: 'Tomás Ferreira', circles: ['School', 'Work'], schools: [{ name: 'Penn State', level: 'BS' }, { name: 'Villanova', level: 'JD' }], profession: 'Attorney', company: 'Reed Smith',
       email: 'tomas@example.com' },
-      [[22, 'meal', 'Dinner at Bolete with the Lehigh crowd.', 'Just made partner'],
+      [[22, 'meal', 'Dinner downtown with the Penn State crowd.', 'Just made partner'],
        [210, 'call', 'Called for advice on the LLC paperwork.']]),
-    mk({ name: 'Hannah Koenig', circle: 'School', schools: [{ name: 'Lehigh', level: 'BS' }], profession: 'Pastry chef', company: 'Bread & Salt',
+    mk({ name: 'Hannah Koenig', circle: 'School', schools: [{ name: 'Penn State', level: 'BS' }], profession: 'Pastry chef', company: 'Bread & Salt',
       email: 'hannah@example.com', location: 'Jersey City, NJ' },
       [[6, 'message', 'Texted about the croissant lamination class.', 'Teaching a Saturday workshop in March']]),
-    mk({ name: 'Owen Reilly', circle: 'School', schools: [{ name: 'Lehigh', level: 'BS' }], profession: 'High school teacher' },
+    mk({ name: 'Owen Reilly', circle: 'School', schools: [{ name: 'Penn State', level: 'BS' }], profession: 'High school teacher' },
       [[168, 'event', 'Ran into him at homecoming.']]),
     mk({ name: 'Ada Whitfield', circles: ['Industry', 'Neighbors'], profession: 'Roaster', company: 'Deep Roots Coffee',
-      email: 'ada@example.com', location: 'Bethlehem, PA',
+      email: 'ada@example.com', location: 'Philadelphia, PA',
       howMet: 'intro through Marcus Bell' },
       [[2, 'coffee', 'Cupping session at her roastery — she walked me through the Ethiopia lots.', 'Has spare capacity on the Loring in Q2'],
        [30, 'email', 'Emailed about wholesale pricing.']]),
@@ -3001,13 +3001,13 @@ function sample() {
     mk({ name: 'Sofia Marchetti', circle: 'Industry', profession: 'Green coffee buyer', company: 'Cafe Imports',
       email: 'sofia@example.com' },
       [[300, 'event', 'Met at Coffee Fest in Baltimore.']]),
-    mk({ name: 'Grace Lin', circle: 'Family', profession: 'Nurse practitioner', location: 'Allentown, PA' },
+    mk({ name: 'Grace Lin', circle: 'Family', profession: 'Nurse practitioner', location: 'Lancaster, PA' },
       [[9, 'call', 'Sunday call.', 'Starting the DNP program in the fall']]),
-    mk({ name: 'Robert Lin', circle: 'Family', profession: 'Retired machinist', location: 'Allentown, PA' },
+    mk({ name: 'Robert Lin', circle: 'Family', profession: 'Retired machinist', location: 'Lancaster, PA' },
       [[9, 'meal', 'Sunday dinner.']]),
     mk({ name: 'Nadia Haddad', circle: 'Neighbors', profession: 'Architect', company: 'Spillman Farmer',
-      email: 'nadia@example.com', location: 'Bethlehem, PA' },
-      [[16, 'met', 'Ran into her on Broad Street — she offered to look at the floor plan.', 'Did the tenant fit-out on the SteelStacks cafe']]),
+      email: 'nadia@example.com', location: 'Philadelphia, PA' },
+      [[16, 'met', 'Ran into her on Broad Street — she offered to look at the floor plan.', 'Did the tenant fit-out on the riverfront cafe']]),
     mk({ name: 'Eli Brandt', circle: 'Neighbors', profession: 'Contractor' },
       [[110, 'call', 'Called about the back patio quote.']])
   ];

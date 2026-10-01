@@ -275,12 +275,12 @@ error, since the next poll usually settles it.
 
 The chat bar reads plain sentences. It also takes instructions that reshape the
 map (`remove everyone but keep the categories`, `merge Industry into Vendors`,
-`rename Neighbors to Bethlehem`, `create a category called Vendors`, `add Ada to
+`rename Neighbors to Philadelphia`, `create a category called Vendors`, `add Ada to
 Vendors`) and ones that change how it looks (`make Work green`, `hide Family`,
 `call me Ben`). Anything
 touching more than one person is described and counted before it runs, and
 every change can be taken back with ⌘Z, the Undo on the toast, or `/undo`. Beyond logging a touchpoint it understands direct edits
-(`her location is Bethlehem`, `change his email to …`, `remove her phone`),
+(`her location is Philadelphia`, `change his email to …`, `remove her phone`),
 resolves *she/he/they* to whoever's dossier is open or was last logged, and
 turns anything the fixed fields do not cover (`her partner is Sam`) into its own
 labelled line on the card. A bare fact edits the card; something that happened

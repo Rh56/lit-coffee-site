@@ -1678,3 +1678,29 @@ dd.edit{ display:block; }
 @media (max-width:880px){
   .arc-add{ padding:7px 10px; }
 }
+
+/* ---------- chroma pane: dealt from the name ---------- */
+/* transform and opacity only, so it stays smooth; no mask, so no edge */
+.ch-pane, .ch-pane.on{ clip-path:none; will-change:transform, opacity; }
+.ch-pane{
+  transform:translate(calc(-50% + var(--fx, 0px)), calc(-50% + var(--fy, 0px)))
+            perspective(900px) rotateX(-38deg) scale(.32);
+  opacity:0;
+  transition:transform .26s cubic-bezier(.5,0,.75,0), opacity .2s ease-in;
+}
+.ch-pane.on{
+  transform:translate(-50%, -50%);
+  opacity:1;
+  transition:transform .46s cubic-bezier(.2,.9,.25,1.04), opacity .18s ease-out;
+}
+.ch-pane::after{ display:none; }
+.ch-pane.enter .ch-kicker, .ch-pane.enter .ch-role,
+.ch-pane.enter dl > dt, .ch-pane.enter dl > dd,
+.ch-pane.enter .editor .ed-row, .ch-pane.enter .ch-acts{
+  animation-delay:calc(var(--k, 0) * 20ms + 140ms);
+}
+.ch-pane h3{ animation:none; }
+.ch-pane .ed-deg{ font-size:9px; padding:1px 6px; }
+@media (prefers-reduced-motion:reduce){
+  .ch-pane{ transform:translate(-50%, -50%); transition:opacity .15s linear; }
+}

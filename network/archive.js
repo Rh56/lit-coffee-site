@@ -1666,9 +1666,9 @@ function drawChroma(host) {
     pane.classList.remove('on', 'enter');
     scrim.hidden = false;
     pane.hidden = false;
-    var box = pane.getBoundingClientRect();           // its resting place; the iris only clips it
-    pane.style.setProperty('--ox', (ox - box.left).toFixed(0) + 'px');
-    pane.style.setProperty('--oy', (oy - box.top).toFixed(0) + 'px');
+    // it is dealt from the name: starts there, small and tipped back, and
+    // swings up flat into the middle of the window
+    aimAt(ox, oy);
     // the rows come in one after another, a fact and its value together
     var k = 0;
     Array.prototype.forEach.call(pane.querySelectorAll('.ch-kicker, .ch-role, dl > dt, dl > dd, .editor .ed-row, .ch-acts'), function (n) {
@@ -1677,8 +1677,6 @@ function drawChroma(host) {
     });
     lastFrom = from;
     if (!reduced()) {
-      ring(ox, oy, pane.style.getPropertyValue('--hue'));
-      flyName(from, pane.querySelector('h3'));
       pane.classList.add('enter');
       clearTimeout(enterTimer);
       enterTimer = setTimeout(function () { pane.classList.remove('enter'); }, 650);
@@ -1689,43 +1687,16 @@ function drawChroma(host) {
   }
   var lastFrom = null, enterTimer = null;
 
-  function ring(x, y, hue) {
-    var o = el('i', 'ch-ring');
-    o.style.cssText = 'left:' + x + 'px;top:' + y + 'px;--hue:' + hue;
-    root.appendChild(o);
-    setTimeout(function () { o.remove(); }, 520);
-  }
-
-  /* The name you clicked is the name that becomes the title: a copy of it
-     travels from the list to where the title sits and grows into it. */
-  function flyName(from, title) {
-    var src = from.querySelector('.ch-t') || from;
-    if (!title || !src.animate) return;
-    var a = src.getBoundingClientRect(), b = title.getBoundingClientRect();
-    var ghost = src.cloneNode(true);
-    ghost.className = 'ch-fly';
-    var cs = getComputedStyle(src);
-    ghost.style.cssText = 'left:' + a.left + 'px;top:' + a.top + 'px;font-family:' + cs.fontFamily +
-      ';font-size:' + cs.fontSize + ';font-weight:' + cs.fontWeight + ';font-style:' + cs.fontStyle +
-      ';letter-spacing:' + cs.letterSpacing + ';line-height:' + cs.lineHeight;
-    root.appendChild(ghost);
-    var s = b.height / Math.max(1, a.height);
-    title.classList.add('landing');
-    ghost.animate([
-      { transform: 'none', opacity: 1 },
-      { transform: 'translate(' + (b.left - a.left) + 'px,' + (b.top - a.top) + 'px) scale(' + s + ')', opacity: 1, offset: .85 },
-      { transform: 'translate(' + (b.left - a.left) + 'px,' + (b.top - a.top) + 'px) scale(' + s + ')', opacity: 0 }
-    ], { duration: 400, easing: 'cubic-bezier(.16,.84,.32,1)' }).onfinish = function () { ghost.remove(); };
-    setTimeout(function () { ghost.remove(); }, 600);   // even if the animation never ran
-    setTimeout(function () { title.classList.remove('landing'); }, 330);
+  function aimAt(x, y) {
+    pane.style.setProperty('--fx', (x - window.innerWidth / 2).toFixed(0) + 'px');
+    pane.style.setProperty('--fy', (y - window.innerHeight / 2).toFixed(0) + 'px');
   }
 
   function hidePane() {
     // close back into the name it came from, if that name is still on screen
     if (lastFrom && lastFrom.isConnected) {
-      var r = lastFrom.getBoundingClientRect(), box = pane.getBoundingClientRect();
-      pane.style.setProperty('--ox', (r.left + r.width / 2 - box.left).toFixed(0) + 'px');
-      pane.style.setProperty('--oy', (r.top + r.height / 2 - box.top).toFixed(0) + 'px');
+      var r = lastFrom.getBoundingClientRect();
+      aimAt(r.left + r.width / 2, r.top + r.height / 2);
     }
     pane.classList.remove('on', 'enter');
     scrim.classList.remove('on');

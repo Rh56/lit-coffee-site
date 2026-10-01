@@ -1,7 +1,7 @@
 /* ==========================================================================
    Rootwork — the archive.
 
-   Five ways to read the same network, each a surface of its own rather than a
+   Four ways to read the same network, each a surface of its own rather than a
    panel over the map: its own bar, its own address, its own idea of what a
    folder is. Nothing here owns data — every screen reads the state the map
    draws, and editing happens on the card, which comes to whichever surface
@@ -11,10 +11,9 @@
      Index          everyone at once, set tight, no colour but the pips
      Chroma         no paper at all: each folder a field of its own light
      Desktop        folders, files, a preview pane, a status bar
-     Constellation  everyone on a sphere you can spin
 
    Folders are whatever you say they are — circles, companies, schools or
-   towns — so the same six read differently depending on how you file.
+   towns — so the same four read differently depending on how you file.
 
    Shared chrome, one renderer each. A renderer owns its root element and is
    torn down whole on a switch, so no state leaks between them.
@@ -29,11 +28,10 @@ var DESIGNS = [
   { id: 'drawer', name: 'Drawer', hint: 'A filing drawer, seen from above' },
   { id: 'index', name: 'Index', hint: 'Everyone at once, set tight' },
   { id: 'chroma', name: 'Chroma', hint: 'Light and type, no paper at all' },
-  { id: 'finder', name: 'Desktop', hint: 'Folders and files, the way a computer keeps them' },
-  { id: 'orbit', name: 'Constellation', hint: 'Everyone on a sphere you can spin' }
+  { id: 'finder', name: 'Desktop', hint: 'Folders and files, the way a computer keeps them' }
 ];
 var view = { design: 'drawer', circle: null, person: null };
-var WIDE = { finder: 1, orbit: 1, chroma: 1 };
+var WIDE = { finder: 1, chroma: 1 };
 var DESIGN_KEY = 'rootwork.archive.design';
 var open = false;
 var query = '', qTimer = null;
@@ -296,7 +294,7 @@ function logBlock(p) {
   return '<div class="ed-row"><span class="ed-label">Touchpoints</span><div class="ed-list">' +
     log.map(function (e) {
       return '<div class="ed-item"><span class="ed-when">' + esc(L.channelLabel(e.channel)) +
-        ' \u00b7 ' + esc(L.fmtDate(e.at)) + '</span>' +
+        ' \u00b7 ' + dateChip(p, e) + '</span>' +
         '<span class="ed-text" data-act="log" data-for="' + p.id + '" data-id="' + esc(e.id) +
         '" tabindex="0" role="button">' + esc(e.text) + '</span>' +
         '<button class="ed-x" data-act="dellog" data-for="' + p.id + '" data-id="' + esc(e.id) +
@@ -334,6 +332,50 @@ var BLOCKS = { circles: circlesBlock, schools: schoolsBlock, notes: notesBlock, 
 
 function blocksOf(p, parts) {
   return parts.split(' ').map(function (k) { return BLOCKS[k](p); }).join('');
+}
+
+/* A touchpoint's date, which opens a date picker where it sits. */
+function dateChip(p, e) {
+  return '<span class="ed-date" data-act="logdate" data-for="' + p.id + '" data-id="' + esc(e.id) +
+    '" tabindex="0" role="button" title="Change the date">' + esc(L.fmtDate(e.at)) + '</span>';
+}
+function ymd(t) {
+  var d = new Date(t);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function editDate(el, p, rec) {
+  if (el.querySelector('input')) return;
+  var box = document.createElement('input');
+  box.type = 'date';
+  box.className = 'arc-input ed-dateinput';
+  box.value = ymd(rec.at);
+  box.max = ymd(Date.now());
+  box.setAttribute('aria-label', 'Touchpoint date');
+  var held = el.innerHTML;
+  el.innerHTML = '';
+  el.appendChild(box);
+  box.focus();
+  try { if (box.showPicker) box.showPicker(); } catch (err) { }
+  var done = false;
+  function finish(keep) {
+    if (done) return;
+    done = true;
+    var bits = box.value.split('-').map(Number);
+    if (!keep || bits.length !== 3 || !bits[0] || box.value === ymd(rec.at)) { el.innerHTML = held; return; }
+    // the day changes; the time of day it was logged at stays
+    var was = new Date(rec.at);
+    rec.at = new Date(bits[0], bits[1] - 1, bits[2], was.getHours(), was.getMinutes()).getTime();
+    p.log.sort(function (a, b) { return b.at - a.at; });
+    commitPerson(p);
+    refreshBlocks(p);
+  }
+  box.addEventListener('blur', function () { finish(true); });
+  box.addEventListener('keydown', function (e) {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
 }
 
 function editorBlocks(p, parts) {
@@ -397,6 +439,13 @@ function editorAction(btn) {
   if (!p) return false;
   var act = btn.dataset.act;
   var id = btn.dataset.id;
+
+  if (act === 'logdate') {
+    if (btn.querySelector('input')) return true;
+    var entry = (p.log || []).filter(function (e) { return e.id === id; })[0];
+    if (entry) editDate(btn, p, entry);
+    return true;
+  }
 
   if (act === 'note' || act === 'log') {
     var rec = act === 'note'
@@ -856,7 +905,6 @@ function render(quiet) {
   var fn = view.design === 'index' ? drawIndex
     : view.design === 'chroma' ? drawChroma
     : view.design === 'finder' ? drawFinder
-    : view.design === 'orbit' ? drawOrbit
     : drawDrawer;
   teardown = fn(body) || null;
 }
@@ -899,6 +947,8 @@ function show(circle, person, design) {
   view.person = person || null;
   if (design) view.design = design;
   else { try { view.design = localStorage.getItem(DESIGN_KEY) || view.design; } catch (e) { } }
+  // a design that has since been retired falls back to the drawer
+  if (!DESIGNS.some(function (d) { return d.id === view.design; })) view.design = 'drawer';
   try { groupMode = localStorage.getItem(GROUP_KEY) || groupMode; } catch (e) { }
   open = true;
   root.hidden = false;
@@ -1137,7 +1187,7 @@ function fileSheets(p, d) {
   if (p.log.length) {
     p.log.forEach(function (e, i) {
       out.push('<div class="sheet entry" style="--d:' + (d++) + ';--r:' + (i % 2 ? '.3' : '-.25') + 'deg">' +
-        '<div class="margin">' + esc(L.channelLabel(e.channel)) + '<br>' + esc(L.fmtDate(e.at)) + '</div>' +
+        '<div class="margin">' + esc(L.channelLabel(e.channel)) + '<br>' + dateChip(p, e) + '</div>' +
         '<div><p class="ed-text" data-act="log" data-for="' + p.id + '" data-id="' + esc(e.id) + '" tabindex="0" role="button"' +
           ' title="Click to edit">' + esc(e.text) + '</p>' +
           (e.learned ? '<div class="learned">' + esc(e.learned) + '</div>' : '') +
@@ -1404,11 +1454,7 @@ function drawFinder(host) {
       : '<svg class="fi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a1.5 1.5 0 0 0-1.5 1.5v15A1.5 1.5 0 0 0 7 21h10a1.5 1.5 0 0 0 1.5-1.5V7.5z"/><path d="M14 3v4.5h4.5"/></svg>';
   }
 
-  function sizeOf(p) {                      // something file-like to sort and show
-    var bytes = 180 + (p.log || []).reduce(function (a, e) { return a + e.text.length; }, 0)
-      + (p.notes || []).reduce(function (a, n) { return a + n.t.length; }, 0);
-    return bytes < 1024 ? bytes + ' B' : (bytes / 1024).toFixed(1) + ' KB';
-  }
+
 
   var lastPath = [], lastFoot = [];
   function chrome(folk, p) {
@@ -1443,7 +1489,6 @@ function drawFinder(host) {
       return '<button class="frow' + (sel.person === x.id ? ' on' : '') + '" data-person="' + x.id + '" style="--r:' + xi + '">' +
         '<span class="fic">' + icon('file') + '</span>' +
         '<span class="fnm">' + esc(x.name) + '</span>' +
-        '<span class="fct">' + esc(sizeOf(x)) + '</span>' +
       '</button>';
     }).join('') : '<div class="fempty">empty folder</div>');
   }
@@ -1466,7 +1511,6 @@ function drawFinder(host) {
         return '<div class="fitem' + (sel.person === x.id ? ' on' : '') + '" data-person="' + x.id + '" tabindex="0" style="--r:' + (cols.length + xi) + '">' +
           '<span class="fic">' + icon('file') + '</span>' +
           '<span class="fnm">' + esc(x.name) + '</span>' +
-          '<span class="fsz">' + esc(sizeOf(x)) + '</span>' +
         '</div>';
       }).join('');
     } else {
@@ -1635,7 +1679,6 @@ function drawFinder(host) {
         esc(p.profession || 'Add a role') + '</span></div>' +
       '<dl>' +
         '<dt style="--i:0">Kind</dt><dd style="--i:0">Rootwork entry</dd>' +
-        '<dt style="--i:1">Size</dt><dd style="--i:1">' + esc(sizeOf(p)) + '</dd>' +
         '<dt style="--i:2">Filed</dt><dd style="--i:2">' + circleChips(p) + '</dd>' +
         '<dt style="--i:3">Company</dt><dd style="--i:3" class="edit"' + editableAttrs(p, 'company') + '>' + esc(p.company || '—') + '</dd>' +
         '<dt style="--i:4">Email</dt><dd style="--i:4" class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +
@@ -1723,207 +1766,6 @@ function drawFinder(host) {
 }
 
 
-/* ==========================================================================
-   Design 9 — Constellation
-   Everyone as a lit sphere in real depth. Each group gets its own direction
-   out from the centre, labelled at the end of its axis, and its people sit
-   around that heading — so the shape of the thing is the shape of your
-   network. Drag to spin, scroll to come closer.
-   ========================================================================== */
-
-function drawOrbit(host) {
-  var groups = circles().filter(function (g) { return peopleIn(g.name).length; });
-  var everyone = st().people.filter(matches);
-  if (!everyone.length) return emptyState(host, 'Nothing to plot yet.');
-
-  var rig = el('div', 'orbit');
-  rig.innerHTML =
-    '<div class="or-stage" id="or-stage">' +
-      '<svg class="or-rays" id="or-rays" aria-hidden="true"></svg>' +
-      '<div class="or-field" id="or-field"></div>' +
-    '</div>' +
-    '<div class="or-read" id="or-read" aria-live="polite"></div>' +
-    '<div class="or-hint">drag to spin \u00b7 scroll to come closer \u00b7 click a point</div>';
-  host.appendChild(rig);
-
-  var stage = $('#or-stage', rig);
-  var field = $('#or-field', rig);
-  var rays = $('#or-rays', rig);
-
-  /* Each group gets its own heading out from the centre, spread evenly over
-     the sphere by the golden angle; its people sit around that heading. The
-     projection is done here rather than in CSS 3D, so depth sorting, fading
-     and hit areas are all under control and nothing foreshortens. */
-  var dirs = {};
-  var n = Math.max(1, groups.length);
-  groups.forEach(function (g, i) {
-    var y = 1 - (i + 0.5) / n * 2;
-    var r = Math.sqrt(Math.max(0, 1 - y * y));
-    var th = Math.PI * (3 - Math.sqrt(5)) * i;
-    dirs[g.name] = { x: Math.cos(th) * r, y: y, z: Math.sin(th) * r };
-  });
-
-  var R = 240;
-  var items = [];
-  groups.forEach(function (g) {
-    var d = dirs[g.name];
-    items.push({
-      kind: 'axis', label: g.name, hue: hueVar(g.name),
-      x: d.x * R * 1.2, y: d.y * R * 1.2, z: d.z * R * 1.2
-    });
-  });
-  everyone.forEach(function (p) {
-    var home = groupsOf(p)[0];
-    var d = dirs[home] || { x: 0, y: 0, z: 0 };
-    var rnd = seed(p.id);
-    var vx = d.x + (rnd(1) - .5) * .7, vy = d.y + (rnd(1) - .5) * .7, vz = d.z + (rnd(1) - .5) * .7;
-    var len = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1;
-    var reach = home ? (0.55 + rnd(1) * 0.45) : 0.3;
-    items.push({
-      kind: 'point', ref: p, label: p.name,
-      hue: home ? hueOfGroup(home) : 'var(--faint)',
-      size: 14 + Math.min(20, (p.log ? p.log.length : 0) * 3),
-      x: vx / len * R * reach, y: vy / len * R * reach, z: vz / len * R * reach
-    });
-  });
-  items.push({ kind: 'core', label: (st().me && st().me.name) || 'Me', x: 0, y: 0, z: 0, size: 26 });
-
-  field.innerHTML = items.map(function (it, i) {
-    if (it.kind === 'axis') {
-      return '<button class="or-axis" data-i="' + i + '" data-axis="' + esc(it.label) + '"' +
-        ' style="--hue:' + it.hue + '">' + esc(it.label) + '</button>';
-    }
-    if (it.kind === 'core') {
-      return '<div class="or-core" data-i="' + i + '"><i></i><span>' + esc(it.label) + '</span></div>';
-    }
-    return '<button class="or-pt" data-i="' + i + '" data-person="' + it.ref.id + '"' +
-      ' style="--hue:' + it.hue + '; --s:' + it.size + 'px; --d:' + i + '">' +
-      '<i></i><span class="or-name">' + esc(it.label) + '</span></button>';
-  }).join('');
-
-  var els = Array.prototype.slice.call(field.children);
-
-  var rot = { x: -0.2, y: 0.3 };
-  var dist = 900, spin = 0.0016, idle = true;
-
-  function project() {
-    var w = stage.clientWidth, h = stage.clientHeight;
-    var cx = w / 2, cy = h / 2;
-    var sx = Math.sin(rot.x), cxr = Math.cos(rot.x);
-    var sy = Math.sin(rot.y), cyr = Math.cos(rot.y);
-    var order = [];
-    items.forEach(function (it, i) {
-      // turn about Y, then about X
-      var x1 = it.x * cyr + it.z * sy;
-      var z1 = -it.x * sy + it.z * cyr;
-      var y1 = it.y * cxr - z1 * sx;
-      var z2 = it.y * sx + z1 * cxr;
-      var k = dist / (dist - z2);
-      order.push({ i: i, z: z2, x: cx + x1 * k, y: cy + y1 * k, k: k });
-    });
-    // a ray out to each heading, and two rings about the centre, so the shape
-    // of the field reads even where there is nothing lit
-    var core = order[order.length - 1];
-    var lines = [];
-    items.forEach(function (it, i) {
-      if (it.kind !== 'axis') return;
-      var o = order[i];
-      lines.push('<line x1="' + core.x.toFixed(1) + '" y1="' + core.y.toFixed(1) +
-        '" x2="' + o.x.toFixed(1) + '" y2="' + o.y.toFixed(1) + '" style="stroke:' + it.hue +
-        '" opacity="' + (0.1 + Math.max(0, (o.z + R) / (R * 2)) * 0.3).toFixed(2) + '"/>');
-    });
-    [0.34, 0.62].forEach(function (f) {
-      lines.push('<ellipse cx="' + core.x.toFixed(1) + '" cy="' + core.y.toFixed(1) +
-        '" rx="' + (R * f * core.k).toFixed(1) + '" ry="' + (R * f * core.k * Math.abs(Math.sin(rot.x))).toFixed(1) +
-        '" class="ring"/>');
-    });
-    rays.setAttribute('width', w); rays.setAttribute('height', h);
-    rays.innerHTML = lines.join('');
-
-    var back = order.slice().sort(function (a, b) { return a.z - b.z; });
-    back.forEach(function (o, rank) {
-      var e = els[o.i];
-      if (!e) return;
-      e.style.transform = 'translate3d(' + o.x.toFixed(1) + 'px,' + o.y.toFixed(1) + 'px,0) ' +
-        'translate(-50%,-50%) scale(' + o.k.toFixed(3) + ')';
-      e.style.zIndex = String(rank + 1);
-      // the far side of the sphere sits back into the dark
-      var far = (o.z + R) / (R * 2);
-      e.style.opacity = (0.34 + far * 0.66).toFixed(3);
-    });
-  }
-
-  var raf = 0;
-  function frame() {
-    raf = requestAnimationFrame(frame);
-    if (idle && !reduced()) rot.y += spin;
-    project();
-  }
-  project();
-  if (!reduced()) frame();
-
-  var drag = null;
-  stage.addEventListener('pointerdown', function (e) {
-    drag = { x: e.clientX, y: e.clientY, rx: rot.x, ry: rot.y, moved: false };
-    idle = false;
-    stage.setPointerCapture(e.pointerId);
-    stage.classList.add('held');
-  });
-  stage.addEventListener('pointermove', function (e) {
-    if (!drag) return;
-    if (Math.abs(e.clientX - drag.x) > 3 || Math.abs(e.clientY - drag.y) > 3) drag.moved = true;
-    rot.y = drag.ry + (e.clientX - drag.x) * 0.006;
-    rot.x = Math.max(-1.2, Math.min(1.2, drag.rx + (e.clientY - drag.y) * 0.006));
-    if (reduced()) project();
-  });
-  var release = function () {
-    if (!drag) return;
-    drag = null;
-    stage.classList.remove('held');
-    setTimeout(function () { idle = true; }, 2200);
-  };
-  stage.addEventListener('pointerup', release);
-  stage.addEventListener('pointercancel', release);
-
-  var onWheel = function (e) {
-    if (!rig.contains(e.target)) return;
-    e.preventDefault();
-    dist = Math.max(430, Math.min(1800, dist + e.deltaY));
-    project();
-  };
-  scroll.addEventListener('wheel', onWheel, { passive: false });
-
-  var read = $('#or-read', rig);
-  rig.addEventListener('pointerover', function (e) {
-    var b = e.target.closest('.or-pt');
-    if (!b) return;
-    var p = personById(b.dataset.person);
-    if (!p) return;
-    read.innerHTML = '<b>' + esc(p.name) + '</b>' +
-      (roleOf(p) ? '<span>' + esc(roleOf(p)) + '</span>' : '') +
-      '<span>' + esc(groupsOf(p).join(' \u00b7 ') || 'unfiled') + '</span>' +
-      '<span>' + esc(p.log.length ? L.ago(L.lastTouch(p)) : 'no touchpoints') + '</span>';
-    read.setAttribute('data-on', '');
-  });
-  rig.addEventListener('pointerout', function (e) {
-    if (e.target.closest('.or-pt')) read.removeAttribute('data-on');
-  });
-  rig.addEventListener('click', function (e) {
-    var a = e.target.closest('[data-axis]');
-    if (a) { view.circle = a.dataset.axis; return render(); }
-    var b = e.target.closest('[data-person]');
-    if (b) return editCard(b.dataset.person);
-  });
-
-  var onResize = function () { project(); };
-  window.addEventListener('resize', onResize);
-
-  return function () {
-    cancelAnimationFrame(raf);
-    scroll.removeEventListener('wheel', onWheel);
-    window.removeEventListener('resize', onResize);
-  };
-}
 
 function meName() { return (st().me && st().me.name) || 'Me'; }
 

@@ -895,109 +895,6 @@ body.archived .dossier.open{ box-shadow:-30px 0 80px -40px #000; }
 .grouping button:hover{ color:var(--ink); }
 .grouping button[data-on]{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 45%, transparent); }
 
-/* ==========================================================================
-   Design 9 — Constellation
-   A sphere projected by hand rather than by CSS 3D: every point is a flat
-   element placed where the maths says, sorted back to front and faded with
-   depth, so nothing foreshortens into a sliver and hit areas stay honest.
-   ========================================================================== */
-
-.orbit{ position:relative; margin-top:var(--s4); }
-.or-stage{
-  position:relative; height:min(66vh, 560px); min-height:420px;
-  cursor:grab; touch-action:none;
-  border-radius:8px; overflow:hidden;
-  background:
-    radial-gradient(52% 52% at 50% 46%, rgba(255,255,255,.05), transparent 68%),
-    radial-gradient(120% 90% at 50% 120%, #0d1219, #080b0f 70%);
-}
-.or-stage.held{ cursor:grabbing; }
-.or-field{ position:absolute; inset:0; }
-.or-rays{ position:absolute; inset:0; pointer-events:none; }
-.or-rays line{ stroke-width:1; }
-.or-rays .ring{ fill:none; stroke:rgba(232,229,220,.07); stroke-width:1; }
-
-.or-core{ position:absolute; left:0; top:0; will-change:transform; }
-.or-core i{
-  position:absolute; left:-13px; top:-13px; width:26px; height:26px; border-radius:50%;
-  background:radial-gradient(circle at 36% 30%, #fff, #f3e7cf 42%, #b99a63 100%);
-  box-shadow:0 0 40px 10px rgba(255,238,205,.32), 0 0 120px 30px rgba(255,220,160,.1);
-}
-.or-core span{
-  position:absolute; left:18px; top:-9px; white-space:nowrap;
-  font-family:var(--display); font-weight:var(--wd-b); font-size:15px; color:#f3ece0;
-}
-
-.or-axis{
-  position:absolute; left:0; top:0; white-space:nowrap; will-change:transform;
-  font-family:var(--display); font-style:italic; font-weight:var(--wd-b);
-  font-size:20px; letter-spacing:.01em;
-  color:var(--hue);
-  text-shadow:0 0 26px color-mix(in srgb, var(--hue) 60%, transparent);
-  transition:opacity var(--fast) var(--ease);
-}
-.or-axis:hover{ opacity:.7 !important; }
-
-.or-pt{
-  position:absolute; left:0; top:0; width:0; height:0; padding:0;
-  will-change:transform;
-  animation:lightup .55s var(--ease) both;
-  animation-delay:calc(var(--d) * 12ms + 80ms);
-}
-@keyframes lightup{ from{ opacity:0; } }
-.or-pt i{
-  position:absolute; left:calc(var(--s) / -2); top:calc(var(--s) / -2);
-  width:var(--s); height:var(--s); border-radius:50%;
-  background:
-    radial-gradient(circle at 34% 28%, rgba(255,255,255,.92), transparent 46%),
-    radial-gradient(circle at 50% 50%, var(--hue), color-mix(in srgb, var(--hue) 55%, #05070a) 78%);
-  box-shadow:
-    0 0 calc(var(--s) * 1.1) calc(var(--s) * .16) color-mix(in srgb, var(--hue) 55%, transparent),
-    inset 0 calc(var(--s) * -.14) calc(var(--s) * .3) rgba(0,0,0,.55);
-  transition:transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
-}
-.or-pt:hover i{
-  transform:scale(1.2);
-  box-shadow:
-    0 0 calc(var(--s) * 1.9) calc(var(--s) * .32) color-mix(in srgb, var(--hue) 78%, transparent),
-    inset 0 calc(var(--s) * -.14) calc(var(--s) * .3) rgba(0,0,0,.5);
-}
-.or-name{
-  position:absolute; left:calc(var(--s) / 2 + 8px); top:-8px; white-space:nowrap;
-  font-size:11.5px; color:var(--ink-2);
-  opacity:0; transition:opacity var(--fast) var(--ease);
-  pointer-events:none;
-  text-shadow:0 1px 8px #05070a;
-}
-.or-pt:hover .or-name{ opacity:1; }
-
-.or-read{
-  position:absolute; left:var(--s4); bottom:var(--s4); z-index:50;
-  display:flex; flex-direction:column; gap:2px;
-  padding:var(--s3) var(--s4);
-  border-left:2px solid var(--accent);
-  background:color-mix(in srgb, var(--ground-2) 82%, transparent);
-  opacity:0; transform:translateY(6px);
-  transition:opacity var(--fast) var(--ease), transform var(--fast) var(--ease);
-  pointer-events:none;
-}
-.or-read[data-on]{ opacity:1; transform:none; }
-.or-read b{
-  font-family:var(--display); font-weight:var(--wd-b); font-size:20px; color:var(--ink);
-}
-.or-read span{
-  font-family:var(--ui); font-size:12px; letter-spacing:0; color:var(--faint);
-}
-.or-hint{
-  margin-top:var(--s3); text-align:center;
-  font-family:var(--typed); font-size:9px; letter-spacing:.16em; text-transform:uppercase;
-  color:var(--faint);
-}
-
-@media (max-width:880px){
-  .or-stage{ height:440px; }
-  .or-axis{ font-size:16px; }
-}
 
 /* ---------- editing in place ---------- */
 
@@ -1028,14 +925,12 @@ dd.edit{ display:block; }
 .arc-body.still .ix-row,
 .arc-body.still .ch-band,
 .arc-body.still .ch-name,
-.arc-body.still .or-pt,
 .arc-body.still .file,
 .arc-body.still .fw{
   animation:none !important;
   opacity:1 !important;
   transform:none !important;
 }
-.arc-body.still .or-pt{ transform:revert !important; }
 
 /* ---------- desktop, in motion ---------- */
 
@@ -1453,3 +1348,19 @@ dd.edit{ display:block; }
 }
 .ed-chip.circ.over.before{ box-shadow:-3px 0 0 var(--accent); }
 .ed-chip.circ.over.after{ box-shadow:3px 0 0 var(--accent); }
+
+/* ---------- a touchpoint's date, changed where it sits ---------- */
+
+.ed-date{
+  cursor:pointer; border-radius:3px; padding:0 3px; margin:0 -3px;
+  border-bottom:1px dashed color-mix(in srgb, currentColor 40%, transparent);
+  transition:background var(--fast) var(--ease);
+}
+.ed-date:hover{ background:color-mix(in srgb, currentColor 12%, transparent); }
+.ed-date:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+.arc-input.ed-dateinput{
+  width:auto; min-width:0; margin:0; padding:1px 4px;
+  font-family:var(--typed); font-size:11px; letter-spacing:.02em; text-transform:none;
+  color-scheme:dark;
+}
+.sheet .arc-input.ed-dateinput{ color-scheme:light; }

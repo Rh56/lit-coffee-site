@@ -1844,3 +1844,6 @@ body.archive-settled .shell{ visibility:hidden; }
 @media (max-width:880px){
   .archive[data-design="index"] .arc-slip{ top:auto; left:0; width:auto; height:min(70vh, 520px); border-left:none; border-top:1px solid var(--rule); }
 }
+
+/* a title whose words have not changed does not set itself again */
+.arc-title.still .word i{ animation:none; transform:none; }

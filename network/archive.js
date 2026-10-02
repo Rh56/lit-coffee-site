@@ -995,6 +995,7 @@ function words(text) {
   }).join(' ');
 }
 
+var lastTitle = null;
 function renderHead() {
   var s = st();
   // the index opens a person inside its own list, so its head stays the list's
@@ -1039,7 +1040,9 @@ function renderHead() {
 
   head.innerHTML =
     '<div class="crumb">' + (crumbs.length > 1 ? crumbs.join('') : '') + '</div>' +
-    '<h1 class="arc-title">' + words(titleFor()) + '</h1>' +
+    // the title sets itself only when its words change: switching designs
+    // leaves "The Archive" standing still
+    '<h1 class="arc-title' + (titleFor() === lastTitle ? ' still' : '') + '">' + words(titleFor()) + '</h1>' +
     '<div class="apparatus">' +
       '<div class="arc-sub">' + sub.map(function (x) { return '<span>' + x + '</span>'; }).join('') + '</div>' +
       '<div class="designs" role="group" aria-label="Archive design"><i class="design-pill" aria-hidden="true"></i>' +
@@ -1050,6 +1053,7 @@ function renderHead() {
       '</div>' +
     '</div>';
   placeDesignPill();
+  lastTitle = titleFor();
 }
 
 /* A cheap fingerprint of everything a screen draws. Sync polls every few
@@ -1170,6 +1174,7 @@ function show(circle, person, design) {
   if (!DESIGNS.some(function (d) { return d.id === view.design; })) view.design = 'drawer';
   try { groupMode = localStorage.getItem(GROUP_KEY) || groupMode; } catch (e) { }
   open = true;
+  lastTitle = null;                     // coming in from the map, the title sets itself once
   root.hidden = false;
   document.body.classList.add('archived');
   // once the archive has covered the map, stop painting the map at all

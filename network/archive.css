@@ -410,13 +410,6 @@
 }
 .file .acts .btn:hover{ background:rgba(255,255,255,.22); border-color:#fff; }
 
-/* ---------- opening it ---------- */
-
-.arc-open{
-  position:relative;
-}
-.arc-open .n{ font-family:var(--typed); font-size:9.5px; letter-spacing:.14em; }
-
 @media (max-width:880px){
   .arc-wrap{ width:calc(100% - 28px); }
   .archive{ --tab-h:26px; }
@@ -479,30 +472,6 @@
    ========================================================================== */
 
 .index{ margin-top:18px; }
-
-.ix-legend{
-  display:grid; grid-template-columns:1fr 1.6fr .6fr; gap:34px;
-  padding-bottom:16px; border-bottom:1px solid var(--rule);
-}
-.ix-legend h5{
-  margin:0 0 8px;
-  font-family:var(--typed); font-size:9px; letter-spacing:.2em; text-transform:uppercase;
-  color:var(--faint); font-weight:500;
-}
-.ix-legend p{ margin:0; font-size:12.5px; line-height:1.6; color:var(--muted); max-width:46ch; }
-.ix-big{
-  font-family:var(--display); font-size:44px; line-height:.9; color:var(--ink) !important;
-}
-.ix-f{
-  display:flex; align-items:center; gap:8px; width:100%;
-  padding:2px 0; font-family:var(--typed); font-size:10.5px; letter-spacing:.08em;
-  color:var(--muted); text-align:left;
-}
-.ix-f i{ width:6px; height:6px; border-radius:50%; flex:none; }
-.ix-f span{ margin-left:auto; color:var(--faint); }
-.ix-f:hover{ color:var(--ink); }
-.ix-f[data-on]{ color:var(--accent); }
-.ix-all{ margin-top:6px; color:var(--faint); }
 
 .ix-grid{ margin-top:2px; }
 .ix-row{
@@ -629,9 +598,8 @@
    still opens in front of you, flying out of the name you clicked. */
 .ch-scrim{
   position:fixed; inset:0; z-index:44;
-  background:rgba(6,9,12,.55);
-  backdrop-filter:blur(3px);
-  opacity:0; transition:opacity .3s var(--ease);
+  background:rgba(6,9,12,.62);
+  opacity:0; transition:opacity .2s var(--ease);
 }
 .ch-scrim.on{ opacity:1; }
 .ch-scrim[hidden]{ display:none; }
@@ -640,20 +608,26 @@
   position:fixed; z-index:45; left:50%; top:50%;
   width:min(440px, calc(100% - 32px));
   padding:24px 24px 20px; border-radius:7px;
-  background:color-mix(in srgb, var(--hue) 26%, rgba(12,17,22,.88));
+  background:color-mix(in srgb, var(--hue) 30%, rgba(12,17,22,.94));
   border:1px solid rgba(255,255,255,.24);
-  backdrop-filter:blur(20px) saturate(1.25);
   box-shadow:0 60px 110px -44px #000, 0 0 0 1px rgba(255,255,255,.05) inset;
   overflow:hidden;
-  /* starts at the name, arrives in the middle */
-  transform:translate(calc(-50% + var(--fx, 0px)), calc(-50% + var(--fy, 0px))) scale(.5);
-  opacity:0; filter:blur(6px);
-  transition:opacity .34s var(--ease), transform .44s var(--ease), filter .34s var(--ease);
+  /* dealt from the name: it starts there, small and tipped back, and swings
+     up flat into the middle of the window. Transform and opacity only, so it
+     stays smooth; closing tips it back into the name, quicker. */
+  transform:translate(calc(-50% + var(--fx, 0px)), calc(-50% + var(--fy, 0px)))
+            perspective(900px) rotateX(-38deg) scale(.32);
+  opacity:0;
+  will-change:transform, opacity;
+  transition:transform .26s cubic-bezier(.5,0,.75,0), opacity .2s ease-in;
 }
 .ch-pane.on{
-  transform:translate(-50%, -50%) scale(1);
-  opacity:1; filter:none;
+  transform:translate(-50%, -50%);
+  opacity:1;
+  transition:transform .46s cubic-bezier(.2,.9,.25,1.04), opacity .18s ease-out;
 }
+/* the glass blur is the expensive part, so it waits until the pane has landed */
+.ch-pane.on:not(.enter){ backdrop-filter:blur(20px) saturate(1.25); -webkit-backdrop-filter:blur(20px) saturate(1.25); }
 .ch-pane[hidden]{ display:none; }
 /* a light passes across it as it lands */
 .ch-pane::before{
@@ -661,7 +635,7 @@
   background:linear-gradient(105deg, transparent 30%, rgba(255,255,255,.22) 48%, transparent 62%);
   transform:translateX(-120%);
 }
-.ch-pane.on::before{ animation:sheen .9s var(--ease) .18s 1; }
+.ch-pane.on::before{ animation:sheen .6s var(--ease) .1s 1; }
 @keyframes sheen{ to{ transform:translateX(120%); } }
 .ch-pane .ch-x{
   position:absolute; top:12px; right:14px; color:rgba(255,255,255,.6); font-size:18px; line-height:1;
@@ -688,16 +662,9 @@
   color:rgba(255,255,255,.6); padding-top:3px;
 }
 .ch-pane dd{ margin:0; word-break:break-word; }
-.ch-last{
-  margin:16px 0 0; font-family:var(--display); font-style:italic; font-size:16px; line-height:1.5;
-  color:rgba(255,255,255,.88);
-}
-.ch-acts{ display:flex; gap:6px; margin-top:20px; }
-.ch-acts .btn{ background:rgba(255,255,255,.14); border-color:rgba(255,255,255,.34); color:#fff; }
-.ch-acts .btn:hover{ background:rgba(255,255,255,.24); border-color:#fff; }
 
 @media (max-width:880px){
-  .ix-legend{ grid-template-columns:1fr; gap:18px; }
+
   .ix-row{ grid-template-columns:34px 1fr auto; gap:10px; }
   .ix-fact, .ix-where{ display:none; }
   .ch-names{ gap:2px 18px; }
@@ -778,10 +745,7 @@
   font-size:9px; letter-spacing:.16em; text-transform:uppercase; color:var(--faint); padding-top:2px;
 }
 .fprev-in dd{ margin:0; color:var(--ink-2); word-break:break-word; }
-.flast{
-  margin:16px 0 0; padding-left:10px; border-left:2px solid var(--rule);
-  font-size:13px; line-height:1.55; color:var(--ink-2); font-style:italic;
-}
+
 .fprev-in .facts{ display:flex; gap:6px; margin-top:18px; flex-wrap:wrap; }
 
 .fw-icons{
@@ -899,7 +863,6 @@ body.archived .dossier.open{ box-shadow:-30px 0 80px -40px #000; }
 }
 .grouping button:hover{ color:var(--ink); }
 .grouping button[data-on]{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 45%, transparent); }
-
 
 /* ---------- editing in place ---------- */
 
@@ -1238,8 +1201,6 @@ dd.edit{ display:block; }
 }
 @keyframes scan{ to{ transform:translateY(260%); opacity:0; } }
 
-
-
 .arc-body.still .fw-desk, .arc-body.still .fw-bar .lights i,
 .arc-body.still .fprev-in::after{ animation:none; }
 
@@ -1357,75 +1318,6 @@ dd.edit{ display:block; }
 }
 .ed-date:hover{ background:color-mix(in srgb, currentColor 12%, transparent); }
 .ed-date:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
-.arc-input.ed-dateinput{
-  width:auto; min-width:0; margin:0; padding:1px 4px;
-  font-family:var(--typed); font-size:11px; letter-spacing:.02em; text-transform:none;
-  color-scheme:dark;
-}
-.sheet .arc-input.ed-dateinput{ color-scheme:light; }
-
-/* ---------- chroma: the pane opens as an iris out of the name ---------- */
-
-.ch-pane{
-  transform:translate(-50%, -50%);
-  opacity:1; filter:none;
-  clip-path:circle(0px at var(--ox, 50%) var(--oy, 50%));
-  transition:clip-path .38s cubic-bezier(.5,0,.75,0);    /* closing: quick, inward */
-}
-.ch-pane.on{
-  transform:translate(-50%, -50%);
-  clip-path:circle(150% at var(--ox, 50%) var(--oy, 50%));
-  transition:clip-path .75s var(--ease);
-}
-/* the colour floods in first and settles back to glass */
-.ch-pane::after{
-  content:""; position:absolute; inset:0; pointer-events:none; border-radius:inherit;
-  background:radial-gradient(circle at var(--ox, 50%) var(--oy, 50%), var(--hue), transparent 70%);
-  opacity:0;
-}
-.ch-pane.enter::after{ animation:flood .9s var(--ease) both; }
-@keyframes flood{ 0%{ opacity:.85; } 100%{ opacity:0; } }
-
-/* the pieces rise in after the light, one row at a time */
-.ch-pane.enter .ch-kicker, .ch-pane.enter .ch-role,
-.ch-pane.enter dl > dt, .ch-pane.enter dl > dd,
-.ch-pane.enter .editor .ed-row, .ch-pane.enter .ch-acts{
-  animation:chrise .5s var(--ease) both;
-  animation-delay:calc(var(--k, 0) * 38ms + 180ms);
-}
-@keyframes chrise{ from{ opacity:0; transform:translateY(10px); filter:blur(3px); } }
-.ch-pane.enter .ch-x{ animation:chrise .4s var(--ease) .35s both; }
-
-/* the title waits for the name flying in to become it */
-.ch-pane h3.landing{ opacity:0; }
-.ch-pane h3{ transition:opacity .12s linear; }
-.ch-fly{
-  position:fixed; z-index:50; margin:0; pointer-events:none; white-space:nowrap;
-  color:#fff; transform-origin:0 0;
-  text-shadow:0 0 24px color-mix(in srgb, var(--accent) 50%, transparent);
-}
-
-/* a ring of light goes off where you clicked */
-.ch-ring{
-  position:fixed; z-index:46; pointer-events:none;
-  width:24px; height:24px; margin:-12px 0 0 -12px; border-radius:50%;
-  border:2px solid var(--hue, #fff);
-  box-shadow:0 0 30px var(--hue, #fff), inset 0 0 12px var(--hue, #fff);
-  animation:ringout .75s var(--ease) forwards;
-}
-@keyframes ringout{
-  from{ transform:scale(.4); opacity:1; }
-  to{ transform:scale(9); opacity:0; border-width:.5px; }
-}
-
-/* the name you picked dims in the list while its pane is open */
-.ch-name{ transition:opacity .3s var(--ease); }
-
-@media (prefers-reduced-motion:reduce){
-  .ch-pane, .ch-pane.on{ clip-path:none; transition:opacity .2s linear; }
-  .ch-pane{ opacity:0; } .ch-pane.on{ opacity:1; }
-  .ch-pane.enter::after, .ch-ring{ display:none; }
-}
 
 /* ---------- index: a row opens into its own entry ---------- */
 
@@ -1485,7 +1377,6 @@ dd.edit{ display:block; }
 .ix-entry.open:not(.settled) .ix-e-cols dl:last-child > *{ animation-delay:.16s; }
 .ix-entry.open:not(.settled) .ix-e-cols dl:first-child > *{ animation-delay:.1s; }
 .ix-entry.open:not(.settled) .editor .ed-row{ animation-delay:.22s; }
-.ix-e-acts{ margin-top:16px; }
 
 @media (max-width:880px){
   .ix-sheet{ padding:16px 14px 16px 30px; }
@@ -1621,26 +1512,19 @@ dd.edit{ display:block; }
   .arc-head .apparatus{ flex-direction:column; align-items:flex-start; gap:var(--s2); }
 }
 
-/* ---------- chroma pane: quicker and lighter ---------- */
-/* the glass blur is the expensive part, so it waits until the pane has landed */
-.ch-pane{ backdrop-filter:none; -webkit-backdrop-filter:none; will-change:clip-path;
-  background:color-mix(in srgb, var(--hue) 30%, rgba(12,17,22,.94)); }
-.ch-pane.on:not(.enter){ backdrop-filter:blur(20px) saturate(1.25); -webkit-backdrop-filter:blur(20px) saturate(1.25); }
-.ch-pane.on{ transition:clip-path .44s var(--ease); }
-.ch-pane{ transition:clip-path .24s cubic-bezier(.5,0,.75,0); }
-.ch-scrim{ backdrop-filter:none; -webkit-backdrop-filter:none; background:rgba(6,9,12,.62); transition:opacity .2s var(--ease); }
-.ch-pane.enter::after{ animation:flood .5s var(--ease) both; }
+/* ---------- chroma pane: the rows rise in after it lands ---------- */
 .ch-pane.enter .ch-kicker, .ch-pane.enter .ch-role,
 .ch-pane.enter dl > dt, .ch-pane.enter dl > dd,
-.ch-pane.enter .editor .ed-row, .ch-pane.enter .ch-acts{
-  animation:chrise2 .3s var(--ease) both;
-  animation-delay:calc(var(--k, 0) * 22ms + 90ms);
+.ch-pane.enter .editor .ed-row{
+  animation:chrise .3s var(--ease) both;
+  animation-delay:calc(var(--k, 0) * 20ms + 140ms);
 }
-@keyframes chrise2{ from{ opacity:0; transform:translateY(8px); } }
-.ch-pane.enter .ch-x{ animation:chrise2 .3s var(--ease) .2s both; }
-.ch-pane.on::before{ animation:sheen .6s var(--ease) .1s 1; }
-.ch-ring{ animation-duration:.5s; }
-.ch-fly{ will-change:transform; }
+@keyframes chrise{ from{ opacity:0; transform:translateY(8px); } }
+.ch-pane.enter .ch-x{ animation:chrise .3s var(--ease) .2s both; }
+.ch-pane .ed-deg{ font-size:9px; padding:1px 6px; }
+@media (prefers-reduced-motion:reduce){
+  .ch-pane{ transform:translate(-50%, -50%); transition:opacity .15s linear; }
+}
 
 /* ---------- adding someone, from anywhere ---------- */
 
@@ -1659,33 +1543,58 @@ dd.edit{ display:block; }
   .arc-add{ padding:7px 10px; }
 }
 
-/* ---------- chroma pane: dealt from the name ---------- */
-/* transform and opacity only, so it stays smooth; no mask, so no edge */
-.ch-pane, .ch-pane.on{ clip-path:none; will-change:transform, opacity; }
-.ch-pane{
-  transform:translate(calc(-50% + var(--fx, 0px)), calc(-50% + var(--fy, 0px)))
-            perspective(900px) rotateX(-38deg) scale(.32);
-  opacity:0;
-  transition:transform .26s cubic-bezier(.5,0,.75,0), opacity .2s ease-in;
-}
-.ch-pane.on{
-  transform:translate(-50%, -50%);
-  opacity:1;
-  transition:transform .46s cubic-bezier(.2,.9,.25,1.04), opacity .18s ease-out;
-}
-.ch-pane::after{ display:none; }
-.ch-pane.enter .ch-kicker, .ch-pane.enter .ch-role,
-.ch-pane.enter dl > dt, .ch-pane.enter dl > dd,
-.ch-pane.enter .editor .ed-row, .ch-pane.enter .ch-acts{
-  animation-delay:calc(var(--k, 0) * 20ms + 140ms);
-}
-.ch-pane h3{ animation:none; }
-.ch-pane .ed-deg{ font-size:9px; padding:1px 6px; }
-@media (prefers-reduced-motion:reduce){
-  .ch-pane{ transform:translate(-50%, -50%); transition:opacity .15s linear; }
-}
-
 /* ---------- the map sleeps under the archive ---------- */
 /* once the archive has faded in over it, the map is not painted at all;
    it comes back before the archive fades out again */
 body.archive-settled .shell{ visibility:hidden; }
+
+/* ---------- search: words, quick filters, and why someone came up ---------- */
+
+.arc-filters{
+  position:absolute; left:-10px; top:calc(100% + 10px); z-index:20;
+  display:none; flex-wrap:wrap; align-items:center; gap:6px;
+  width:360px; padding:10px;
+  background:var(--panel); border:1px solid var(--rule); border-radius:8px;
+  box-shadow:0 24px 50px -24px #000;
+  animation:pickin .18s var(--ease);
+}
+.archive.finding .arc-filters{ display:flex; }
+.arc-filters button{
+  font-family:var(--typed); font-size:9.5px; letter-spacing:.12em; text-transform:uppercase;
+  padding:6px 10px; border-radius:999px; color:var(--muted);
+  border:1px solid var(--rule);
+  transition:color var(--fast) var(--ease), border-color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.arc-filters button:hover{ color:var(--ink); border-color:var(--muted); }
+.arc-filters button[data-on]{ color:var(--ground); background:var(--ink); border-color:var(--ink); }
+.arc-count{
+  margin-left:auto; font-family:var(--typed); font-size:9.5px; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--faint);
+}
+
+/* filters that are on, shown in the box itself */
+.arc-pills{ display:flex; gap:4px; flex:none; }
+.arc-pills:empty{ display:none; }
+.arc-pills button{
+  font-family:var(--typed); font-size:9px; letter-spacing:.1em; text-transform:uppercase; white-space:nowrap;
+  padding:2px 7px; border-radius:999px; color:var(--ground); background:var(--accent);
+}
+.arc-pills button:hover{ background:var(--ink); }
+
+/* the words that matched, and the line they matched in */
+.archive mark{
+  background:color-mix(in srgb, var(--accent) 34%, transparent); color:inherit;
+  border-radius:2px; padding:0 1px;
+}
+.archive .hit{ font-style:normal; }
+.archive .hit i{
+  font-style:normal; font-family:var(--typed); font-size:.78em; letter-spacing:.12em; text-transform:uppercase;
+  opacity:.6; margin-right:4px;
+}
+/* chroma keeps its subtitles out while you are looking for someone */
+.archive.searching .ch-s{ height:20px; }
+.archive.searching .ch-band .hit{ color:#fff; }
+
+@media (max-width:880px){
+  .arc-filters{ width:min(340px, calc(100vw - 32px)); left:0; }
+}

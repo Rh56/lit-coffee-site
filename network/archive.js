@@ -88,13 +88,38 @@ function reduced() { return window.matchMedia('(prefers-reduced-motion: reduce)'
 
 function st() { return R.getState(); }
 function hueVar(circle) { return hueOfGroup(circle); }
+/* Search is words plus quick filters. Every word has to match somewhere in
+   the person (the map's own matcher, so both agree); every filter on has to
+   hold. */
+var terms = [];
+var DAY = 864e5;
+var FILTERS = [
+  { id: 'never', name: 'Never logged', test: function (p) { return !(p.log || []).length; } },
+  { id: 'quiet', name: 'Quiet 3 months+', test: function (p) {
+      return !(p.log || []).length || Date.now() - L.lastTouch(p) > 90 * DAY; } },
+  { id: 'recent', name: 'Touched this month', test: function (p) {
+      return (p.log || []).length && Date.now() - L.lastTouch(p) < 30 * DAY; } },
+  { id: 'notes', name: 'Has notes', test: function (p) { return (p.notes || []).length > 0; } }
+];
+var filtersOn = {};
+
+function searching() { return !!terms.length || Object.keys(filtersOn).length > 0; }
+
 function matches(p) {
-  if (!query) return true;
-  return [p.name, p.profession, p.company, p.location, p.email,
-    L.circlesOf(p).join(' '),
-    L.schoolsOf(p).map(function (s) { return s.name; }).join(' '),
-    (p.log || []).map(function (e) { return e.text; }).join(' ')]
-    .join(' ').toLowerCase().indexOf(query) >= 0;
+  for (var i = 0; i < FILTERS.length; i++) {
+    if (filtersOn[FILTERS[i].id] && !FILTERS[i].test(p)) return false;
+  }
+  return !terms.length || !!L.searchHit(p, terms);
+}
+
+/* What a row shows while searching: the name with the matched words marked,
+   and, when the name is not what matched, the line that did. */
+function nameHtml(p) { return terms.length ? L.snippet(p.name, terms, 400) : esc(p.name); }
+function hitLine(p) {
+  if (!terms.length) return '';
+  var h = L.searchHit(p, terms);
+  if (!h || !h.where) return '';
+  return '<span class="hit"><i>' + esc(h.where.label) + '</i> ' + L.snippet(h.where.text, terms, 54) + '</span>';
 }
 
 function peopleIn(circle) {
@@ -145,7 +170,7 @@ function circles() {
       seen[k].n++;
     });
   });
-  if (groupMode === 'circle' && !query) {
+  if (groupMode === 'circle' && !searching()) {
     // an empty circle is still a folder; an empty company is not a thing
     L.circleList().forEach(function (c) {
       var k = c.name.toLowerCase();
@@ -156,10 +181,6 @@ function circles() {
   return out;
 }
 
-/* Whoever the current filing has nothing to say about. */
-function ungrouped() {
-  return st().people.filter(function (p) { return !groupsOf(p).length && matches(p); });
-}
 function personById(id) {
   return st().people.filter(function (p) { return p.id === id; })[0] || null;
 }
@@ -167,11 +188,6 @@ function roleOf(p) {
   return [p.profession, p.company].filter(Boolean).join(' · ');
 }
 function homeGroup(p) { return groupsOf(p)[0] || L.primaryCircle(p); }
-function seed(str) {                       // a stable number per person, for scatter
-  var h = 2166136261;
-  for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return function (n) { h = Math.imul(h ^ (h >>> 15), 2246822507); return Math.abs(h % 1000) / 1000 * (n || 1); };
-}
 
 /* ---- editing in place ----
    Every design shows the same record, so every design can change it. A value
@@ -832,8 +848,10 @@ function build() {
         '<span>Rootwork</span><em id="arc-mode">Archive</em>' +
       '</button>' +
       '<label class="arc-find">' +
+        '<span class="arc-pills" id="arc-pills"></span>' +
         '<input id="arc-q" type="search" placeholder="find anyone" autocomplete="off" spellcheck="false" aria-label="Find anyone">' +
         '<kbd aria-hidden="true">/</kbd>' +
+        '<div class="arc-filters" id="arc-filters" role="group" aria-label="Quick filters"></div>' +
       '</label>' +
       '<button class="arc-add" id="arc-add" title="Add someone (N)">+ Person</button>' +
       '<button class="arc-map" id="arc-close" title="Back to the map (Esc)">The map</button>' +
@@ -882,17 +900,46 @@ function build() {
   });
 
   $('#arc-home', root).addEventListener('click', function () {
-    view.circle = null; view.person = null; query = ''; $('#arc-q', root).value = ''; render();
+    view.circle = null; view.person = null; query = ''; terms = []; $('#arc-q', root).value = ''; render();
   });
   var qbox = $('#arc-q', root);
   qbox.addEventListener('input', function () {
-    query = qbox.value.trim().toLowerCase();
+    query = qbox.value.trim();
+    terms = L.queryTerms(query);
     clearTimeout(qTimer);
-    qTimer = setTimeout(render, 140);
+    qTimer = setTimeout(function () { render(); paintFilters(); }, 140);
   });
+  var panel = $('#arc-filters', root), pills = $('#arc-pills', root);
+  function paintFilters() {
+    var n = st().people.filter(matches).length;
+    panel.innerHTML = FILTERS.map(function (f) {
+      return '<button type="button" data-filter="' + f.id + '"' + (filtersOn[f.id] ? ' data-on' : '') + '>' + esc(f.name) + '</button>';
+    }).join('') + '<span class="arc-count">' + n + ' ' + (n === 1 ? 'person' : 'people') + '</span>';
+    pills.innerHTML = FILTERS.filter(function (f) { return filtersOn[f.id]; }).map(function (f) {
+      return '<button type="button" data-unfilter="' + f.id + '" title="Remove this filter">' + esc(f.name) + ' \u00d7</button>';
+    }).join('');
+  }
+  function toggleFilter(id, on) {
+    if (on === undefined ? !filtersOn[id] : on) filtersOn[id] = 1; else delete filtersOn[id];
+    render(); paintFilters();
+  }
+  // the panel keeps the focus in the box, so it stays open while you pick
+  panel.addEventListener('mousedown', function (e) { e.preventDefault(); });
+  panel.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-filter]');
+    if (b) { e.preventDefault(); toggleFilter(b.dataset.filter); }
+  });
+  pills.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-unfilter]');
+    if (b) { e.preventDefault(); toggleFilter(b.dataset.unfilter, false); }
+  });
+  qbox.addEventListener('focus', function () { paintFilters(); root.classList.add('finding'); });
+  qbox.addEventListener('blur', function () { root.classList.remove('finding'); });
   qbox.addEventListener('keydown', function (e) {
     e.stopPropagation();
-    if (e.key === 'Escape' && qbox.value) { e.preventDefault(); qbox.value = ''; query = ''; render(); }
+    // Escape clears the words, then the filters, then leaves the box
+    if (e.key === 'Escape' && qbox.value) { e.preventDefault(); qbox.value = ''; query = ''; terms = []; render(); paintFilters(); }
+    else if (e.key === 'Escape' && Object.keys(filtersOn).length) { e.preventDefault(); filtersOn = {}; render(); paintFilters(); }
     else if (e.key === 'Escape') qbox.blur();
   });
   document.addEventListener('keydown', function (e) {
@@ -1004,7 +1051,7 @@ function signature() {
   var t = 0;
   for (var i = 0; i < s.people.length; i++) t += (s.people[i].updated || s.people[i].created || 0) % 100000;
   return [s.people.length, t, (s.circles || []).join('|'), s.me && s.me.name,
-    groupMode, query, view.design, view.circle, view.person].join('~');
+    groupMode, terms.join(' '), Object.keys(filtersOn).sort().join(','), view.design, view.circle, view.person].join('~');
 }
 var lastSig = '';
 
@@ -1016,6 +1063,7 @@ function render(quiet, keepHead) {
   if (!open) return;
   if (teardown) { try { teardown(); } catch (e) { } teardown = null; }
   lastSig = signature();
+  root.classList.toggle('searching', searching());
   if (!keepHead) renderHead();
   body.className = 'arc-body' + (quiet ? ' still' : '');
   body.innerHTML = '';
@@ -1159,7 +1207,6 @@ function openPerson(id, hue) {
   writeRoute();
   scroll.scrollTop = 0;
 }
-function openCircle(name) { view.circle = name; view.person = null; render(); writeRoute(); scroll.scrollTop = 0; }
 
 /* ---- adding someone ----
    The map's own form, started in whichever folder you are in (when folders
@@ -1232,8 +1279,9 @@ function drawDrawer(host) {
           (folk.length ? folk.map(function (p, j) {
             var extra = groupsOf(p).filter(function (x) { return x !== c.name; });
             return '<button class="entry-row" data-person="' + p.id + '" style="--d:' + j + '">' +
-              '<span class="who"><span>' + esc(p.name) + '</span>' +
-                (roleOf(p) ? '<span class="role">' + esc(roleOf(p)) + '</span>' : '') +
+              '<span class="who"><span>' + nameHtml(p) + '</span>' +
+                (hitLine(p) ? '<span class="role">' + hitLine(p) + '</span>'
+                  : roleOf(p) ? '<span class="role">' + esc(roleOf(p)) + '</span>' : '') +
                 (extra.length ? '<span class="pips">' + extra.map(function (x) {
                   return '<i style="background:' + hueVar(x) + '"></i>'; }).join('') + '</span>' : '') +
               '</span>' +
@@ -1405,8 +1453,8 @@ function drawIndex(host) {
         var sch = L.schoolsOf(p)[0];
         return '<button class="ix-row" data-person="' + p.id + '" style="--d:' + i + '">' +
           '<span class="ix-n">' + String(i + 1).padStart(3, '0') + '</span>' +
-          '<span class="ix-name">' + esc(p.name) + '</span>' +
-          '<span class="ix-fact">' + esc(roleOf(p) || (sch ? sch.name : '\u2014')) + '</span>' +
+          '<span class="ix-name">' + nameHtml(p) + '</span>' +
+          '<span class="ix-fact">' + (hitLine(p) || esc(roleOf(p) || (sch ? sch.name : '\u2014'))) + '</span>' +
           '<span class="ix-where">' + esc(p.location || '') + '</span>' +
           '<span class="ix-tags">' + L.circlesOf(p).map(function (c) {
             return '<i style="background:' + hueVar(c) + '"></i>'; }).join('') + '</span>' +
@@ -1562,8 +1610,8 @@ function drawChroma(host) {
         '<div class="ch-names">' +
           (g.people.length ? g.people.map(function (p, i) {
             return '<button class="ch-name" data-person="' + p.id + '" style="--d:' + i + '">' +
-              '<span class="ch-t">' + esc(p.name) + '</span>' +
-              '<span class="ch-s">' + esc(roleOf(p) || (p.location || '')) + '</span>' +
+              '<span class="ch-t">' + nameHtml(p) + '</span>' +
+              '<span class="ch-s">' + (hitLine(p) || esc(roleOf(p) || (p.location || ''))) + '</span>' +
             '</button>';
           }).join('') : '<span class="ch-empty">empty</span>') +
         '</div>' +
@@ -1746,7 +1794,7 @@ function drawFinder(host) {
     return '<i class="fw-marker" aria-hidden="true"></i>' + (folk.length ? folk.map(function (x, xi) {
       return '<button class="frow' + (sel.person === x.id ? ' on' : '') + '" data-person="' + x.id + '" style="--r:' + xi + '">' +
         '<span class="fic">' + icon('file') + '</span>' +
-        '<span class="fnm">' + esc(x.name) + '</span>' +
+        '<span class="fnm">' + nameHtml(x) + '</span>' +
       '</button>';
     }).join('') : '<div class="fempty">empty folder</div>');
   }
@@ -1768,7 +1816,7 @@ function drawFinder(host) {
       }).join('') + folk.map(function (x, xi) {
         return '<div class="fitem' + (sel.person === x.id ? ' on' : '') + '" data-person="' + x.id + '" tabindex="0" style="--r:' + (cols.length + xi) + '">' +
           '<span class="fic">' + icon('file') + '</span>' +
-          '<span class="fnm">' + esc(x.name) + '</span>' +
+          '<span class="fnm">' + nameHtml(x) + '</span>' +
         '</div>';
       }).join('');
     } else {
@@ -2000,13 +2048,7 @@ function drawFinder(host) {
 
 
 
-function meName() { return (st().me && st().me.name) || 'Me'; }
 
-function lastEdited() {
-  var t = 0;
-  st().people.forEach(function (p) { t = Math.max(t, p.updated || p.created || 0); });
-  return t ? L.fmtDate(t) : 'never';
-}
 
 /* ---- wiring ---- */
 

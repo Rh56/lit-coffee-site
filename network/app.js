@@ -136,6 +136,47 @@ function cleanDegree(v) {
 
 function schoolsOf(p) { return p.schools || []; }
 
+/* ---- search ----
+   One matcher for the map and the archive. A query is words; every word has
+   to turn up somewhere in the person (name, role, company, place, email,
+   circles, schools, notes, touchpoints, their own fields, who they are tied
+   to), accents and case aside. The hit says where it matched, so a list can
+   show the note that answered the question rather than just the name. */
+function fold(s) { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+
+function queryTerms(q) { return fold(q).split(/\s+/).filter(Boolean); }
+
+function searchFields(p) {
+  return [['name', p.name], ['role', p.profession], ['company', p.company],
+    ['location', p.location], ['email', p.email],
+    ['circle', circlesOf(p).filter(function (c) { return c !== 'Unsorted'; }).join(', ')],
+    ['school', schoolsOf(p).map(function (x) { return x.name + (x.level ? ' ' + x.level : ''); }).join(', ')]]
+    .concat((p.notes || []).map(function (n) { return ['note', n.t]; }))
+    .concat((p.log || []).map(function (e) { return ['touchpoint', e.text + (e.learned ? ' \u2014 ' + e.learned : '')]; }))
+    .concat(Object.keys(p.custom || {}).map(function (k) { return [k, p.custom[k]]; }))
+    .concat(tiesOf(p).map(function (t) { return ['connected', t.person.name]; }))
+    .filter(function (f) { return f[1]; });
+}
+
+/* null when some word is nowhere; otherwise a score (the name counts most)
+   and, if the name alone does not explain it, the field that does */
+function searchHit(p, terms) {
+  if (!terms.length) return { score: 0, where: null };
+  var fields = searchFields(p).map(function (f) { return [f[0], f[1], fold(f[1])]; });
+  var name = fold(p.name), score = 0, where = null;
+  for (var i = 0; i < terms.length; i++) {
+    var t = terms[i];
+    if (name.indexOf(t) === 0) { score += 100; continue; }
+    if ((' ' + name).indexOf(' ' + t) >= 0) { score += 60; continue; }
+    if (name.indexOf(t) >= 0) { score += 40; continue; }
+    var f = fields.filter(function (x) { return x[0] !== 'name' && x[2].indexOf(t) >= 0; })[0];
+    if (!f) return null;
+    score += f[0] === 'role' || f[0] === 'company' ? 20 : 10;
+    if (!where) where = { label: f[0], text: f[1] };
+  }
+  return { score: score, where: where };
+}
+
 function addSchool(list, name, level) {
   name = clean(name);
   if (!name) return list;
@@ -680,7 +721,7 @@ var ctx = canvas.getContext('2d');
 var cam = { x: 0, y: 0, k: 1 };
 var W = 0, H = 0, dpr = 1;
 var hover = null, selected = null, dragging = null, panning = null, moved = false, dropTarget = null;
-var searchTerm = '';
+var searchTerm = '', searchHits = {};
 var C = {};
 
 function readTokens() {
@@ -819,40 +860,6 @@ function branch(a, b, w0, w1, color, alphaMul) {
   ctx.fill();
 }
 
-/* A rounded field around each circle's people. Where two fields overlap,
-   the person sitting in the overlap belongs to both — which is the whole
-   point of this view. */
-function convexHull(pts) {
-  if (pts.length < 3) return pts.slice();
-  var p = pts.slice().sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
-  var cross = function (o, a, b) {
-    return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-  };
-  var lower = [], upper = [], i;
-  for (i = 0; i < p.length; i++) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p[i]) <= 0) lower.pop();
-    lower.push(p[i]);
-  }
-  for (i = p.length - 1; i >= 0; i--) {
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p[i]) <= 0) upper.pop();
-    upper.push(p[i]);
-  }
-  lower.pop(); upper.pop();
-  var hull = lower.concat(upper);
-
-  // Sort the result around its own centre. A convex set is unambiguous that
-  // way, and it guarantees a simple polygon — winding the other way punches
-  // dark wedges out of the fill.
-  var cx = 0, cy = 0;
-  hull.forEach(function (q) { cx += q[0]; cy += q[1]; });
-  cx /= hull.length; cy /= hull.length;
-  hull.sort(function (q, w) {
-    return Math.atan2(q[1] - cy, q[0] - cx) - Math.atan2(w[1] - cy, w[0] - cx);
-  });
-  return hull;
-}
-
-
 function drawRims() {
   nodes.forEach(function (h) {
     if (h.kind !== 'circle' || !h.arc) return;
@@ -954,34 +961,6 @@ function draw() {
       ctx.restore();
       return;
     }
-
-    // Tree and Columns get square connectors — a diagram, not a plant
-    ctx.save();
-    ctx.lineWidth = (trunk ? 1.6 : 1.2) / cam.k;
-    ctx.strokeStyle = mix(hue, (trunk ? 0.5 : 0.62) * fade);
-    if (L.secondary) ctx.setLineDash([4 / cam.k, 4 / cam.k]);
-    ctx.beginPath();
-    if (mode === 'tree') {
-      var midX = (L.a.x + L.b.x) / 2;
-      ctx.moveTo(L.a.x + L.a.r, L.a.y);
-      ctx.lineTo(midX, L.a.y);
-      ctx.lineTo(midX, L.b.y);
-      ctx.lineTo(L.b.x - L.b.r - 2, L.b.y);
-    } else {
-      if (trunk) {                     // me down to each column head
-        ctx.moveTo(L.a.x, L.a.y + L.a.r);
-        ctx.lineTo(L.a.x, L.a.y + 34);
-        ctx.lineTo(L.b.x, L.a.y + 34);
-        ctx.lineTo(L.b.x, L.b.y - L.b.r - 2);
-      } else {                         // column head down its list
-        ctx.moveTo(L.a.x, L.a.y + L.a.r);
-        ctx.lineTo(L.a.x, L.b.y);
-        ctx.lineTo(L.b.x - L.b.r - 2, L.b.y);
-      }
-    }
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
   });
 
   nodes.forEach(function (n) {
@@ -1053,7 +1032,7 @@ function draw() {
 
   if (searchTerm) {
     nodes.forEach(function (n) {
-      n.hit = n.kind === 'person' && n.label.toLowerCase().indexOf(searchTerm) >= 0;
+      n.hit = n.kind === 'person' && !!(n.ref && searchHits[n.ref.id]);
     });
   } else if (nodes.length && nodes[0].hit !== undefined) {
     nodes.forEach(function (n) { n.hit = false; });
@@ -1072,12 +1051,10 @@ function draw() {
     var text = n.label, h = 14;
     var right = listy && n.kind !== 'me';
 
-    var above = false;
     if (n.kind === 'circle') {
       ctx.font = '500 10px "JetBrains Mono", monospace';
       ctx.letterSpacing = '1.6px';
       text = n.label.toUpperCase();
-      above = layoutId() === 'tree';      // the branch line passes through this row
     } else if (n.kind === 'me') {
       ctx.font = '400 17px "Instrument Serif", Georgia, serif';
       ctx.letterSpacing = '0px';
@@ -1101,10 +1078,6 @@ function draw() {
       if (ox > 0.3) { ctx.textAlign = 'left'; }
       else if (ox < -0.3) { ctx.textAlign = 'right'; }
       else { ctx.textAlign = 'center'; y = p[1] + (oy >= 0 ? off : -off - h + 2); }
-    } else if (above) {
-      ctx.textAlign = 'left';
-      x = p[0] - 2;
-      y = p[1] - n.r * cam.k - h - 3;
     } else if (right) {
       ctx.textAlign = 'left';
       x = p[0] + n.r * cam.k + 8;
@@ -2332,7 +2305,7 @@ var FIELDS = [
   ['name', 'Name'], ['firstName', 'First name'], ['lastName', 'Last name'],
   ['email', 'Email'], ['phone', 'Phone (kept as a note)'], ['profession', 'Profession'],
   ['company', 'Company'], ['school', 'School'], ['location', 'Location'],
-  ['circle', 'Circle'],
+  ['circle', 'Circle'], ['met', 'Date you met (logs a touchpoint)'], ['link', 'Link'],
   ['notes', 'Notes'], ['custom', 'Keep as its own field'],
   ['skip', 'Ignore this column']
 ];
@@ -2348,8 +2321,86 @@ var HEADER_HINTS = [
   ['school', /^(school|college|university|alma ?mater|education|studied)$/i],
   ['location', /^(location|city|town|where|based|address|state|region)$/i],
   ['circle', /^(circle|group|category|bucket|type|relationship|list|segment)$/i],
-  ['notes', /^(notes?|comments?|details|misc|description|remarks)$/i]
+  ['notes', /^(notes?|comments?|details|misc|description|remarks)$/i],
+  ['met', /^(connected ?on|met|met ?on|date ?met|first ?met|since)$/i],
+  ['link', /^(url|link|linkedin|profile|profile ?url|website)$/i]
 ];
+
+/* ---- other people's exports ----
+   A phone's contacts (.vcf) and LinkedIn's Connections.csv are turned into
+   the same rows a spreadsheet gives, so they go through the same review. */
+
+/* LinkedIn's export opens with a few lines of notes before the real header. */
+function stripPreamble(text) {
+  var lines = text.split(/\r?\n/);
+  for (var i = 0; i < Math.min(lines.length, 12); i++) {
+    if (/first name/i.test(lines[i]) && /last name/i.test(lines[i])) {
+      return { text: lines.slice(i).join('\n'), linkedin: /connected on/i.test(lines[i]) || /linkedin/i.test(lines.slice(0, i).join(' ')) };
+    }
+  }
+  return { text: text, linkedin: false };
+}
+
+function vcardRows(text) {
+  // folded lines start with a space; quoted-printable values (old phones)
+  // end a line in = and carry on, but only those: a photo's base64 can end
+  // in = too, and must not swallow the line after it
+  text = text.replace(/\r\n/g, '\n').replace(/\n[ \t]/g, '');
+  var joined = [], lines = text.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    var ln = lines[i];
+    if (/QUOTED-PRINTABLE/i.test(ln.split(':')[0])) {
+      while (/=$/.test(ln) && i + 1 < lines.length) ln = ln.slice(0, -1) + lines[++i];
+    }
+    joined.push(ln);
+  }
+  text = joined.join('\n');
+  var headers = ['Name', 'Email', 'Phone', 'Company', 'Title', 'Location', 'URL', 'Birthday', 'Notes'];
+  var rows = [];
+  text.split(/BEGIN:VCARD/i).slice(1).forEach(function (card) {
+    var got = {};
+    card.split('\n').forEach(function (line) {
+      var c = line.indexOf(':');
+      if (c < 0) return;
+      var head = line.slice(0, c), val = line.slice(c + 1).trim();
+      var prop = head.split(';')[0].replace(/^item\d+\./i, '').toUpperCase();
+      if (/QUOTED-PRINTABLE/i.test(head)) {
+        try { val = decodeURIComponent(val.replace(/=([0-9A-F]{2})/gi, '%$1')); } catch (e) { }
+      }
+      var unesc = function (v) { return v.replace(/\\n/gi, ' ').replace(/\\([,;\\])/g, '$1').trim(); };
+      var parts = val.split(/(?<!\\);/).map(unesc);
+      if (!(prop in got)) got[prop] = parts;            // the first of each is the one kept
+    });
+    var name = (got.FN && got.FN.join(' ')) ||
+      (got.N ? [got.N[3], got.N[1], got.N[2], got.N[0], got.N[4]].filter(Boolean).join(' ') : '');
+    if (!clean(name)) return;
+    var adr = got.ADR || [];
+    var bday = got.BDAY ? got.BDAY[0].replace(/^--/, '') : '';
+    rows.push([name, got.EMAIL ? got.EMAIL[0] : '', got.TEL ? got.TEL[0] : '',
+      got.ORG ? got.ORG[0] : '', got.TITLE ? got.TITLE.join(' ') : '',
+      [adr[3], adr[4]].filter(Boolean).join(', ') || adr[6] || '',
+      got.URL ? got.URL.join(';') : '', bday, got.NOTE ? got.NOTE.join('; ') : '']);
+  });
+  return { headers: headers, rows: rows };
+}
+
+/* "15 Mar 2024", "2024-03-15", "3/15/2024": midday that day, or null. */
+function parseDay(v) {
+  v = clean(v);
+  var m, MON = 'janfebmaraprmayjunjulaugsepoctnovdec';
+  if ((m = v.match(/^(\d{1,2})\s+([A-Za-z]{3})[a-z]*\.?\s+(\d{4})$/)) && MON.indexOf(m[2].toLowerCase()) >= 0) {
+    return new Date(+m[3], MON.indexOf(m[2].toLowerCase()) / 3, +m[1], 12).getTime();
+  }
+  if ((m = v.match(/^([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})$/)) && MON.indexOf(m[1].toLowerCase()) >= 0) {
+    return new Date(+m[3], MON.indexOf(m[1].toLowerCase()) / 3, +m[2], 12).getTime();
+  }
+  if ((m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return new Date(+m[1], +m[2] - 1, +m[3], 12).getTime();
+  if ((m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/))) {
+    var y = +m[3] < 100 ? 2000 + +m[3] : +m[3];
+    return new Date(y, +m[1] - 1, +m[2], 12).getTime();
+  }
+  return null;
+}
 
 var RE_EMAIL = /^[\w.+-]+@[\w-]+\.[\w.-]+$/;
 function digitsOf(v) { return String(v).replace(/\D/g, ''); }
@@ -2412,9 +2463,10 @@ function importModal(preloaded, filename) {
     '<div class="drop" id="im-drop">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
       '<path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>' +
-      '<p><b>Drop your spreadsheet here</b> — or <label class="pick" for="im-file">choose a file</label>' +
-      '<input type="file" id="im-file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" hidden></p>' +
-      '<p class="fine">A CSV or TSV exported from Sheets, Excel or Numbers. Nothing is uploaded — it is read here in the browser.</p>' +
+      '<p><b>Drop a file here</b> or <label class="pick" for="im-file">choose one</label>' +
+      '<input type="file" id="im-file" accept=".csv,.tsv,.txt,.vcf,text/csv,text/tab-separated-values,text/vcard,text/x-vcard" hidden></p>' +
+      '<p class="fine">A spreadsheet (CSV or TSV), your phone\u2019s contacts (.vcf), or LinkedIn\u2019s Connections.csv. ' +
+        'Nothing is uploaded: it is read here in the browser.</p>' +
     '</div>' +
     '<details id="im-paste-wrap"><summary>or paste the rows instead</summary>' +
       '<textarea id="io-in" placeholder="name,email,profession,notes"></textarea></details>' +
@@ -2449,14 +2501,26 @@ function importModal(preloaded, filename) {
       } catch (e) { say('bad', 'That JSON will not parse.'); go.disabled = true; return; }
     }
 
-    var rows = splitRows(text);
+    text = text.replace(/^\uFEFF/, '');
+    if (/^BEGIN:VCARD/im.test(text)) {
+      var vc = vcardRows(text);
+      if (!vc.rows.length) { say('bad', 'No contacts with names in that file.'); go.disabled = true; return; }
+      parsed = { headers: vc.headers, rows: vc.rows, hasHeader: true, source: 'contacts' };
+      parsed.mapping = guessMapping(vc.headers, vc.rows, true);
+      // a phone number on everyone is clutter; it can be switched back on
+      parsed.mapping[vc.headers.indexOf('Phone')] = 'skip';
+      drawMapping(label || 'your contacts', vc.rows.length);
+      return;
+    }
+    var pre = stripPreamble(text);
+    var rows = splitRows(pre.text);
     if (!rows.length) { say('bad', 'Nothing readable in there.'); go.disabled = true; return; }
     var hasHeader = looksLikeHeader(rows);
     var headers = hasHeader ? rows[0].map(function (h) { return clean(h) || 'Column'; })
                             : rows[0].map(function (_, i) { return 'Column ' + (i + 1); });
     var data = hasHeader ? rows.slice(1) : rows;
     if (!data.length) { say('bad', 'Found headers but no people under them.'); go.disabled = true; return; }
-    parsed = { headers: headers, rows: data, hasHeader: hasHeader };
+    parsed = { headers: headers, rows: data, hasHeader: hasHeader, source: pre.linkedin ? 'linkedin' : '' };
     parsed.mapping = guessMapping(headers, data, hasHeader);
     drawMapping(label, data.length);
   }
@@ -2475,6 +2539,7 @@ function importModal(preloaded, filename) {
 
     mapBox.innerHTML =
       '<div class="maphead"><b>' + count + ' people</b> in ' + esc(label || 'your list') +
+        (parsed.source === 'linkedin' ? ' \u00b7 read as a LinkedIn export' : parsed.source === 'contacts' ? ' \u00b7 read as a contacts file' : '') +
         (parsed.hasHeader ? '' : ' · no header row found, so columns were read by their contents') + '</div>' +
       '<div class="maptable"><table><tbody>' + rowsHtml + '</tbody></table></div>' +
       '<div class="field wide circlepick"><label for="im-circle">Sort them into circles by</label>' +
@@ -2492,13 +2557,13 @@ function importModal(preloaded, filename) {
     var hasCircleCol = parsed.mapping.indexOf('circle') >= 0;
     var hasCompany = parsed.mapping.indexOf('company') >= 0;
     var hasSchool = parsed.mapping.indexOf('school') >= 0;
-    pick.value = hasCircleCol ? 'column' : hasCompany ? 'company' : hasSchool ? 'school' : 'one';
+    pick.value = parsed.source ? 'one' : hasCircleCol ? 'column' : hasCompany ? 'company' : hasSchool ? 'school' : 'one';
     if (!hasCircleCol) pick.querySelector('option[value="column"]').disabled = true;
     if (!hasCompany) pick.querySelector('option[value="company"]').disabled = true;
     if (!hasSchool) pick.querySelector('option[value="school"]').disabled = true;
     var syncName = function () { nameBox.hidden = pick.value !== 'one'; };
     pick.addEventListener('change', syncName); syncName();
-    if (!nameBox.value) nameBox.value = 'Contacts';
+    if (!nameBox.value) nameBox.value = parsed.source === 'linkedin' ? 'LinkedIn' : 'Contacts';
 
     mapBox.addEventListener('change', function (e) {
       var sel = e.target.closest('select[data-col]');
@@ -2559,7 +2624,8 @@ function importModal(preloaded, filename) {
     parsed.rows.forEach(function (r) {
       var rec = { notes: [], custom: {} };
       mp.forEach(function (field, i) {
-        var v = clean(r[i]);
+        // a note is a sentence: it keeps its full stop, unlike a name or a place
+        var v = field === 'notes' ? String(r[i] || '').replace(/\s+/g, ' ').trim() : clean(r[i]);
         if (!v || field === 'skip') return;
         if (field === 'custom') rec.custom[parsed.headers[i].toLowerCase()] = v;
         else if (field === 'notes') rec.notes.push(parsed.headers[i] && !/^notes?$/i.test(parsed.headers[i])
@@ -2586,6 +2652,14 @@ function importModal(preloaded, filename) {
       if (rec.school) rec.school.split(/[,;|/]/).map(clean).filter(Boolean)
         .forEach(function (nm) { addSchool(p.schools, titleCase(nm), ''); });
       Object.keys(rec.custom).forEach(function (k) { p.custom[k] = rec.custom[k]; });
+      if (rec.link) p.custom[/linkedin\.com/i.test(rec.link) ? 'linkedin' : 'link'] = rec.link;
+      // when you met becomes a touchpoint on that day, once
+      var metAt = rec.met ? parseDay(rec.met) : null;
+      if (metAt && !p.log.some(function (e) { return e.channel === 'met' && Math.abs(e.at - metAt) < 864e5; })) {
+        p.log.push({ id: uid(), at: metAt, channel: 'met',
+          text: parsed.source === 'linkedin' ? 'Connected on LinkedIn.' : 'Met.', learned: '' });
+        p.log.sort(function (a, b) { return b.at - a.at; });
+      }
       rec.notes.forEach(function (t) { p.notes.unshift({ id: uid(), t: t, at: Date.now() }); });
 
       var circle = clean(
@@ -2798,22 +2872,44 @@ function dropCircle(name) {
 
 var search = $('#search'), results = $('#results');
 function runSearch() {
-  var q = search.value.trim().toLowerCase();
-  searchTerm = q;
+  var terms = queryTerms(search.value);
+  searchHits = {};
   needsDraw = true;
-  if (!q) { results.innerHTML = ''; return; }
-  var hits = state.people.filter(function (p) {
-    return [p.name, p.profession, p.company, schoolsOf(p).map(function (x) { return x.name; }).join(' '),
-      p.location, circlesOf(p).join(' '), p.email,
-      p.notes.map(function (n) { return n.t; }).join(' '),
-      p.log.map(function (e) { return e.text + ' ' + e.learned; }).join(' ')]
-      .join(' ').toLowerCase().indexOf(q) >= 0;
-  }).slice(0, 12);
-  results.innerHTML = hits.map(function (p) {
+  if (!terms.length) { searchTerm = ''; results.innerHTML = ''; return; }
+  var hits = [];
+  state.people.forEach(function (p) {
+    var h = searchHit(p, terms);
+    if (h) { hits.push({ p: p, h: h }); searchHits[p.id] = true; }
+  });
+  searchTerm = terms.join(' ');
+  hits.sort(function (a, b) { return b.h.score - a.h.score || a.p.name.localeCompare(b.p.name); });
+  results.innerHTML = hits.slice(0, 12).map(function (x) {
+    var p = x.p, w = x.h.where;
     return '<button data-goto="' + p.id + '"><span class="swatch" style="background:var(--h' + circleIndex(primaryCircle(p)) + ')"></span>' +
       '<span class="rname">' + esc(p.name) + '</span>' +
-      '<span class="rmeta">' + esc(p.company || p.profession || primaryCircle(p)) + '</span></button>';
-  }).join('') || '<div class="empty" style="padding:8px 10px;font-size:12px;color:var(--faint)">Nobody by that name.</div>';
+      '<span class="rmeta">' + (w ? '<i>' + esc(w.label) + '</i> ' + snippet(w.text, terms, 34)
+        : esc(p.company || p.profession || primaryCircle(p))) + '</span></button>';
+  }).join('') || '<div class="empty" style="padding:8px 10px;font-size:12px;color:var(--faint)">Nobody matches that.</div>';
+}
+
+/* A short window of text around the first word that matched, with every
+   matched word marked. Escaped here, so it is safe to drop into markup. */
+function snippet(text, terms, room) {
+  text = String(text || '');
+  var folded = Array.prototype.map.call(text, function (c) { return fold(c)[0] || c; }).join('');
+  var at = -1;
+  terms.forEach(function (t) { var i = folded.indexOf(t); if (i >= 0 && (at < 0 || i < at)) at = i; });
+  room = room || 60;
+  var from = Math.max(0, at - Math.floor(room / 3)), to = Math.min(text.length, from + room);
+  if (at < 0) { from = 0; to = Math.min(text.length, room); }
+  var out = '', i = from;
+  while (i < to) {
+    var len = 0;
+    terms.forEach(function (t) { if (folded.substr(i, t.length) === t && t.length > len) len = t.length; });
+    if (len) { out += '<mark>' + esc(text.substr(i, len)) + '</mark>'; i += len; }
+    else { out += esc(text[i]); i++; }
+  }
+  return (from > 0 ? '\u2026' : '') + out + (to < text.length ? '\u2026' : '');
 }
 search.addEventListener('input', runSearch);
 search.addEventListener('focus', runSearch);
@@ -3275,6 +3371,7 @@ window.Rootwork = {
     primaryCircle: primaryCircle, inCircle: inCircle,
     lastTouch: lastTouch, schoolsOf: schoolsOf, tiesOf: tiesOf,
     degrees: DEGREES, addSchool: addSchool,
+    queryTerms: queryTerms, searchHit: searchHit, snippet: snippet,
     newPerson: function (circle, done) { personForm(null, { circle: circle, done: done }); },
     // "Wharton mba" -> { name: 'Wharton', level: 'MBA' }, the card's own reading
     parseSchool: function (val) {

@@ -859,7 +859,8 @@ function build() {
     '<button class="arc-notetab" id="arc-notetab" title="Notes (J)" aria-expanded="false" aria-controls="arc-slip">' +
       '<span>Notes</span><b id="arc-notecount"></b></button>' +
     '<aside class="arc-slip" id="arc-slip" aria-label="Notes" hidden>' +
-      '<div class="slip-head"><span>Notes</span><em id="arc-slipcount"></em>' +
+      '<div class="slip-head"><i class="slip-lights" aria-hidden="true"><b></b><b></b><b></b></i>' +
+        '<span>Notes</span><em id="arc-slipcount"></em>' +
         '<button class="slip-x" data-slipclose aria-label="Put the notes away">\u00d7</button></div>' +
       '<textarea class="slip-in" id="arc-slipin" rows="2" placeholder="Jot anything, \u21b5 to keep" aria-label="Write a note"></textarea>' +
       '<div class="slip-list" id="arc-sliplist"></div>' +
@@ -1073,6 +1074,7 @@ function render(quiet, keepHead) {
   if (teardown) { try { teardown(); } catch (e) { } teardown = null; }
   lastSig = signature();
   root.classList.toggle('searching', searching());
+  root.dataset.design = view.design;          // the notes take each design's look
   if (!keepHead) renderHead();
   body.className = 'arc-body' + (quiet ? ' still' : '');
   body.innerHTML = '';
@@ -1138,6 +1140,7 @@ function setDesign(id) {
   var token = ++switching;
   body.style.setProperty('--dir', dir);
   body.classList.add('leaving');
+  root.dataset.design = id;
   // the head (and its pill) moves straight away; the body follows once out
   renderHead();
   writeRoute();
@@ -1233,8 +1236,8 @@ function paintSlip(force) {
   $('#arc-slipcount', root).textContent = n ? n + (n === 1 ? ' note' : ' notes') : '';
   var box = $('#arc-sliplist', root);
   if (!slipOpen || (!force && box.querySelector('textarea'))) return;   // never redrawn under a cursor
-  box.innerHTML = list.length ? list.map(function (x) {
-    return '<div class="slip-note">' +
+  box.innerHTML = list.length ? list.map(function (x, i) {
+    return '<div class="slip-note" data-n="' + String(i + 1).padStart(2, '0') + '">' +
       '<p class="slip-t" data-padnote="' + esc(x.id) + '" tabindex="0" role="button" title="Click to edit">' + esc(x.t) + '</p>' +
       '<span class="slip-when">' + esc(L.ago(x.at)) + '</span>' +
       '<button class="slip-del" data-delpad="' + esc(x.id) + '" aria-label="Delete note">\u00d7</button>' +

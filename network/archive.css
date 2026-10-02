@@ -1703,3 +1703,144 @@ body.archive-settled .shell{ visibility:hidden; }
   .arc-slip, .arc-slip.on{ transition:none; }
   .slip-note.fresh{ animation:none; }
 }
+
+/* ---------- the notes take each design's look ---------- */
+/* the drawer keeps the yellow slip; the others dress it in their own idiom.
+   Same notes in all four. */
+
+.slip-lights{ display:none; }
+.arc-notetab, .arc-slip{
+  transition-property:transform, background, color, box-shadow, opacity;
+}
+
+/* Index: catalogue type on hairlines, numbered like its rows, no colour but the accent */
+.archive[data-design="index"] .arc-notetab{
+  background:var(--panel); color:var(--muted);
+  box-shadow:inset 0 0 0 1px var(--rule), 0 10px 30px -14px #000;
+}
+.archive[data-design="index"] .arc-notetab b{ color:var(--accent); }
+.archive[data-design="index"] .arc-notetab:hover{ background:var(--panel-2); color:var(--ink); }
+.archive[data-design="index"] .arc-slip{
+  background:var(--ground-2); color:var(--ink-2);
+  border-left:1px solid var(--rule); border-radius:0;
+  box-shadow:-30px 0 80px -40px #000;
+  right:0; top:57px; bottom:0;
+}
+.archive[data-design="index"] .arc-slip.on{ transform:none; }
+.archive[data-design="index"] .arc-slip::after{ display:none; }
+.archive[data-design="index"] .slip-head{ border-bottom-color:var(--rule); color:var(--faint); }
+.archive[data-design="index"] .slip-head em{ color:var(--accent); }
+.archive[data-design="index"] .slip-x{ color:var(--faint); }
+.archive[data-design="index"] .slip-x:hover{ background:var(--panel-2); color:var(--ink); }
+.archive[data-design="index"] .slip-in{
+  background:none; box-shadow:none; border-radius:0; padding:8px 0;
+  border-bottom:1px solid var(--rule); font-family:var(--typed); font-size:12.5px; color:var(--ink);
+}
+.archive[data-design="index"] .slip-in::placeholder{ color:var(--faint); }
+.archive[data-design="index"] .slip-in:focus{ background:none; box-shadow:none; border-bottom-color:var(--accent); }
+.archive[data-design="index"] .slip-note{
+  display:grid; grid-template-columns:26px 1fr; column-gap:8px; padding:11px 26px 9px 0;
+  border-bottom:1px solid var(--rule-soft);
+}
+.archive[data-design="index"] .slip-note::before{
+  content:attr(data-n); grid-row:1 / 3; padding-top:3px;
+  font-family:var(--typed); font-size:9.5px; letter-spacing:.14em; color:var(--faint);
+}
+.archive[data-design="index"] .slip-t{ font-size:13.5px; color:var(--ink); }
+.archive[data-design="index"] .slip-t:hover{ background:color-mix(in srgb, var(--ink) 6%, transparent); }
+.archive[data-design="index"] .slip-when, .archive[data-design="index"] .slip-empty{ color:var(--faint); }
+.archive[data-design="index"] .slip-del{ color:var(--faint); }
+.archive[data-design="index"] .slip-del:hover{ background:var(--panel-2); color:var(--ink); }
+.archive[data-design="index"] .slip-t .arc-input{ background:var(--panel); color:var(--ink); }
+
+/* Chroma: a pane of dark glass with a soft light in it */
+.archive[data-design="chroma"] .arc-notetab{
+  background:rgba(255,255,255,.12); color:#fff;
+  backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.22), 0 10px 30px -14px #000;
+}
+.archive[data-design="chroma"] .arc-notetab:hover{ background:rgba(255,255,255,.2); }
+.archive[data-design="chroma"] .arc-slip{
+  background:
+    radial-gradient(120% 60% at 100% 0%, color-mix(in srgb, var(--accent) 26%, transparent), transparent 70%),
+    rgba(14,19,25,.86);
+  color:#fff; border-radius:10px;
+  border:1px solid rgba(255,255,255,.2);
+  backdrop-filter:blur(18px) saturate(1.2); -webkit-backdrop-filter:blur(18px) saturate(1.2);
+  box-shadow:0 40px 90px -40px #000;
+}
+.archive[data-design="chroma"] .arc-slip.on{ transform:none; }
+.archive[data-design="chroma"] .arc-slip::after{ display:none; }
+.archive[data-design="chroma"] .slip-head{ border-bottom-color:rgba(255,255,255,.18); color:rgba(255,255,255,.7); }
+.archive[data-design="chroma"] .slip-head em{ color:rgba(255,255,255,.5); }
+.archive[data-design="chroma"] .slip-x, .archive[data-design="chroma"] .slip-del{ color:rgba(255,255,255,.6); }
+.archive[data-design="chroma"] .slip-x:hover, .archive[data-design="chroma"] .slip-del:hover{ background:rgba(255,255,255,.14); color:#fff; }
+.archive[data-design="chroma"] .slip-in{
+  background:rgba(255,255,255,.08); color:#fff; box-shadow:inset 0 0 0 1px rgba(255,255,255,.18); border-radius:6px;
+}
+.archive[data-design="chroma"] .slip-in::placeholder{ color:rgba(255,255,255,.45); }
+.archive[data-design="chroma"] .slip-in:focus{ background:rgba(255,255,255,.12); box-shadow:inset 0 0 0 1px rgba(255,255,255,.4); }
+.archive[data-design="chroma"] .slip-note{ border-bottom:1px solid rgba(255,255,255,.12); }
+.archive[data-design="chroma"] .slip-t{ font-family:var(--display); font-size:17px; line-height:1.35; }
+.archive[data-design="chroma"] .slip-t:hover{ background:rgba(255,255,255,.08); }
+.archive[data-design="chroma"] .slip-when, .archive[data-design="chroma"] .slip-empty{ color:rgba(255,255,255,.5); }
+.archive[data-design="chroma"] .slip-t .arc-input{ background:rgba(0,0,0,.3); color:#fff; }
+
+/* Desktop: a little app window, its notes listed like files */
+.archive[data-design="finder"] .arc-notetab{
+  background:var(--panel); color:var(--muted); border-radius:6px 0 0 6px;
+  box-shadow:inset 0 0 0 1px var(--rule), 0 10px 30px -14px #000;
+}
+.archive[data-design="finder"] .arc-notetab b{ color:var(--accent); }
+.archive[data-design="finder"] .arc-notetab:hover{ color:var(--ink); }
+.archive[data-design="finder"] .arc-slip{
+  padding:0; background:var(--panel); color:var(--ink-2);
+  border:1px solid var(--rule); border-radius:8px;
+  box-shadow:0 40px 90px -40px #000;
+  top:80px; bottom:40px;
+}
+.archive[data-design="finder"] .arc-slip.on{ transform:none; }
+.archive[data-design="finder"] .arc-slip:not(.on){ transform:translateY(16px) scale(.96); opacity:0; }
+.archive[data-design="finder"] .arc-slip::after{ display:none; }
+.archive[data-design="finder"] .slip-head{
+  margin:0; padding:9px 12px; gap:12px; align-items:center;
+  background:linear-gradient(var(--panel-2), var(--panel)); border-bottom:1px solid var(--rule);
+  border-radius:8px 8px 0 0; color:var(--muted); letter-spacing:.06em; text-transform:none; font-size:11px;
+}
+.archive[data-design="finder"] .slip-head span::after{ content:".txt"; color:var(--faint); }
+.archive[data-design="finder"] .slip-lights{ display:flex; gap:6px; }
+.archive[data-design="finder"] .slip-lights b{ width:9px; height:9px; border-radius:50%; display:block; }
+.archive[data-design="finder"] .slip-lights b:nth-child(1){ background:#d2604f; }
+.archive[data-design="finder"] .slip-lights b:nth-child(2){ background:#d3a24a; }
+.archive[data-design="finder"] .slip-lights b:nth-child(3){ background:#5aa07a; }
+.archive[data-design="finder"] .slip-head em{ color:var(--faint); }
+.archive[data-design="finder"] .slip-x{ color:var(--faint); }
+.archive[data-design="finder"] .slip-x:hover{ background:var(--panel-2); color:var(--ink); }
+.archive[data-design="finder"] .slip-in{
+  margin:10px 10px 0; width:calc(100% - 20px);
+  background:var(--field); color:var(--ink); border-radius:5px; box-shadow:inset 0 0 0 1px var(--rule);
+}
+.archive[data-design="finder"] .slip-in::placeholder{ color:var(--faint); }
+.archive[data-design="finder"] .slip-in:focus{ background:var(--field); box-shadow:inset 0 0 0 1px var(--accent); }
+.archive[data-design="finder"] .slip-list{ margin:8px 0 0; padding:0 6px 6px; }
+.archive[data-design="finder"] .slip-note{
+  padding:7px 30px 7px 30px; border:none; border-radius:5px;
+  transition:background var(--fast) var(--ease);
+}
+.archive[data-design="finder"] .slip-note::before{        /* a file glyph per note */
+  content:""; position:absolute; left:9px; top:10px; width:11px; height:13px;
+  border:1.4px solid var(--muted); border-radius:2px;
+  clip-path:polygon(0 0, 65% 0, 100% 30%, 100% 100%, 0 100%);
+}
+.archive[data-design="finder"] .slip-note:hover{ background:var(--panel-2); }
+.archive[data-design="finder"] .slip-t{ font-size:13px; color:var(--ink); }
+.archive[data-design="finder"] .slip-t:hover{ background:none; }
+.archive[data-design="finder"] .slip-when, .archive[data-design="finder"] .slip-empty{ color:var(--faint); }
+.archive[data-design="finder"] .slip-empty{ padding:0 10px; }
+.archive[data-design="finder"] .slip-del{ color:var(--faint); top:6px; right:4px; }
+.archive[data-design="finder"] .slip-del:hover{ background:var(--rule); color:var(--ink); }
+.archive[data-design="finder"] .slip-t .arc-input{ background:var(--field); color:var(--ink); }
+
+@media (max-width:880px){
+  .archive[data-design="index"] .arc-slip{ top:auto; left:0; width:auto; height:min(70vh, 520px); border-left:none; border-top:1px solid var(--rule); }
+}

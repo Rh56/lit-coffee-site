@@ -1847,3 +1847,9 @@ body.archive-settled .shell{ visibility:hidden; }
 
 /* a title whose words have not changed does not set itself again */
 .arc-title.still .word i{ animation:none; transform:none; }
+
+/* a put-away slip is gone: display:flex above outranks the hidden attribute,
+   and the desktop's slip fades in place rather than sliding off, so without
+   this an invisible window sat over the design buttons and took their clicks */
+.arc-slip[hidden]{ display:none; }
+.arc-slip:not(.on){ pointer-events:none; }

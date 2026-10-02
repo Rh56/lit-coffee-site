@@ -856,6 +856,14 @@ function build() {
       '<button class="arc-add" id="arc-add" title="Add someone (N)">+ Person</button>' +
       '<button class="arc-map" id="arc-close" title="Back to the map (Esc)">The map</button>' +
     '</header>' +
+    '<button class="arc-notetab" id="arc-notetab" title="Notes (J)" aria-expanded="false" aria-controls="arc-slip">' +
+      '<span>Notes</span><b id="arc-notecount"></b></button>' +
+    '<aside class="arc-slip" id="arc-slip" aria-label="Notes" hidden>' +
+      '<div class="slip-head"><span>Notes</span><em id="arc-slipcount"></em>' +
+        '<button class="slip-x" data-slipclose aria-label="Put the notes away">\u00d7</button></div>' +
+      '<textarea class="slip-in" id="arc-slipin" rows="2" placeholder="Jot anything, \u21b5 to keep" aria-label="Write a note"></textarea>' +
+      '<div class="slip-list" id="arc-sliplist"></div>' +
+    '</aside>' +
     '<div class="arc-scroll" id="arc-scroll"><div class="arc-wrap">' +
       '<div class="arc-head" id="arc-head"></div>' +
       '<div class="arc-body" id="arc-body"></div>' +
@@ -866,6 +874,7 @@ function build() {
   body = $('#arc-body', root);
 
   $('#arc-close', root).addEventListener('click', close);
+  wireSlip();
   $('#arc-add', root).addEventListener('click', function () { addPerson(currentFolder()); });
   // any "+ add" inside a design, with the folder it belongs to
   root.addEventListener('click', function (e) {
@@ -1164,6 +1173,7 @@ function show(circle, person, design) {
   clearTimeout(settleTimer);
   settleTimer = setTimeout(function () { if (open) document.body.classList.add('archive-settled'); }, 450);
   render();
+  paintSlip();
   writeRoute(true);
   requestAnimationFrame(function () { root.classList.add('in'); });
   root.setAttribute('tabindex', '-1');
@@ -1178,6 +1188,7 @@ function close() {
   document.body.classList.remove('archive-settled');   // the map shows through as the archive fades
   document.body.classList.remove('archived');
   if (L && L.closeCard) L.closeCard();
+  if (slipOpen) setSlip(false);
   try { history.pushState(null, '', '#map'); } catch (e) { }
   var done = function () { if (!open) root.hidden = true; };
   if (reduced()) done(); else setTimeout(done, 300);
@@ -1206,6 +1217,92 @@ function openPerson(id, hue) {
   render();
   writeRoute();
   scroll.scrollTop = 0;
+}
+
+/* ---- the notepad ----
+   The map's loose notes (a thought, an address, a to-do), kept out of the
+   way: a tab on the right edge with the count, and a slip of paper that
+   slides out over the page when you want it. J opens it, Escape or a click
+   elsewhere puts it back. Same notes as the map's pad, so they sync. */
+var slipOpen = false;
+
+function paintSlip(force) {
+  var list = L.padNotes();
+  var n = list.length;
+  $('#arc-notecount', root).textContent = n || '';
+  $('#arc-slipcount', root).textContent = n ? n + (n === 1 ? ' note' : ' notes') : '';
+  var box = $('#arc-sliplist', root);
+  if (!slipOpen || (!force && box.querySelector('textarea'))) return;   // never redrawn under a cursor
+  box.innerHTML = list.length ? list.map(function (x) {
+    return '<div class="slip-note">' +
+      '<p class="slip-t" data-padnote="' + esc(x.id) + '" tabindex="0" role="button" title="Click to edit">' + esc(x.t) + '</p>' +
+      '<span class="slip-when">' + esc(L.ago(x.at)) + '</span>' +
+      '<button class="slip-del" data-delpad="' + esc(x.id) + '" aria-label="Delete note">\u00d7</button>' +
+    '</div>';
+  }).join('') : '<p class="slip-empty">Nothing jotted yet.</p>';
+}
+
+function setSlip(on) {
+  var slip = $('#arc-slip', root), tab = $('#arc-notetab', root);
+  slipOpen = on;
+  tab.setAttribute('aria-expanded', on ? 'true' : 'false');
+  root.classList.toggle('slipped', on);
+  if (on) {
+    slip.hidden = false;
+    paintSlip();
+    void slip.offsetWidth;
+    slip.classList.add('on');
+    $('#arc-slipin', root).focus({ preventScroll: true });
+  } else {
+    slip.classList.remove('on');
+    setTimeout(function () { if (!slipOpen) slip.hidden = true; }, reduced() ? 0 : 280);
+  }
+}
+
+function wireSlip() {
+  var slip = $('#arc-slip', root), input = $('#arc-slipin', root);
+  $('#arc-notetab', root).addEventListener('click', function () { setSlip(!slipOpen); });
+  var grow = function () { input.style.height = 'auto'; input.style.height = Math.min(140, input.scrollHeight) + 'px'; };
+  input.addEventListener('input', grow);
+  input.addEventListener('keydown', function (e) {
+    e.stopPropagation();
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!input.value.trim()) return;
+      L.addPadNote(input.value);
+      input.value = ''; grow();
+      paintSlip();
+      var first = slip.querySelector('.slip-note');
+      if (first && !reduced()) first.classList.add('fresh');
+    }
+    if (e.key === 'Escape') { e.preventDefault(); if (input.value) { input.value = ''; grow(); } else setSlip(false); }
+  });
+  slip.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { e.stopPropagation(); if (!e.target.closest('textarea')) setSlip(false); }
+  });
+  slip.addEventListener('click', function (e) {
+    if (e.target.closest('[data-slipclose]')) return setSlip(false);
+    var d = e.target.closest('[data-delpad]');
+    if (d) { L.dropPadNote(d.dataset.delpad); return paintSlip(); }
+    var v = e.target.closest('[data-padnote]');
+    if (v) {
+      var note = L.padNotes().filter(function (x) { return x.id === v.dataset.padnote; })[0];
+      if (note) editText(v, note.t, function (val) { L.editPadNote(note.id, val); paintSlip(true); });
+    }
+  });
+  // a click anywhere else puts it back
+  document.addEventListener('pointerdown', function (e) {
+    if (!slipOpen) return;
+    if (e.target.closest('#arc-slip, #arc-notetab, #arc-cal, #arc-pick, #scrim')) return;
+    setSlip(false);
+  }, true);
+  document.addEventListener('keydown', function (e) {
+    if (!open || e.key.toLowerCase() !== 'j' || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target.closest && e.target.closest('input, textarea, [contenteditable]')) return;
+    if (document.querySelector('#scrim:not([hidden])')) return;
+    e.preventDefault();
+    setSlip(!slipOpen);
+  });
 }
 
 /* ---- adding someone ----
@@ -2065,6 +2162,7 @@ window.addEventListener('popstate', function () {
 
 document.addEventListener('rootwork:changed', function () {
   if (!open) return;
+  paintSlip();                                               // a note may have synced in
   if (document.querySelector('.archive .held')) return;      // mid-drag, leave it alone
   if (signature() === lastSig) return;                       // nothing we draw has moved
   render(true);

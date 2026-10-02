@@ -3372,6 +3372,15 @@ window.Rootwork = {
     lastTouch: lastTouch, schoolsOf: schoolsOf, tiesOf: tiesOf,
     degrees: DEGREES, addSchool: addSchool,
     queryTerms: queryTerms, searchHit: searchHit, snippet: snippet,
+    // the notepad, for the archive's own slip of it
+    padNotes: padNotes, addPadNote: addPadNote, dropPadNote: dropPadNote,
+    editPadNote: function (id, text) {
+      var note = (state.pad || []).filter(function (n) { return n.id === id; })[0];
+      if (!note) return;
+      if (!clean(text)) return dropPadNote(id);
+      note.t = clean(text); note.upd = Date.now();
+      save(); renderPad();
+    },
     newPerson: function (circle, done) { personForm(null, { circle: circle, done: done }); },
     // "Wharton mba" -> { name: 'Wharton', level: 'MBA' }, the card's own reading
     parseSchool: function (val) {

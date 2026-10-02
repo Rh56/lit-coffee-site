@@ -1598,3 +1598,108 @@ body.archive-settled .shell{ visibility:hidden; }
 @media (max-width:880px){
   .arc-filters{ width:min(340px, calc(100vw - 32px)); left:0; }
 }
+
+/* ---------- the notepad: a tab on the edge, a slip when you want it ---------- */
+
+.arc-notetab{
+  position:fixed; right:0; top:50%; z-index:25;
+  display:flex; flex-direction:column; align-items:center; gap:8px;
+  padding:14px 7px 12px; border-radius:6px 0 0 6px;
+  background:color-mix(in srgb, #f2dd8c 88%, transparent); color:#3d3423;
+  box-shadow:0 10px 30px -14px #000;
+  transform:translate(4px, -50%);
+  transition:transform .3s var(--ease), background var(--fast) var(--ease), opacity .3s var(--ease);
+}
+.arc-notetab span{
+  writing-mode:vertical-rl; transform:rotate(180deg);
+  font-family:var(--typed); font-size:9.5px; letter-spacing:.2em; text-transform:uppercase;
+}
+.arc-notetab b{
+  font-family:var(--typed); font-weight:700; font-size:10px; line-height:1;
+}
+.arc-notetab b:empty{ display:none; }
+.arc-notetab:hover{ transform:translate(0, -50%); background:#f7e9a8; }
+.archive.slipped .arc-notetab{ opacity:0; pointer-events:none; transform:translate(30px, -50%); }
+
+.arc-slip{
+  position:fixed; z-index:30; right:18px; top:72px; bottom:22px;
+  width:min(330px, calc(100vw - 36px));
+  display:flex; flex-direction:column;
+  padding:16px 18px 12px;
+  background:linear-gradient(#f7e9a8, #f0d985);
+  color:#2f281b;
+  border-radius:3px;
+  box-shadow:0 30px 70px -30px #000, 0 1px 0 rgba(255,255,255,.5) inset;
+  transform:translateX(calc(100% + 40px)) rotate(2deg);
+  transition:transform .26s cubic-bezier(.5,0,.75,0);
+}
+.arc-slip.on{
+  transform:rotate(-.6deg);
+  transition:transform .44s cubic-bezier(.2,.9,.25,1.04);
+}
+.arc-slip::after{                                   /* the paper's own lines */
+  content:""; position:absolute; inset:0; pointer-events:none; border-radius:inherit;
+  background-image:repeating-linear-gradient(0deg, rgba(90,70,30,.06) 0 1px, transparent 1px 26px);
+  background-position:0 64px; mix-blend-mode:multiply;
+}
+.slip-head{
+  display:flex; align-items:baseline; gap:10px; padding-bottom:10px; margin-bottom:10px;
+  border-bottom:1px solid rgba(60,45,20,.22);
+  font-family:var(--typed); font-size:10px; letter-spacing:.2em; text-transform:uppercase;
+}
+.slip-head em{ font-style:normal; letter-spacing:.12em; color:rgba(47,40,27,.55); }
+.slip-x{
+  margin-left:auto; width:26px; height:26px; border-radius:50%;
+  font-size:17px; line-height:1; color:rgba(47,40,27,.6);
+  transition:background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.slip-x:hover{ background:rgba(60,45,20,.1); color:#2f281b; }
+.slip-in{
+  width:100%; resize:none; outline:none; border:none;
+  background:rgba(255,255,255,.4); border-radius:3px; padding:8px 10px;
+  font-family:var(--ui); font-size:13.5px; line-height:1.5; color:#2f281b;
+  box-shadow:inset 0 0 0 1px rgba(60,45,20,.16);
+  transition:box-shadow var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.slip-in::placeholder{ color:rgba(47,40,27,.45); }
+.slip-in:focus{ background:rgba(255,255,255,.62); box-shadow:inset 0 0 0 1px rgba(60,45,20,.38); }
+.slip-list{ flex:1; overflow-y:auto; margin:10px -6px 0; padding:0 6px; position:relative; z-index:1; }
+.slip-note{
+  position:relative; padding:9px 26px 9px 0;
+  border-bottom:1px dashed rgba(60,45,20,.2);
+}
+.slip-note.fresh{ animation:slipnew .4s var(--ease); }
+@keyframes slipnew{ from{ opacity:0; transform:translateY(-6px); } }
+.slip-t{
+  margin:0; font-size:13.5px; line-height:1.5; cursor:text; border-radius:3px;
+  white-space:pre-wrap; word-break:break-word;
+}
+.slip-t:hover{ background:rgba(60,45,20,.07); }
+.slip-t .arc-input{ background:rgba(255,255,255,.7); color:#2f281b; margin:0; }
+.slip-when{
+  display:block; margin-top:2px;
+  font-family:var(--typed); font-size:9px; letter-spacing:.12em; text-transform:uppercase;
+  color:rgba(47,40,27,.5);
+}
+.slip-del{
+  position:absolute; right:0; top:8px; width:22px; height:22px; border-radius:50%;
+  font-size:15px; line-height:1; color:rgba(47,40,27,.55); opacity:0;
+  transition:opacity var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.slip-note:hover .slip-del, .slip-del:focus-visible{ opacity:1; }
+.slip-del:hover{ background:rgba(60,45,20,.12); color:#2f281b; }
+@media (hover:none){ .slip-del{ opacity:.6; } }
+.slip-empty{
+  margin:14px 0; font-family:var(--typed); font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+  color:rgba(47,40,27,.45);
+}
+
+@media (max-width:880px){
+  .arc-slip{ top:auto; height:min(70vh, 520px); right:12px; bottom:12px; }
+  .arc-notetab{ top:auto; bottom:90px; transform:translate(4px, 0); }
+  .arc-notetab:hover{ transform:none; }
+}
+@media (prefers-reduced-motion:reduce){
+  .arc-slip, .arc-slip.on{ transition:none; }
+  .slip-note.fresh{ animation:none; }
+}

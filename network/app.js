@@ -69,6 +69,7 @@ function sweepIdCircles() {
 }
 
 function save() {
+  if (state.demo && state.people.some(function (p) { return !isSample(p); })) clearSample('first');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(function () {
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* private mode */ }
@@ -3061,6 +3062,7 @@ function sample() {
       return { id: uid(), at: d - l[0] * DAY, channel: l[1], text: l[2], learned: l[3] || '' };
     });
     p.created = d - 400 * DAY;
+    p.sample = true;                     // told apart from anyone real
     circlesOf(p).forEach(circleIndex);
     return p;
   };
@@ -3111,9 +3113,8 @@ function sample() {
 
 function toggleSample() {
   if (state.demo) {
-    state.people.forEach(forget);
-    state.demo = false;
-    save(); closeDossier(); renderAll(); fit(); toast('Sample cleared — the map is yours');
+    clearSample('button');
+    save(); closeDossier(); renderAll(); fit();
   } else {
     state.people = state.people.concat(sample());
     state.demo = true;
@@ -3122,7 +3123,49 @@ function toggleSample() {
   syncSampleBtn();
 }
 
-function syncSampleBtn() { /* the sample lives behind /sample now */ }
+/* ---- the sample, for someone new ----
+   A first visit with nothing saved and no Sync set up opens on the sample
+   map, so the shape of the thing is visible straight away. It goes on its
+   own: the first real person added clears it (save() checks), a banner
+   offers to clear it now, and Sync never sees it (connecting clears it). */
+// the sample's names, for a map from before the mark (building the sample to
+// read them would register its circles as a side effect)
+var SAMPLE_NAMES = ['Dana Okafor', 'Marcus Bell', 'Priya Raman', 'Tomás Ferreira', 'Hannah Koenig', 'Owen Reilly', 'Ada Whitfield', 'Jonah Pike', 'Sofia Marchetti', 'Grace Lin', 'Robert Lin', 'Nadia Haddad', 'Eli Brandt'];
+function isSample(p) {
+  if (p.sample) return true;
+  return state.demo && SAMPLE_NAMES.indexOf(p.name) >= 0;
+}
+
+function clearSample(why) {
+  if (!state.demo) return;
+  var gone = state.people.filter(isSample);
+  gone.forEach(forget);
+  // circles only the sample used go with it
+  var still = {};
+  state.people.forEach(function (p) { circlesOf(p).forEach(function (c) { still[c] = 1; }); });
+  state.circles = (state.circles || []).filter(function (c) { return still[c]; });
+  state.demo = false;
+  if (why !== 'quiet') toast(why === 'first' ? 'Sample cleared: the map is yours now' : 'Sample cleared');
+  syncSampleBtn();
+}
+
+function syncSampleBtn() {
+  var note = document.getElementById('sample-note');
+  if (!note) {
+    note = document.createElement('div');
+    note.id = 'sample-note';
+    note.className = 'sample-note';
+    note.setAttribute('role', 'status');
+    note.innerHTML = '<span><b>Sample map.</b> Add someone and it clears itself.</span>' +
+      '<button type="button" data-clearsample>Clear it</button>';
+    note.addEventListener('click', function (e) {
+      if (!e.target.closest('[data-clearsample]')) return;
+      clearSample('button'); save(); closeDossier(); renderAll(); fit();
+    });
+    document.body.appendChild(note);
+  }
+  note.hidden = !state.demo;
+}
 
 /* ---- typefaces ----
    The whole look turns on these three faces, so they are a setting rather
@@ -3401,6 +3444,10 @@ window.Rootwork = {
     save: function () { save(); renderAll(); }
   },
   loadSample: toggleSample,                     // exposed for tests, not the interface
+  dropSample: function () {                     // Sync calls this before it merges or pushes
+    if (!state.demo) return;
+    clearSample('quiet'); save(); renderAll();
+  },
   nodeScreen: function (id) {
     var n = byId[id] || nodes.filter(function (x) { return x.label === id; })[0];
     if (!n) return null;
@@ -3414,7 +3461,13 @@ window.Rootwork = {
 
 (function init() {
   applyFont(currentFont(), false);
-  load();
+  var had = load();
+  var syncing = false;
+  try { syncing = !!localStorage.getItem('rootwork.sync'); } catch (e) { }
+  if (!had && !syncing) {
+    state.people = sample();
+    state.demo = true;
+  }
 
   readTokens();
   resize();
@@ -3424,6 +3477,7 @@ window.Rootwork = {
 
   for (var i = 0; i < 90; i++) tick();     // land on the targets before framing
   fit();
+  syncSampleBtn();
 
   var pill = document.createElement('button');
   pill.className = 'pill';

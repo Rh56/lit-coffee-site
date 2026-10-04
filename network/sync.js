@@ -359,6 +359,8 @@ function connect(next, pass) {
     deriveKey(pass, next.space, KDF_V2),
     deriveKey(pass, next.space, KDF_V1)
   ]).then(function (keys) {
+    // the sample map is for looking at, never for syncing
+    if (app && app.dropSample) app.dropSample();
     cfg = next; cryptoKey = keys[0]; legacyKey = keys[1];
     try { localStorage.setItem(CFG_KEY, JSON.stringify({ url: cfg.url, key: cfg.key, space: cfg.space, pass: pass })); } catch (e) { }
     setStatus('connecting');

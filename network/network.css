@@ -1036,3 +1036,31 @@ dd:hover .jump, .jump:focus-visible{ opacity:1; }
   opacity:.6; margin-right:3px;
 }
 .results mark{ background:color-mix(in srgb, var(--accent) 34%, transparent); color:inherit; border-radius:2px; padding:0 1px; }
+
+/* ---------- the sample map says what it is ---------- */
+.sample-note{
+  position:fixed; left:50%; bottom:18px; z-index:20;
+  transform:translateX(-50%);
+  display:flex; align-items:center; gap:14px;
+  padding:8px 8px 8px 16px; border-radius:999px;
+  background:color-mix(in srgb, var(--panel) 92%, transparent);
+  border:1px solid var(--rule);
+  box-shadow:0 20px 50px -24px #000;
+  backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+  font-size:12.5px; color:var(--muted); white-space:nowrap;
+  animation:samplein .5s var(--ease) .6s both;
+}
+.sample-note[hidden]{ display:none; }
+.sample-note b{ color:var(--ink); font-weight:500; }
+.sample-note button{
+  font-family:var(--mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase;
+  padding:7px 12px; border-radius:999px; color:var(--ground); background:var(--ink);
+  transition:background var(--fast) var(--ease), transform var(--fast) var(--ease);
+}
+.sample-note button:hover{ background:#fff; }
+.sample-note button:active{ transform:scale(.95); }
+@keyframes samplein{ from{ opacity:0; transform:translate(-50%, 12px); } }
+@media (max-width:560px){
+  .sample-note{ bottom:12px; font-size:11.5px; gap:10px; padding-left:12px; }
+}
+@media (prefers-reduced-motion:reduce){ .sample-note{ animation:none; } }

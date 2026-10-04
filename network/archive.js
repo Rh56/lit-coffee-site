@@ -1370,16 +1370,9 @@ function drawDrawer(host) {
     f.style.setProperty('--tab-w', widths[i % widths.length] + 'px');
 
     var folk = peopleIn(c.name);
-    var last = folk.length ? L.fmtDate(L.lastTouch(folk[0])) : '—';
     f.innerHTML =
       '<button class="tab" data-open="' + esc(c.name) + '">' + esc(c.name) + '</button>' +
       '<div class="band" data-open="' + esc(c.name) + '">' +
-        '<div class="filed">' +
-          '<span class="no">' + String(i + 1).padStart(3, '0') + '</span>' +
-          '<span class="what">' + esc(folk.length ? folk.length + ' filed here. ' +
-            (folk.length > 3 ? 'Referenced often, seldom all at once.' : 'A short shelf.') : 'Empty folder, kept open.') + '</span>' +
-          '<span class="when">' + esc(last) + '</span>' +
-        '</div>' +
         '<div class="inside"><div><div class="entries">' +
           (folk.length ? folk.map(function (p, j) {
             var extra = groupsOf(p).filter(function (x) { return x !== c.name; });

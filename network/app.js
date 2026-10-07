@@ -772,20 +772,38 @@ function fitTarget() {
   });
 
   var wide = W > 880;
-  var L = wide ? 244 : 34, R = (selected && wide ? 400 : 34), T = 16, B = wide ? 132 : 150;
+  // keep clear of what actually sits over the plate: the layout column on the
+  // left (measured, and mirrored on the right so the drawing is centred in
+  // the window) and the card when it is open
+  var rail = 0;
+  var lay = document.getElementById('layouts'), stage = document.getElementById('stage');
+  if (lay && stage && wide) {
+    var lr = lay.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+    if (lr.width && lr.height < sr.height * 0.8) rail = lr.right - sr.left + 12;
+  }
+  var side = Math.max(34, rail);
+  var L = side, R = Math.max(side, selected && wide ? 400 : 0), T = 24, B = wide ? 40 : 150;
   var availW = Math.max(120, W - L - R), availH = Math.max(120, H - T - B);
   var many = nodes.length > 70;
   var floorK = W < 620 ? 0.52 : (many ? 0.46 : 0.34);   // legible beats complete
-  var listy = layoutId() !== 'orbit';
+  // names are set outward from the centre in every layout, so they need room
+  // on both sides; Arc also centres on you, since its ring is drawn round you
+  if (layoutId() === 'arc') {
+    var me = nodes.filter(function (n) { return n.kind === 'me'; })[0];
+    if (me) {
+      var hw = Math.max(maxx - me.x, me.x - minx), hh = Math.max(maxy - me.y, me.y - miny);
+      minx = me.x - hw; maxx = me.x + hw; miny = me.y - hh; maxy = me.y + hh;
+    }
+  }
 
   // Names live in screen space, so the room they need depends on the zoom —
   // solve for it in a couple of passes rather than cropping every label.
   var k = floorK;
   var padL = 0, padR = 0, padY = 0;
   for (var pass = 0; pass < 3; pass++) {
-    padR = (listy ? 168 : 90) / k;
-    padL = (listy ? 20 : 90) / k;
-    padY = (listy ? 26 : 34) / k;
+    padR = 130 / k;
+    padL = 130 / k;
+    padY = 40 / k;
     var wNeed = (maxx + padR) - (minx - padL);
     var hNeed = (maxy + padY) - (miny - padY);
     k = Math.max(floorK, Math.min(1.4, Math.min(availW / (wNeed || 1), availH / (hNeed || 1))));

@@ -1313,7 +1313,7 @@ function renderLayouts() {
   }).join('');
 }
 
-function setLayout(id, quiet) {
+function setLayout(id) {
   if (!LAYOUTS.some(function (l) { return l.id === id; })) return;
   if (state.layout === id) return;
   state.layout = id;
@@ -1324,10 +1324,7 @@ function setLayout(id, quiet) {
   settling = true; heat = 1;
   needsDraw = true;
   wantFit = 'always';            // frame the new shape once it has stopped moving
-  if (!quiet) {
-    var l = LAYOUTS.filter(function (x) { return x.id === id; })[0];
-    toast(l.name + ' — ' + l.hint);
-  }
+  // no toast: the lit button says which layout is on, its title says what it is
 }
 
 document.addEventListener('click', function (e) {

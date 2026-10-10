@@ -1064,3 +1064,13 @@ dd:hover .jump, .jump:focus-visible{ opacity:1; }
   .sample-note{ bottom:12px; font-size:11.5px; gap:10px; padding-left:12px; }
 }
 @media (prefers-reduced-motion:reduce){ .sample-note{ animation:none; } }
+
+/* a phone only gets a row once there is one; until then "+ phone" waits,
+   faint, beside the email */
+.fields .ph-add{
+  margin-left:8px; font-family:var(--mono); font-size:9.5px; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--faint); opacity:0; transition:opacity .18s ease;
+}
+.fields dd:hover .ph-add, .fields .ph-add:focus, .fields .ph-add:focus-within{ opacity:1; }
+.fields .ph-add:hover{ color:var(--accent); }
+@media (hover:none){ .fields .ph-add{ opacity:.6; } }

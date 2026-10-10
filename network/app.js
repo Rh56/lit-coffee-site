@@ -149,7 +149,7 @@ function queryTerms(q) { return fold(q).split(/\s+/).filter(Boolean); }
 
 function searchFields(p) {
   return [['name', p.name], ['role', p.profession], ['company', p.company],
-    ['location', p.location], ['email', p.email],
+    ['location', p.location], ['email', p.email], ['phone', p.phone],
     ['circle', circlesOf(p).filter(function (c) { return c !== 'Unsorted'; }).join(', ')],
     ['school', schoolsOf(p).map(function (x) { return x.name + (x.level ? ' ' + x.level : ''); }).join(', ')]]
     .concat((p.notes || []).map(function (n) { return ['note', n.t]; }))
@@ -203,14 +203,15 @@ function normalizePerson(p) {
   if (p.birthday) { p.custom.birthday = p.custom.birthday || p.birthday; delete p.birthday; }
   if (p.howMet) { p.custom['met via'] = p.custom['met via'] || p.howMet; delete p.howMet; }
   p.notes = p.notes || [];
-  // phone is gone as a field; a number already on file becomes a note, with
-  // an id fixed per person so two devices migrating it do not make two
-  if (p.phone !== undefined) {
-    var num = clean(String(p.phone || ''));
-    if (num && !p.notes.some(function (n) { return n.t && n.t.indexOf(num) >= 0; })) {
-      p.notes.push({ id: 'n-phone-' + p.id, t: 'Phone: ' + num, at: p.created || Date.now() });
+  // phone is a quiet field again: only shown for people who have one. A
+  // number that was turned into a note while it was gone goes back
+  p.phone = clean(String(p.phone || ''));
+  if (!p.phone) {
+    var moved = p.notes.filter(function (n) { return n.id === 'n-phone-' + p.id; })[0];
+    if (moved && /^Phone: /.test(moved.t)) {
+      p.phone = clean(moved.t.slice(7));
+      p.notes = p.notes.filter(function (n) { return n !== moved; });
     }
-    delete p.phone;
   }
   p.log = p.log || [];
   if (!Array.isArray(p.circles)) p.circles = [];
@@ -1539,10 +1540,10 @@ function openDossier(node) {
   var was = document.activeElement;
   var caret = (dr && was && was.id === 'log-text') ? was.selectionStart : -1;
 
-  function row(k, field, v, href) {
+  function row(k, field, v, href, tail) {
     var body = v ? esc(v) : '<span class="add">add</span>';
     var jump = (v && href)
-      ? '<a class="jump" href="' + href + esc(v) + '" data-keep title="' +
+      ? '<a class="jump" href="' + href + esc(href === 'tel:' ? v.replace(/[^\d+]/g, '') : v) + '" data-keep title="' +
         (href === 'mailto:' ? 'Send an email' : 'Call') + '" aria-label="' +
         (href === 'mailto:' ? 'Send an email' : 'Call') + '">' +
         (href === 'mailto:'
@@ -1552,7 +1553,7 @@ function openDossier(node) {
       : '';
     return '<dt>' + esc(k) + '</dt>' +
       '<dd class="' + (v ? '' : 'empty') + '"><span class="val" data-field="' + esc(field) + '" tabindex="0" role="button" ' +
-      'title="Click to edit">' + body + '</span>' + jump + '</dd>';
+      'title="Click to edit">' + body + '</span>' + jump + (tail || '') + '</dd>';
   }
 
   function chiprow(label, inner) {
@@ -1573,7 +1574,9 @@ function openDossier(node) {
 
     '<div class="d-body">' +
       '<div class="d-sec"><h4>Details</h4><dl class="fields">' +
-        row('Email', 'email', p.email, 'mailto:') +
+        row('Email', 'email', p.email, 'mailto:', p.phone ? '' :
+          '<span class="val ph-add" data-field="phone" tabindex="0" role="button" title="Add a phone number">+ phone</span>') +
+        (p.phone ? row('Phone', 'phone', p.phone, 'tel:') : '') +
         row('Profession', 'profession', p.profession) + row('Company', 'company', p.company) +
         row('Location', 'location', p.location) +
         Object.keys(p.custom || {}).map(function (k) {
@@ -2319,7 +2322,7 @@ function splitRows(text) {
 
 var FIELDS = [
   ['name', 'Name'], ['firstName', 'First name'], ['lastName', 'Last name'],
-  ['email', 'Email'], ['phone', 'Phone (kept as a note)'], ['profession', 'Profession'],
+  ['email', 'Email'], ['phone', 'Phone'], ['profession', 'Profession'],
   ['company', 'Company'], ['school', 'School'], ['location', 'Location'],
   ['circle', 'Circle'], ['met', 'Date you met (logs a touchpoint)'], ['link', 'Link'],
   ['notes', 'Notes'], ['custom', 'Keep as its own field'],
@@ -2661,10 +2664,7 @@ function importModal(preloaded, filename) {
       ['email', 'profession', 'company', 'location'].forEach(function (k) {
         if (rec[k]) p[k] = rec[k];
       });
-      // there is no phone field; a number in the sheet is kept as a note
-      if (rec.phone && !p.notes.some(function (n) { return n.t && n.t.indexOf(rec.phone) >= 0; })) {
-        p.notes.unshift({ id: uid(), t: 'Phone: ' + rec.phone, at: Date.now() });
-      }
+      if (rec.phone && !p.phone) p.phone = rec.phone;
       if (rec.school) rec.school.split(/[,;|/]/).map(clean).filter(Boolean)
         .forEach(function (nm) { addSchool(p.schools, titleCase(nm), ''); });
       Object.keys(rec.custom).forEach(function (k) { p.custom[k] = rec.custom[k]; });
@@ -2721,7 +2721,7 @@ function importModal(preloaded, filename) {
 })();
 
 function toCSV() {
-  var cols = ['name', 'email', 'profession', 'company', 'schools', 'location', 'circles', 'lastTouch', 'touchpoints', 'notes'];
+  var cols = ['name', 'email', 'phone', 'profession', 'company', 'schools', 'location', 'circles', 'lastTouch', 'touchpoints', 'notes'];
   var q = function (v) { v = String(v === undefined || v === null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
   var lines = [cols.join(',')];
   state.people.forEach(function (p) {
@@ -2730,7 +2730,7 @@ function toCSV() {
       .join(' | ');
     var extra = Object.keys(p.custom || {}).map(function (k) { return k + ': ' + p.custom[k]; });
     var sch = schoolsOf(p).map(function (x) { return x.name + (x.level ? ' (' + x.level + ')' : ''); }).join(' / ');
-    lines.push([p.name, p.email, p.profession, p.company, sch, p.location, circlesOf(p).join(' / '),
+    lines.push([p.name, p.email, p.phone, p.profession, p.company, sch, p.location, circlesOf(p).join(' / '),
       p.log.length ? new Date(lastTouch(p)).toISOString().slice(0, 10) : '',
       p.log.length, extra.concat(notes ? [notes] : []).join(' | ')].map(q).join(','));
   });

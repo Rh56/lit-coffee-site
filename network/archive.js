@@ -196,8 +196,20 @@ function homeGroup(p) { return groupsOf(p)[0] || L.primaryCircle(p); }
 
 var FIELD_LABELS = {
   name: 'Name', profession: 'Role', company: 'Company', email: 'Email',
-  location: 'Location'
+  phone: 'Phone', location: 'Location'
 };
+
+/* A phone number is kept for the few people who have one: a row of its own
+   when it is there, otherwise a faint "+ phone" beside the email that only
+   shows when the pointer is on that line. */
+function phoneAdd(p) {
+  return p.phone ? '' : '<span class="ph-add" data-field="phone" data-for="' + p.id +
+    '" tabindex="0" role="button" title="Add a phone number">+ phone</span>';
+}
+function phoneRow(p, dt, dd) {
+  return p.phone ? '<dt' + (dt || '') + '>Phone</dt><dd' + (dd || '') + '><span class="edit"' +
+    editableAttrs(p, 'phone') + '>' + esc(p.phone) + '</span></dd>' : '';
+}
 
 function editableAttrs(p, field) {
   return ' data-field="' + field + '" data-for="' + p.id + '" tabindex="0" role="button"' +
@@ -230,7 +242,8 @@ function editValue(el) {
     commitPerson(p);
     // a name is on every screen; anything else is patched where it shows,
     // so the surface you are working on is not rebuilt under you
-    if (field === 'name') return render(true);
+    // a phone coming or going adds or drops a row, so that redraws too
+    if (field === 'name' || (field === 'phone' && !was !== !val)) return render(true);
     // close this box first: patchField leaves alone anything still holding
     // an input, which would otherwise include the one just finished
     el.innerHTML = val ? esc(val) : '<span class="none">' + DASH + '</span>';
@@ -1438,11 +1451,12 @@ function drawFile(host) {
 
   var facts = [
     ['Email', p.email, 'email'],
+    p.phone ? ['Phone', p.phone, 'phone'] : null,
     ['Profession', p.profession, 'profession'], ['Company', p.company, 'company'],
     ['Location', p.location, 'location'],
     ['Schools', '', '', schoolChips(p)],
     ['Filed under', '', '', circleChips(p)]
-  ];
+  ].filter(Boolean);
   Object.keys(p.custom || {}).forEach(function (k) { facts.push([k, p.custom[k]]); });
   var ties = L.tiesOf(p);
   if (ties.length) {
@@ -1460,7 +1474,7 @@ function drawFile(host) {
       '<dl class="facts">' + facts.map(function (f) {
         var body = f[3] || (f[1] ? esc(f[1]) : '<span class="none">—</span>');
         return '<dt>' + esc(f[0]) + '</dt><dd>' + (f[2]
-          ? '<span class="edit"' + editableAttrs(p, f[2]) + '>' + body + '</span>'
+          ? '<span class="edit"' + editableAttrs(p, f[2]) + '>' + body + '</span>' + (f[2] === 'email' ? phoneAdd(p) : '')
           : body) + '</dd>';
       }).join('') + '</dl>' +
     '</div>'
@@ -1584,7 +1598,8 @@ function drawIndex(host) {
   function entryHtml(p, no) {
     var f = function (label, field) {
       return '<dt>' + label + '</dt><dd><span class="edit"' + editableAttrs(p, field) + '>' +
-        (p[field] ? esc(p[field]) : '<span class="none">' + DASH + '</span>') + '</span></dd>';
+        (p[field] ? esc(p[field]) : '<span class="none">' + DASH + '</span>') + '</span>' +
+        (field === 'email' ? phoneAdd(p) + '</dd>' + phoneRow(p) : '</dd>');
     };
     return '<div class="ix-entry" data-entry="' + p.id + '"><div class="ix-entry-in"><div class="ix-sheet">' +
       '<div class="ix-e-head">' +
@@ -1741,7 +1756,8 @@ function drawChroma(host) {
         esc(p.profession || 'Add a role') + '</span></div>' +
       '<dl>' +
         '<dt>Company</dt><dd class="edit"' + editableAttrs(p, 'company') + '>' + esc(p.company || '—') + '</dd>' +
-        '<dt>Email</dt><dd class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +
+        '<dt>Email</dt><dd><span class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</span>' + phoneAdd(p) + '</dd>' +
+        phoneRow(p) +
         '<dt>Location</dt><dd class="edit"' + editableAttrs(p, 'location') + '>' + esc(p.location || '—') + '</dd>' +
         '<dt>School</dt><dd>' + schoolChips(p) + '</dd>' +
         '<dt>Filed</dt><dd>' + circleChips(p) + '</dd>' +
@@ -2070,7 +2086,8 @@ function drawFinder(host) {
       '<dl>' +
         '<dt style="--i:2">Filed</dt><dd style="--i:2">' + circleChips(p) + '</dd>' +
         '<dt style="--i:3">Company</dt><dd style="--i:3" class="edit"' + editableAttrs(p, 'company') + '>' + esc(p.company || '—') + '</dd>' +
-        '<dt style="--i:4">Email</dt><dd style="--i:4" class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</dd>' +
+        '<dt style="--i:4">Email</dt><dd style="--i:4"><span class="edit"' + editableAttrs(p, 'email') + '>' + esc(p.email || '—') + '</span>' + phoneAdd(p) + '</dd>' +
+        phoneRow(p, ' style="--i:5"', ' style="--i:5"') +
         '<dt style="--i:6">Location</dt><dd style="--i:6" class="edit"' + editableAttrs(p, 'location') + '>' + esc(p.location || '—') + '</dd>' +
         '<dt style="--i:7">School</dt><dd style="--i:7">' + schoolChips(p) + '</dd>' +
       '</dl>' +

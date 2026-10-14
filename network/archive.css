@@ -459,7 +459,10 @@
 .ix-grid{ margin-top:2px; }
 .ix-row{
   display:grid;
-  grid-template-columns:44px minmax(150px, 1.1fr) minmax(0, 1.2fr) minmax(0, .7fr) auto 76px;
+  /* every row is its own grid, so every track is a fixed share: an auto
+     track sized by the circle dots made the columns start at a different
+     place on each row */
+  grid-template-columns:44px minmax(150px, 1.1fr) minmax(0, 1.2fr) minmax(0, .7fr) 46px 76px;
   gap:16px; align-items:baseline; width:100%; text-align:left;
   padding:12px 6px 8px; border-bottom:1px solid var(--rule-soft);
   color:var(--ink-2);
@@ -482,7 +485,7 @@
   color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 .ix-where{ color:var(--faint); }
-.ix-tags{ display:inline-flex; gap:3px; }
+.ix-tags{ display:inline-flex; flex-wrap:wrap; gap:3px; min-width:0; }
 .ix-tags i{ width:5px; height:5px; border-radius:50%; display:block; }
 .ix-when{
   font-family:var(--typed); font-size:9.5px; letter-spacing:.12em; text-transform:uppercase;

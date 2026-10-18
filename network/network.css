@@ -1074,3 +1074,6 @@ dd:hover .jump, .jump:focus-visible{ opacity:1; }
 .fields dd:hover .ph-add, .fields .ph-add:focus, .fields .ph-add:focus-within{ opacity:1; }
 .fields .ph-add:hover{ color:var(--accent); }
 @media (hover:none){ .fields .ph-add{ opacity:.6; } }
+
+/* a note keeps the lines it was written in */
+.note .val{ white-space:pre-wrap; word-break:break-word; }

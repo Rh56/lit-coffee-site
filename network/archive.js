@@ -532,23 +532,28 @@ function editText(el, current, save) {
   var held = el.innerHTML;
   el.innerHTML = '';
   el.appendChild(box);
+  // the box grows with the note, so every line of it is in sight
+  function grow() { box.style.height = 'auto'; box.style.height = box.scrollHeight + 'px'; }
+  box.addEventListener('input', grow);
+  grow();
   box.focus();
   box.select();
   var done = false;
   function finish(keep) {
     if (done) return;
     done = true;
-    var val = box.value.trim();
+    var val = L.cleanNote(box.value);
     // leaving a line unchanged is not an edit: nothing saves and nothing is
     // redrawn, so a click that took the focus (onto a date, say) still lands,
     // and a touchpoint just added is not thrown away for being empty yet
-    if (!keep || val === (current || '').trim()) { el.innerHTML = held; return; }
+    if (!keep || val === L.cleanNote(current)) { el.innerHTML = held; return; }
     save(val);
   }
   box.addEventListener('blur', function () { finish(true); });
   box.addEventListener('keydown', function (e) {
     e.stopPropagation();
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finish(true); }
+    if (L.newlineKey(e)) return grow();
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
     if (e.key === 'Escape') { e.preventDefault(); finish(false); }
   });
 }
@@ -875,7 +880,7 @@ function build() {
       '<div class="slip-head"><i class="slip-lights" aria-hidden="true"><b></b><b></b><b></b></i>' +
         '<span>Notes</span><em id="arc-slipcount"></em>' +
         '<button class="slip-x" data-slipclose aria-label="Put the notes away">\u00d7</button></div>' +
-      '<textarea class="slip-in" id="arc-slipin" rows="2" placeholder="Jot anything, \u21b5 to keep" aria-label="Write a note"></textarea>' +
+      '<textarea class="slip-in" id="arc-slipin" rows="2" placeholder="Jot anything. \u21b5 keeps it, \u2318\u21b5 new line" aria-label="Write a note"></textarea>' +
       '<div class="slip-list" id="arc-sliplist"></div>' +
     '</aside>' +
     '<div class="arc-scroll" id="arc-scroll"><div class="arc-wrap">' +
@@ -1287,7 +1292,8 @@ function wireSlip() {
   input.addEventListener('input', grow);
   input.addEventListener('keydown', function (e) {
     e.stopPropagation();
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (L.newlineKey(e)) return;
+    if (e.key === 'Enter') {
       e.preventDefault();
       if (!input.value.trim()) return;
       L.addPadNote(input.value);

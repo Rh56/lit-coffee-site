@@ -1852,3 +1852,7 @@ dd:hover > .ph-add, .ph-add:focus, .ph-add:focus-within{ opacity:.55; outline:no
 .ph-add:has(input){ opacity:1; border-bottom:0; margin-left:6px; }
 .ph-add .arc-input{ width:12em; }
 @media (hover:none){ .ph-add{ opacity:.35; } }
+
+/* notes and touchpoints keep the lines they were written in */
+.ed-text{ white-space:pre-wrap; word-break:break-word; }
+.ed-area{ resize:none; overflow:hidden; }

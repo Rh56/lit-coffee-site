@@ -375,6 +375,26 @@ function clean(s) {
     .replace(/^[\s,;:—–-]+|[\s,;:.—–-]+$/g, '').trim();
 }
 
+/* A note can run to more than one line. Its lines are tidied one by one and
+   kept apart, with at most one blank line between paragraphs. */
+function cleanNote(s) {
+  return String(s || '').split(/\r?\n/).map(function (l) {
+    return l.replace(/[ \t\u00a0]+/g, ' ').trim();
+  }).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/* In a note, \u21b5 keeps it and \u2318\u21b5 (or \u21e7\u21b5) starts a new line.
+   Call first in a keydown; true means the key was a new line and is handled. */
+function newlineKey(e) {
+  if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey || e.shiftKey)) return false;
+  var b = e.target;
+  if (!b || b.tagName !== 'TEXTAREA') return false;
+  e.preventDefault();
+  b.setRangeText('\n', b.selectionStart, b.selectionEnd, 'end');
+  b.dispatchEvent(new Event('input', { bubbles: true }));
+  return true;
+}
+
 var SMALL_WORD = /^(of|the|at|in|and|for|de|la|von|van)$/i;
 function titleCase(s) {
   return clean(s).split(/\s+/).map(function (w, i) {
@@ -1387,7 +1407,7 @@ function padNotes() {
 }
 
 function addPadNote(text) {
-  text = clean(text);
+  text = cleanNote(text);
   if (!text) return;
   state.pad = state.pad || [];
   state.pad.unshift({ id: 'n' + (state.seq++) + Math.random().toString(36).slice(2, 6),
@@ -1445,9 +1465,10 @@ var PAD_SHUT = 'rootwork.pad.shut';
   };
   box.addEventListener('input', grow);
   box.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (newlineKey(e)) return;
+    if (e.key === 'Enter') {
       e.preventDefault();
-      if (!clean(box.value)) return;
+      if (!cleanNote(box.value)) return;
       addPadNote(box.value);
       box.value = ''; grow();
     }
@@ -1464,7 +1485,7 @@ var PAD_SHUT = 'rootwork.pad.shut';
       if (!note) return;
       editInPlace(v, note.t, true, function (val) {
         if (val === null) return renderPad();
-        if (clean(val)) { note.t = clean(val); note.upd = Date.now(); }
+        if (val) { note.t = val; note.upd = Date.now(); }
         else dropPadNote(id);
         save(); renderPad();
       });
@@ -1513,12 +1534,13 @@ function editInPlace(el, current, multiline, done) {
   var finish = function (commitIt) {
     if (finished) return;
     finished = true;
-    if (commitIt) done(clean(box.value)); else done(null);
+    if (commitIt) done(multiline ? cleanNote(box.value) : clean(box.value)); else done(null);
   };
   box.addEventListener('blur', function () { finish(true); });
   box.addEventListener('keydown', function (e) {
     e.stopPropagation();
-    if (e.key === 'Enter' && (!multiline || e.metaKey || e.ctrlKey)) { e.preventDefault(); finish(true); }
+    if (multiline && newlineKey(e)) return;
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
     if (e.key === 'Escape') { e.preventDefault(); finish(false); }
   });
 }
@@ -1655,7 +1677,7 @@ function openDossier(node) {
           return '<div class="note"><button class="del" data-delnote="' + n.id + '">&times;</button>' +
             '<span class="val" data-note="' + n.id + '" tabindex="0" role="button" title="Click to edit">' + esc(n.t) + '</span></div>';
         }).join('') +
-        '<textarea class="notebox" id="notebox" rows="1" placeholder="Anything worth remembering — ↵ to keep" aria-label="Add a note"></textarea>' +
+        '<textarea class="notebox" id="notebox" rows="1" placeholder="Anything worth remembering. ↵ keeps it, ⌘↵ new line" aria-label="Add a note"></textarea>' +
       '</div></div>' +
 
       '<div class="d-actions">' +
@@ -2104,9 +2126,10 @@ $('#dossier').addEventListener('keydown', function (e) {
     e.stopPropagation();
     var who = selected && selected.ref;
     if (e.key === 'Escape') { box.value = ''; box.blur(); return; }
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || !e.shiftKey)) {
+    if (newlineKey(e)) return;
+    if (e.key === 'Enter') {
       e.preventDefault();
-      var text = clean(box.value);
+      var text = cleanNote(box.value);
       if (!text || !who) { box.blur(); return; }
       who.notes.unshift({ id: uid(), t: text, at: Date.now() });
       touch(who); save(); renderAll(); openDossier(selected);
@@ -3431,12 +3454,13 @@ window.Rootwork = {
     degrees: DEGREES, addSchool: addSchool,
     queryTerms: queryTerms, searchHit: searchHit, snippet: snippet,
     // the notepad, for the archive's own slip of it
+    cleanNote: cleanNote, newlineKey: newlineKey,
     padNotes: padNotes, addPadNote: addPadNote, dropPadNote: dropPadNote,
     editPadNote: function (id, text) {
       var note = (state.pad || []).filter(function (n) { return n.id === id; })[0];
       if (!note) return;
       if (!clean(text)) return dropPadNote(id);
-      note.t = clean(text); note.upd = Date.now();
+      note.t = cleanNote(text); note.upd = Date.now();
       save(); renderPad();
     },
     newPerson: function (circle, done) { personForm(null, { circle: circle, done: done }); },

@@ -1856,3 +1856,22 @@ dd:hover > .ph-add, .ph-add:focus, .ph-add:focus-within{ opacity:.55; outline:no
 /* notes and touchpoints keep the lines they were written in */
 .ed-text{ white-space:pre-wrap; word-break:break-word; }
 .ed-area{ resize:none; overflow:hidden; }
+
+/* ---------- search: names as you type ---------- */
+.arc-sugg{ flex:0 0 100%; display:flex; flex-direction:column; margin:-4px -4px 6px; padding-bottom:8px; border-bottom:1px solid var(--rule-soft); }
+.arc-filters .arc-sugg button{
+  display:grid; grid-template-columns:8px minmax(0, 1fr); column-gap:10px; align-items:baseline;
+  width:100%; text-align:left; padding:7px 8px; border:0; border-radius:6px;
+  font:inherit; letter-spacing:0; text-transform:none; color:var(--ink);
+}
+.arc-filters .arc-sugg button:hover, .arc-filters .arc-sugg button[data-at]{
+  background:color-mix(in srgb, var(--ink) 8%, transparent); border:0;
+}
+.arc-sugg b{ width:7px; height:7px; border-radius:50%; align-self:center; grid-row:span 2; }
+.sg-name{ font-family:var(--display); font-weight:var(--wd-b); font-size:16px; line-height:1.15;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sg-sub{ grid-column:2; font-family:var(--ui); font-size:11.5px; color:var(--muted);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sg-sub:empty{ display:none; }
+.sg-sub i{ font-style:normal; font-family:var(--typed); font-size:.8em; letter-spacing:.12em; text-transform:uppercase; opacity:.6; margin-right:3px; }
+.arc-sugg-none{ margin:2px 8px; font-size:12px; color:var(--faint); }

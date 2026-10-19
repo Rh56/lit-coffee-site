@@ -935,12 +935,54 @@ function build() {
     query = qbox.value.trim();
     terms = L.queryTerms(query);
     clearTimeout(qTimer);
+    suggAt = 0;
+    paintFilters();                          // names straight away; the list can follow
     qTimer = setTimeout(function () { render(); paintFilters(); }, 140);
   });
   var panel = $('#arc-filters', root), pills = $('#arc-pills', root);
+  /* Names as you type: the best few matches sit at the top of the panel, and
+     picking one opens their card instead of just narrowing the list. */
+  var suggIds = [], suggAt = 0;
+  function suggestions() {
+    if (!terms.length) { suggIds = []; return ''; }
+    var hits = [];
+    st().people.forEach(function (p) {
+      if (!matches(p)) return;
+      var h = L.searchHit(p, terms);
+      if (h) hits.push({ p: p, h: h });
+    });
+    hits.sort(function (a, b) { return b.h.score - a.h.score || a.p.name.localeCompare(b.p.name); });
+    hits = hits.slice(0, 6);
+    suggIds = hits.map(function (x) { return x.p.id; });
+    if (suggAt >= suggIds.length) suggAt = 0;
+    if (!hits.length) return '<div class="arc-sugg"><p class="arc-sugg-none">Nobody by that name.</p></div>';
+    return '<div class="arc-sugg" role="listbox" aria-label="Suggestions">' + hits.map(function (x, i) {
+      var p = x.p, w = x.h.where;
+      var sub = w && w.label !== 'name' ? '<i>' + esc(w.label) + '</i> ' + L.snippet(w.text, terms, 38)
+        : esc(roleOf(p) || L.circlesOf(p)[0] || '');
+      return '<button type="button" role="option" data-sugg="' + p.id + '"' + (i === suggAt ? ' data-at' : '') + '>' +
+        '<b style="background:' + hueVar(homeGroup(p)) + '"></b>' +
+        '<span class="sg-name">' + nameHtml(p) + '</span>' +
+        '<span class="sg-sub">' + sub + '</span></button>';
+    }).join('') + '</div>';
+  }
+  function markSugg() {
+    Array.prototype.forEach.call(panel.querySelectorAll('[data-sugg]'), function (b, i) {
+      if (i === suggAt) b.setAttribute('data-at', ''); else b.removeAttribute('data-at');
+    });
+  }
+  function takeSugg(id) {
+    var p = personById(id);
+    if (!p) return;
+    // the name was found: the list goes back to everyone and their card opens
+    clearTimeout(qTimer);
+    qbox.value = ''; query = ''; terms = []; suggAt = 0;
+    qbox.blur();
+    jumpTo(p);
+  }
   function paintFilters() {
     var n = st().people.filter(matches).length;
-    panel.innerHTML = FILTERS.map(function (f) {
+    panel.innerHTML = suggestions() + FILTERS.map(function (f) {
       return '<button type="button" data-filter="' + f.id + '"' + (filtersOn[f.id] ? ' data-on' : '') + '>' + esc(f.name) + '</button>';
     }).join('') + '<span class="arc-count">' + n + ' ' + (n === 1 ? 'person' : 'people') + '</span>';
     pills.innerHTML = FILTERS.filter(function (f) { return filtersOn[f.id]; }).map(function (f) {
@@ -954,6 +996,8 @@ function build() {
   // the panel keeps the focus in the box, so it stays open while you pick
   panel.addEventListener('mousedown', function (e) { e.preventDefault(); });
   panel.addEventListener('click', function (e) {
+    var sg = e.target.closest('[data-sugg]');
+    if (sg) { e.preventDefault(); return takeSugg(sg.dataset.sugg); }
     var b = e.target.closest('[data-filter]');
     if (b) { e.preventDefault(); toggleFilter(b.dataset.filter); }
   });
@@ -969,6 +1013,13 @@ function build() {
     if (e.key === 'Escape' && qbox.value) { e.preventDefault(); qbox.value = ''; query = ''; terms = []; render(); paintFilters(); }
     else if (e.key === 'Escape' && Object.keys(filtersOn).length) { e.preventDefault(); filtersOn = {}; render(); paintFilters(); }
     else if (e.key === 'Escape') qbox.blur();
+    // arrows walk the suggested names, Enter opens the one marked
+    else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && suggIds.length) {
+      e.preventDefault();
+      suggAt = (suggAt + (e.key === 'ArrowDown' ? 1 : suggIds.length - 1)) % suggIds.length;
+      markSugg();
+    }
+    else if (e.key === 'Enter' && suggIds.length) { e.preventDefault(); takeSugg(suggIds[suggAt]); }
   });
   document.addEventListener('keydown', function (e) {
     if (!open || e.key !== '/' || e.metaKey || e.ctrlKey) return;
@@ -1347,23 +1398,31 @@ function currentFolder() {
 function addPerson(circle) {
   if (groupMode !== 'circle') circle = null;
   ['arc-cal', 'arc-pick'].forEach(function (id) { var o = document.getElementById(id); if (o) o.remove(); });
-  L.newPerson(circle, function (p) {
-    var home = L.circlesOf(p)[0] || null;
-    if (view.design === 'drawer') {
-      view.circle = home;
-      return openPerson(p.id, home ? hueVar(home) : null);
-    }
-    if (view.design === 'index' || view.design === 'finder') {
-      view.circle = view.design === 'finder' ? home : view.circle;
-      view.person = p.id;
-      render(true);
-      return writeRoute();
-    }
-    // chroma: draw them in, then open their pane from their own name
+  L.newPerson(circle, jumpTo);
+}
+
+/* Someone's card, opened the way the design on screen opens one: a file in
+   the drawer, an entry in the index, the pane in chroma, the preview on the
+   desktop. Used by a new person and by a name picked from search. */
+function jumpTo(p) {
+  var home = L.circlesOf(p)[0] || null;
+  if (view.design === 'drawer') {
+    view.circle = home;
+    return openPerson(p.id, home ? hueVar(home) : null);
+  }
+  if (view.design === 'index' || view.design === 'finder') {
+    // the index only lists one folder at a time when one is open, so go
+    // wide if they are not in it
+    if (view.design === 'finder') view.circle = home;
+    else if (view.circle && L.circlesOf(p).indexOf(view.circle) < 0) view.circle = null;
+    view.person = p.id;
     render(true);
-    var n = body.querySelector('.ch-name[data-person="' + cssEsc(p.id) + '"]');
-    if (n) { n.scrollIntoView({ block: 'center' }); n.click(); }
-  });
+    return writeRoute();
+  }
+  // chroma: draw them in, then open their pane from their own name
+  render(true);
+  var n = body.querySelector('.ch-name[data-person="' + cssEsc(p.id) + '"]');
+  if (n) { n.scrollIntoView({ block: 'center' }); n.click(); }
 }
 
 /* ==========================================================================

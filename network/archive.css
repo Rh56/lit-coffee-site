@@ -1543,29 +1543,7 @@ body.archive-settled .shell{ visibility:hidden; }
   box-shadow:0 24px 50px -24px #000;
   animation:pickin .18s var(--ease);
 }
-.archive.finding .arc-filters{ display:flex; }
-.arc-filters button{
-  font-family:var(--typed); font-size:9.5px; letter-spacing:.12em; text-transform:uppercase;
-  padding:6px 10px; border-radius:999px; color:var(--muted);
-  border:1px solid var(--rule);
-  transition:color var(--fast) var(--ease), border-color var(--fast) var(--ease), background var(--fast) var(--ease);
-}
-.arc-filters button:hover{ color:var(--ink); border-color:var(--muted); }
-.arc-filters button[data-on]{ color:var(--ground); background:var(--ink); border-color:var(--ink); }
-.arc-count{
-  margin-left:auto; font-family:var(--typed); font-size:9.5px; letter-spacing:.12em; text-transform:uppercase;
-  color:var(--faint);
-}
-
-/* filters that are on, shown in the box itself */
-.arc-pills{ display:flex; gap:4px; flex:none; }
-.arc-pills:empty{ display:none; }
-.arc-pills button{
-  font-family:var(--typed); font-size:9px; letter-spacing:.1em; text-transform:uppercase; white-space:nowrap;
-  padding:2px 7px; border-radius:999px; color:var(--ground); background:var(--accent);
-}
-.arc-pills button:hover{ background:var(--ink); }
-
+.archive.finding .arc-filters:not(:empty){ display:flex; }
 /* the words that matched, and the line they matched in */
 .archive mark{
   background:color-mix(in srgb, var(--accent) 34%, transparent); color:inherit;
@@ -1858,7 +1836,7 @@ dd:hover > .ph-add, .ph-add:focus, .ph-add:focus-within{ opacity:.55; outline:no
 .ed-area{ resize:none; overflow:hidden; }
 
 /* ---------- search: names as you type ---------- */
-.arc-sugg{ flex:0 0 100%; display:flex; flex-direction:column; margin:-4px -4px 6px; padding-bottom:8px; border-bottom:1px solid var(--rule-soft); }
+.arc-sugg{ flex:0 0 100%; display:flex; flex-direction:column; margin:-4px; }
 .arc-filters .arc-sugg button{
   display:grid; grid-template-columns:8px minmax(0, 1fr); column-gap:10px; align-items:baseline;
   width:100%; text-align:left; padding:7px 8px; border:0; border-radius:6px;

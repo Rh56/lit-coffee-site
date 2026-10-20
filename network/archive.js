@@ -88,27 +88,13 @@ function reduced() { return window.matchMedia('(prefers-reduced-motion: reduce)'
 
 function st() { return R.getState(); }
 function hueVar(circle) { return hueOfGroup(circle); }
-/* Search is words plus quick filters. Every word has to match somewhere in
-   the person (the map's own matcher, so both agree); every filter on has to
-   hold. */
+/* Search is words. Every word has to match somewhere in the person (the
+   map's own matcher, so both agree). */
 var terms = [];
-var DAY = 864e5;
-var FILTERS = [
-  { id: 'never', name: 'Never logged', test: function (p) { return !(p.log || []).length; } },
-  { id: 'quiet', name: 'Quiet 3 months+', test: function (p) {
-      return !(p.log || []).length || Date.now() - L.lastTouch(p) > 90 * DAY; } },
-  { id: 'recent', name: 'Touched this month', test: function (p) {
-      return (p.log || []).length && Date.now() - L.lastTouch(p) < 30 * DAY; } },
-  { id: 'notes', name: 'Has notes', test: function (p) { return (p.notes || []).length > 0; } }
-];
-var filtersOn = {};
 
-function searching() { return !!terms.length || Object.keys(filtersOn).length > 0; }
+function searching() { return !!terms.length; }
 
 function matches(p) {
-  for (var i = 0; i < FILTERS.length; i++) {
-    if (filtersOn[FILTERS[i].id] && !FILTERS[i].test(p)) return false;
-  }
   return !terms.length || !!L.searchHit(p, terms);
 }
 
@@ -866,10 +852,9 @@ function build() {
         '<span>Rootwork</span><em id="arc-mode">Archive</em>' +
       '</button>' +
       '<label class="arc-find">' +
-        '<span class="arc-pills" id="arc-pills"></span>' +
         '<input id="arc-q" type="search" placeholder="find anyone" autocomplete="off" spellcheck="false" aria-label="Find anyone">' +
         '<kbd aria-hidden="true">/</kbd>' +
-        '<div class="arc-filters" id="arc-filters" role="group" aria-label="Quick filters"></div>' +
+        '<div class="arc-filters" id="arc-filters" aria-label="Suggested names"></div>' +
       '</label>' +
       '<button class="arc-add" id="arc-add" title="Add someone (N)">+ Person</button>' +
       '<button class="arc-map" id="arc-close" title="Back to the map (Esc)">The map</button>' +
@@ -936,10 +921,10 @@ function build() {
     terms = L.queryTerms(query);
     clearTimeout(qTimer);
     suggAt = 0;
-    paintFilters();                          // names straight away; the list can follow
-    qTimer = setTimeout(function () { render(); paintFilters(); }, 140);
+    paintSugg();                          // names straight away; the list can follow
+    qTimer = setTimeout(function () { render(); paintSugg(); }, 140);
   });
-  var panel = $('#arc-filters', root), pills = $('#arc-pills', root);
+  var panel = $('#arc-filters', root);
   /* Names as you type: the best few matches sit at the top of the panel, and
      picking one opens their card instead of just narrowing the list. */
   var suggIds = [], suggAt = 0;
@@ -980,38 +965,21 @@ function build() {
     qbox.blur();
     jumpTo(p);
   }
-  function paintFilters() {
-    var n = st().people.filter(matches).length;
-    panel.innerHTML = suggestions() + FILTERS.map(function (f) {
-      return '<button type="button" data-filter="' + f.id + '"' + (filtersOn[f.id] ? ' data-on' : '') + '>' + esc(f.name) + '</button>';
-    }).join('') + '<span class="arc-count">' + n + ' ' + (n === 1 ? 'person' : 'people') + '</span>';
-    pills.innerHTML = FILTERS.filter(function (f) { return filtersOn[f.id]; }).map(function (f) {
-      return '<button type="button" data-unfilter="' + f.id + '" title="Remove this filter">' + esc(f.name) + ' \u00d7</button>';
-    }).join('');
-  }
-  function toggleFilter(id, on) {
-    if (on === undefined ? !filtersOn[id] : on) filtersOn[id] = 1; else delete filtersOn[id];
-    render(); paintFilters();
-  }
+  // the panel is only the suggested names, so it is empty (and hidden) until
+  // something is typed
+  function paintSugg() { panel.innerHTML = suggestions(); }
   // the panel keeps the focus in the box, so it stays open while you pick
   panel.addEventListener('mousedown', function (e) { e.preventDefault(); });
   panel.addEventListener('click', function (e) {
     var sg = e.target.closest('[data-sugg]');
     if (sg) { e.preventDefault(); return takeSugg(sg.dataset.sugg); }
-    var b = e.target.closest('[data-filter]');
-    if (b) { e.preventDefault(); toggleFilter(b.dataset.filter); }
   });
-  pills.addEventListener('click', function (e) {
-    var b = e.target.closest('[data-unfilter]');
-    if (b) { e.preventDefault(); toggleFilter(b.dataset.unfilter, false); }
-  });
-  qbox.addEventListener('focus', function () { paintFilters(); root.classList.add('finding'); });
+  qbox.addEventListener('focus', function () { paintSugg(); root.classList.add('finding'); });
   qbox.addEventListener('blur', function () { root.classList.remove('finding'); });
   qbox.addEventListener('keydown', function (e) {
     e.stopPropagation();
-    // Escape clears the words, then the filters, then leaves the box
-    if (e.key === 'Escape' && qbox.value) { e.preventDefault(); qbox.value = ''; query = ''; terms = []; render(); paintFilters(); }
-    else if (e.key === 'Escape' && Object.keys(filtersOn).length) { e.preventDefault(); filtersOn = {}; render(); paintFilters(); }
+    // Escape clears the words, then leaves the box
+    if (e.key === 'Escape' && qbox.value) { e.preventDefault(); qbox.value = ''; query = ''; terms = []; render(); paintSugg(); }
     else if (e.key === 'Escape') qbox.blur();
     // arrows walk the suggested names, Enter opens the one marked
     else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && suggIds.length) {
@@ -1134,7 +1102,7 @@ function signature() {
   var t = 0;
   for (var i = 0; i < s.people.length; i++) t += (s.people[i].updated || s.people[i].created || 0) % 100000;
   return [s.people.length, t, (s.circles || []).join('|'), s.me && s.me.name,
-    groupMode, terms.join(' '), Object.keys(filtersOn).sort().join(','), view.design, view.circle, view.person].join('~');
+    groupMode, terms.join(' '), view.design, view.circle, view.person].join('~');
 }
 var lastSig = '';
 

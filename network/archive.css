@@ -1822,14 +1822,13 @@ body.archive-settled .shell{ visibility:hidden; }
    the email and only shows when the pointer is on that line. */
 .ph-add{
   margin-left:8px; font-size:.78em; letter-spacing:.04em; white-space:nowrap;
-  opacity:0; cursor:pointer; border-bottom:1px dotted currentColor;
+  opacity:.38; cursor:pointer; border-bottom:1px dotted currentColor;
   transition:opacity .18s ease;
 }
-dd:hover > .ph-add, .ph-add:focus, .ph-add:focus-within{ opacity:.55; outline:none; }
+dd:hover > .ph-add, .ph-add:focus, .ph-add:focus-within{ opacity:.7; outline:none; }
 .ph-add:hover{ opacity:1; }
 .ph-add:has(input){ opacity:1; border-bottom:0; margin-left:6px; }
 .ph-add .arc-input{ width:12em; }
-@media (hover:none){ .ph-add{ opacity:.35; } }
 
 /* notes and touchpoints keep the lines they were written in */
 .ed-text{ white-space:pre-wrap; word-break:break-word; }

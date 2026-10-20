@@ -1069,11 +1069,20 @@ dd:hover .jump, .jump:focus-visible{ opacity:1; }
    faint, beside the email */
 .fields .ph-add{
   margin-left:8px; font-family:var(--mono); font-size:9.5px; letter-spacing:.12em;
-  text-transform:uppercase; color:var(--faint); opacity:0; transition:opacity .18s ease;
+  text-transform:uppercase; color:var(--faint); opacity:.7; transition:opacity .18s ease, color .18s ease;
 }
 .fields dd:hover .ph-add, .fields .ph-add:focus, .fields .ph-add:focus-within{ opacity:1; }
 .fields .ph-add:hover{ color:var(--accent); }
-@media (hover:none){ .fields .ph-add{ opacity:.6; } }
 
 /* a note keeps the lines it was written in */
 .note .val{ white-space:pre-wrap; word-break:break-word; }
+
+/* the new-person card: "+ phone" sits in the space beside the email until
+   it is wanted, then becomes a line like the rest */
+.pf-phone{ display:flex; align-items:flex-end; padding:0 0 9px; }
+.pf-addphone{
+  font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--faint); border-bottom:1px dotted currentColor; padding:0;
+  transition:color .16s ease;
+}
+.pf-addphone:hover, .pf-addphone:focus-visible{ color:var(--accent); outline:none; }

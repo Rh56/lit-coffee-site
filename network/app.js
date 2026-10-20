@@ -2240,6 +2240,9 @@ function personForm(p, opts) {
         line('profession', 'Role', 'what they do') +
         line('company', 'Company', 'where') +
         line('email', 'Email', 'name@example.com', 'email') +
+        // a phone is for the few: a quiet "+ phone" until one is wanted
+        (p.phone ? line('phone', 'Phone', 'number', 'tel')
+          : '<div class="pf-phone" id="pf-phone"><button type="button" class="pf-addphone" id="pf-addphone">+ phone</button></div>') +
         line('location', 'Location', 'city') +
         line('school', 'Schools', 'Rutgers BS, Wharton MBA', 'text',
           schoolsOf(p).map(function (x) { return x.name + (x.level ? ' ' + x.level : ''); }).join(', ')) +
@@ -2255,6 +2258,12 @@ function personForm(p, opts) {
     '<button class="pf-cancel" data-close>Cancel</button>' +
     '<button class="pf-go" id="f-save">' + (isNew ? 'File them' : 'Save') + '</button>');
   m.classList.add('pform');
+  var addPhone = m.querySelector('#pf-addphone');
+  if (addPhone) addPhone.addEventListener('click', function () {
+    var slot = m.querySelector('#pf-phone');
+    slot.outerHTML = line('phone', 'Phone', 'number', 'tel', '');
+    m.querySelector('#f-phone').focus();
+  });
   var nameBox = m.querySelector('#f-name');
   nameBox.focus();
 
@@ -2298,6 +2307,7 @@ function personForm(p, opts) {
       nameBox.focus(); return;
     }
     ['name', 'email', 'profession', 'company', 'location'].forEach(function (k) { p[k] = g(k); });
+    if (m.querySelector('#f-phone')) p.phone = g('phone');
     p.schools = [];
     g('school').split(',').map(clean).filter(Boolean).forEach(function (bit) {
       var level = degreeIn(bit);

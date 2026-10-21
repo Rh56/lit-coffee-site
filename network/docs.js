@@ -256,18 +256,23 @@ function promptFor(text, ctx) {
 }
 
 var ai = { kind: null, state: null, label: '' };
+var READY_KEY = 'rootwork.ai.ready';
+function modelOnDisk() { try { return localStorage.getItem(READY_KEY) === '1'; } catch (e) { return false; } }
 
-/* What can run here, without downloading anything. */
+/* What can run here. Chrome's own model is used only when it is already on
+   this computer; Rootwork never starts that download (it wants 22 GB free).
+   Otherwise a small open model, about 0.9 GB, fetched once with your OK. */
 function detect() {
   if (ai.kind) return Promise.resolve(ai);
   var chrome = (typeof window.LanguageModel !== 'undefined')
     ? window.LanguageModel.availability(LM_OPTS).catch(function () { return 'unavailable'; })
     : Promise.resolve('unavailable');
   return chrome.then(function (a) {
-    if (a && a !== 'unavailable') {
-      ai.kind = 'chrome'; ai.state = a; ai.label = 'Gemini Nano, built into Chrome';
+    if (a === 'available') {
+      ai.kind = 'chrome'; ai.state = 'available'; ai.label = 'Gemini Nano, already in Chrome';
     } else if (navigator.gpu) {
-      ai.kind = 'webllm'; ai.state = 'downloadable'; ai.label = 'Qwen 2.5 3B, in a sandboxed worker';
+      ai.kind = 'webllm'; ai.state = modelOnDisk() ? 'available' : 'downloadable';
+      ai.label = 'Qwen 2.5 1.5B, on this computer';
     } else {
       ai.kind = 'none'; ai.state = 'unavailable'; ai.label = 'No on-device model in this browser';
     }
@@ -305,13 +310,18 @@ function prepare(onProgress) {
       }, LM_OPTS)).then(function (s) { s.destroy(); ai.state = 'available'; return a; });
     }
     if (a.kind === 'webllm') {
-      return work({ op: 'load' }, onProgress).then(function () { ai.state = 'available'; return a; });
+      return work({ op: 'load' }, onProgress).then(function () {
+        ai.state = 'available';
+        try { localStorage.setItem(READY_KEY, '1'); } catch (e) { }
+        return a;
+      });
     }
     throw new Error('This browser cannot run a model on this computer. Chrome on a Mac can.');
   });
 }
 
 function ask(text, ctx, onProgress) {
+  if (quickOnly) return Promise.resolve(null);
   return detect().then(function (a) {
     if (a.kind === 'chrome') {
       return window.LanguageModel.create(Object.assign({
@@ -423,15 +433,29 @@ function ctxFor(p, e) {
 function applySummary(p, e, r, by, rev) {
   var keep = {};
   (e.actions || []).forEach(function (a) { keep[a.t.toLowerCase()] = a; });
-  e.sum = { text: r.summary, take: r.takeaways, people: r.people, by: r.rough ? 'rough cut, no model' : by, at: Date.now(), rev: rev || null };
+  e.sum = { text: r.summary, take: r.takeaways, people: r.people, by: r.rough ? 'quick summary, no AI' : by, at: Date.now(), rev: rev || null };
   e.actions = r.actions.map(function (a) {
     var was = keep[a.task.toLowerCase()];
     return { id: was ? was.id : uid('x'), t: a.task, who: a.owner, done: was ? was.done : false };
   });
 }
 
+/* The first summary on a computer asks before fetching the model. Saying no
+   gives the quick summary, which needs nothing. */
+function okToRun() {
+  return detect().then(function (a) {
+    if (a.kind === 'none' || a.state === 'available') return true;
+    return window.confirm('Summaries use a small AI model that runs on this computer. ' +
+      'It is free and downloads once (about 0.9 GB), then works offline.\n\n' +
+      'OK to download it now. Cancel for a quick summary without AI.');
+  });
+}
+var quickOnly = false;
+
 function summariseEntry(p, e) {
   if (busy[e.id]) return;
+  okToRun().then(function (ok) { quickOnly = !ok; run(); });
+  function run() {
   var got;
   setBusy(e, 'Reading');
   var source = e.doc && e.doc.id
@@ -444,9 +468,10 @@ function summariseEntry(p, e) {
     got = s;
     setBusy(e, 'Summarizing on this computer');
     return summarise(s.text, ctxFor(p, e), function (f, what) {
-      setBusy(e, (what || 'Getting the model ready') + (f ? ' ' + Math.round(f * 100) + '%' : ''));
+      setBusy(e, (what || 'Downloading the model') + (f ? ' ' + Math.round(f * 100) + '%' : ''));
     });
   }).then(function (r) {
+    if (ai.kind === 'webllm' && !quickOnly) { ai.state = 'available'; try { localStorage.setItem(READY_KEY, '1'); } catch (er) { } }
     applySummary(p, e, r, ai.label || 'on this computer', got && got.rev);
     setBusy(e, null);
     changed(p);
@@ -454,6 +479,7 @@ function summariseEntry(p, e) {
     setBusy(e, null);
     toast(err.message || 'That did not work');
   });
+  }
 }
 
 function prepHtml(p) {
@@ -738,8 +764,8 @@ function openSettings(note) {
   var t = $('#gd-ai-t', m), go = $('#gd-ai-go', m), bar = $('#gd-bar', m), dot = m.querySelector('#gd-ai .gd-dot');
   detect().then(function (a) {
     var ready = a.state === 'available';
-    t.textContent = a.kind === 'none' ? a.label + '. Summaries fall back to a rough cut of the doc.'
-      : a.label + (ready ? ': ready.' : ': downloads once, then works offline.' + (a.kind === 'webllm' ? ' About 2 GB.' : ''));
+    t.textContent = a.kind === 'none' ? a.label + '. Summaries fall back to a quick cut of the doc.'
+      : a.label + (ready ? ': ready.' : ': free, downloads once (about 0.9 GB), then works offline. Without it you get a quick summary instead.');
     dot.className = 'gd-dot ' + (ready ? 'on' : a.kind === 'none' ? 'off' : '');
     go.hidden = ready || a.kind === 'none';
   });

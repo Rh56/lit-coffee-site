@@ -1,6 +1,6 @@
 /* Rootwork service worker: the app shell is cached so it opens with no signal.
    Bump CACHE when the shell changes — old caches are dropped on activate. */
-var CACHE = 'rootwork-v43';
+var CACHE = 'rootwork-v44';
 var SHELL = [
   './', './index.html', './network.css', './app.js', './sync.js', './archive.js', './archive.css', './docs.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'

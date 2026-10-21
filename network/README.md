@@ -126,7 +126,7 @@ How it stays private:
 - The sign-in token lives in memory for the tab. It is never stored or
   synced, and Disconnect revokes it.
 - The summary is written by a model running on your computer: Chrome's
-  built-in Gemini Nano where there is one; otherwise Qwen 2.5 3B in a separate
+  built-in Gemini Nano only if it is already installed (Rootwork never starts that download); otherwise Qwen 2.5 1.5B (about 0.9 GB, downloaded once and only after you say yes) in a separate
   worker with no access to the page or its storage, loaded from a pinned file
   whose SHA-384 is checked before it runs. Doc text never leaves the browser.
   Only the summary and follow-ups are kept, and they sync encrypted.

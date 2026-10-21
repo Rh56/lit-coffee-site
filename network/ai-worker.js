@@ -8,7 +8,7 @@
 
 const LIB = 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.85/lib/index.js';
 const LIB_SHA384 = 'sha384-rfElDdXnNkSgbLTTGiKHTrsetCVAYzzLZBD96/rZdD9XYvryEyShqz3ph8j+x7HH';
-const MODEL = 'Qwen2.5-3B-Instruct-q4f16_1-MLC';
+const MODEL = 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC';   // about 0.9 GB, downloaded once
 
 let engine = null;
 let loading = null;

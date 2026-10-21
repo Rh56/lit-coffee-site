@@ -1660,14 +1660,23 @@ function openDossier(node) {
             '<button class="btn" id="log-cancel">Cancel</button>' +
           '</div>' +
         '</div>' +
-        '<button class="addfield" id="log-open"' + (dr ? ' hidden' : '') + '>+ log a touchpoint</button>' +
+        '<div class="log-adds">' +
+          '<button class="addfield" id="log-open"' + (dr ? ' hidden' : '') + '>+ log a touchpoint</button>' +
+          (window.RootworkDocs ? window.RootworkDocs.newChatButton(p, 'addfield') : '') +
+        '</div>' +
         (p.log.length ? '<div class="log">' + p.log.map(function (e) {
+          // every part of a touchpoint changes where it sits: what kind,
+          // when, what happened, what you took from it
           return '<div class="entry">' +
             '<button class="del" data-dellog="' + e.id + '" title="Delete entry">&times;</button>' +
-            '<div class="e-top"><span class="e-ch">' + esc(CHANNEL_LABEL[e.channel] || e.channel) + '</span>' +
-            '<span>' + fmtDate(e.at) + '</span></div>' +
-            '<p>' + esc(e.text) + '</p>' +
-            (e.learned ? '<div class="learned">' + esc(e.learned) + '</div>' : '') +
+            '<div class="e-top"><button class="e-ch" data-logchan="' + e.id + '" title="Change what kind it was">' +
+              esc(CHANNEL_LABEL[e.channel] || e.channel) + '</button>' +
+            '<button class="e-date" data-logdate="' + e.id + '" title="Change the date">' + fmtDate(e.at) + '</button></div>' +
+            '<p class="val" data-logtext="' + e.id + '" tabindex="0" role="button" title="Click to edit">' + esc(e.text) + '</p>' +
+            (e.learned
+              ? '<div class="learned val" data-loglearned="' + e.id + '" tabindex="0" role="button" title="Click to edit">' + esc(e.learned) + '</div>'
+              : '<button class="e-learn" data-loglearned="' + e.id + '">+ takeaway</button>') +
+            (window.RootworkDocs ? window.RootworkDocs.extras(p, e) : '') +
             '</div>';
         }).join('') + '</div>' : '<p class="blank">Nothing logged yet — tell the bar what happened.</p>') +
       '</div>' +
@@ -1727,6 +1736,40 @@ function closeDossier() {
 $('#dossier').addEventListener('click', function (e) {
   var p = selected && selected.ref;
   if (!p) return;
+
+  // a touchpoint: its kind, its day, its words, its takeaway
+  var lg = e.target.closest('[data-logchan], [data-logdate], [data-logtext], [data-loglearned]');
+  if (lg && !lg.querySelector('textarea')) {
+    var lid = lg.dataset.logchan || lg.dataset.logdate || lg.dataset.logtext || lg.dataset.loglearned;
+    var ent = p.log.filter(function (x) { return x.id === lid; })[0];
+    if (!ent) return;
+    var done = function () { touch(p); save(); renderAll(); openDossier(selected); };
+    var A = window.RootworkArchive;
+    if (lg.dataset.logchan) {
+      var kinds = ['coffee', 'call', 'zoom', 'meal', 'event', 'talk', 'email', 'message', 'intro', 'met', 'note'];
+      if (A && A.pick) return A.pick(lg, kinds.map(function (k) { return [k, CHANNEL_LABEL[k] || k]; }), ent.channel,
+        function (k) { ent.channel = k; done(); });
+      return;
+    }
+    if (lg.dataset.logdate) {
+      if (A && A.calendar) return A.calendar(lg, ent.at, function (day) {
+        var was = new Date(ent.at);
+        ent.at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), was.getHours(), was.getMinutes()).getTime();
+        p.log.sort(function (a, b) { return b.at - a.at; });
+        done();
+      });
+      return;
+    }
+    var key = lg.dataset.logtext ? 'text' : 'learned';
+    var spot = lg;
+    if (lg.tagName === 'BUTTON') { spot = document.createElement('div'); spot.className = 'learned'; lg.replaceWith(spot); }
+    return editInPlace(spot, ent[key] || '', true, function (val) {
+      if (val === null) return openDossier(selected);
+      // an empty touchpoint is still a touchpoint; the words are optional
+      ent[key] = val || '';
+      done();
+    });
+  }
 
   // editing a value in place
   var v = e.target.closest('.val');
@@ -3385,6 +3428,7 @@ $('#btn-newcircle').addEventListener('click', function (e) {
   });
 });
 $('#btn-import').addEventListener('click', importModal);
+$('#btn-docs').addEventListener('click', function () { if (window.RootworkDocs) window.RootworkDocs.openSettings(); });
 $('#btn-export').addEventListener('click', exportModal);
 $('#btn-fit').addEventListener('click', fit);
 $('#btn-tidy').addEventListener('click', function () {
@@ -3432,6 +3476,11 @@ window.addEventListener('resize', resize);
 
 window.Rootwork = {
   getState: function () { return state; },
+  // a change made from outside the map (a doc linked, a summary landing)
+  personChanged: function (p) {
+    touch(p); save(); renderAll();
+    if (selected && selected.ref === p) openDossier(selected);
+  },
   busy: isEditing,
   setState: function (next) {
     // hold anything arriving from another device until the field is finished

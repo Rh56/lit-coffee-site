@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rootwork</title>
+<!-- What this page may load and talk to. Your data only ever goes to your own
+     Supabase project and, when you use docs, to Google's Drive API. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com https://www.gstatic.com https://ssl.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com https://www.gstatic.com; font-src 'self' https://fonts.gstatic.com https://cdn.fontshare.com data:; img-src 'self' data: blob: https://*.googleusercontent.com https://ssl.gstatic.com https://www.gstatic.com https://drive-thirdparty.googleusercontent.com; connect-src 'self' https://*.supabase.co https://www.googleapis.com https://content.googleapis.com https://accounts.google.com https://cdn.jsdelivr.net https://fonts.googleapis.com https://api.fontshare.com; frame-src https://accounts.google.com https://docs.google.com https://drive.google.com https://content.googleapis.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="description" content="A living map of the people you know.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -50,6 +53,9 @@
       <button class="btn" id="btn-add">Add person</button>
       <button class="btn icon" id="btn-newcircle" title="New circle" aria-label="New circle">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="5"/><path d="M17 4v7M13.5 7.5h7"/></svg>
+      </button>
+      <button class="btn icon" id="btn-docs" title="Google Docs and summaries" aria-label="Google Docs and summaries">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>
       </button>
       <button class="btn" id="btn-import">Import</button>
       <button class="btn" id="btn-export">Export</button>
@@ -105,5 +111,6 @@
 <script src="sync.js"></script>
 <script src="app.js"></script>
 <script src="archive.js"></script>
+<script src="docs.js"></script>
 </body>
 </html>

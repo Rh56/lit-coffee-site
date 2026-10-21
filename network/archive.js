@@ -308,14 +308,16 @@ function logBlock(p) {
   var log = p.log || [];
   return '<div class="ed-row"><span class="ed-label">Touchpoints</span><div class="ed-list">' +
     log.map(function (e) {
-      return '<div class="ed-item"><span class="ed-when">' + esc(L.channelLabel(e.channel)) +
+      return '<div class="ed-item"><span class="ed-when">' + chanChip(p, e) +
         ' \u00b7 ' + dateChip(p, e) + '</span>' +
-        '<span class="ed-text" data-act="log" data-for="' + p.id + '" data-id="' + esc(e.id) +
+        '<span class="ed-body"><span class="ed-text" data-act="log" data-for="' + p.id + '" data-id="' + esc(e.id) +
         '" tabindex="0" role="button">' + esc(e.text) + '</span>' +
+        learnedLine(p, e, 'ed-learned') + docExtras(p, e) + '</span>' +
         '<button class="ed-x" data-act="dellog" data-for="' + p.id + '" data-id="' + esc(e.id) +
         '" aria-label="Delete touchpoint">\u00d7</button></div>';
     }).join('') +
     '<button class="ed-add" data-act="addlog" data-for="' + p.id + '">+ touchpoint</button>' +
+    (window.RootworkDocs ? window.RootworkDocs.newChatButton(p) : '') +
   '</div></div>';
 }
 
@@ -350,6 +352,24 @@ function blocksOf(p, parts) {
 }
 
 /* A touchpoint's date, which opens a date picker where it sits. */
+/* What kind of touchpoint it was, as a chip that changes it. */
+var CHANNELS = ['coffee', 'call', 'zoom', 'meal', 'event', 'talk', 'email', 'message', 'intro', 'met', 'note'];
+function chanChip(p, e) {
+  return '<span class="ed-chan" data-act="logchan" data-for="' + p.id + '" data-id="' + esc(e.id) +
+    '" tabindex="0" role="button" title="Change what kind it was">' + esc(L.channelLabel(e.channel)) + '</span>';
+}
+/* The line of what you took from it: edited where it sits, and offered
+   faintly when there is none yet. */
+function learnedLine(p, e, cls) {
+  return e.learned
+    ? '<p class="' + cls + ' ed-text" data-act="learned" data-for="' + p.id + '" data-id="' + esc(e.id) +
+      '" tabindex="0" role="button" title="Click to edit">' + esc(e.learned) + '</p>'
+    : '<button class="ed-learn-add" data-act="learned" data-for="' + p.id + '" data-id="' + esc(e.id) + '">+ takeaway</button>';
+}
+/* A linked doc, its summary and the follow-ups pulled from it, when the
+   docs layer is loaded. */
+function docExtras(p, e) { return window.RootworkDocs ? window.RootworkDocs.extras(p, e) : ''; }
+
 function dateChip(p, e) {
   return '<span class="ed-date" data-act="logdate" data-for="' + p.id + '" data-id="' + esc(e.id) +
     '" tabindex="0" role="button" title="Change the date">' + esc(L.fmtDate(e.at)) + '</span>';
@@ -575,6 +595,32 @@ function editorAction(btn) {
     return true;
   }
 
+  if (act === 'logchan' || act === 'learned') {
+    var tp = (p.log || []).filter(function (e) { return e.id === id; })[0];
+    if (!tp) return true;
+    if (act === 'logchan') {
+      pickMenu(btn, CHANNELS.map(function (c) { return [c, L.channelLabel(c)]; }), tp.channel, function (c) {
+        tp.channel = c; commitPerson(p); refreshBlocks(p);
+      });
+      return true;
+    }
+    // a "+ takeaway" button becomes a line to type on first
+    var spot = btn;
+    if (btn.tagName === 'BUTTON') {
+      spot = el('p', 'ed-text ed-learned');
+      btn.replaceWith(spot);
+    }
+    editText(spot, tp.learned || '', function (val) {
+      tp.learned = val; commitPerson(p); refreshBlocks(p);
+    });
+    if (spot !== btn) {
+      // leaving it empty puts the button back
+      var box = spot.querySelector('textarea');
+      if (box) box.addEventListener('blur', function () { if (!box.value.trim()) refreshBlocks(p); });
+    }
+    return true;
+  }
+
   if (act === 'addnote') {
     p.notes = p.notes || [];
     p.notes.push({ id: newId('n'), t: '' });
@@ -704,8 +750,9 @@ function pickMenu(anchor, options, current, take) {
   var box = el('div', 'arc-pick deg');
   box.id = 'arc-pick';
   box.innerHTML = options.map(function (o) {
-    return '<button data-pick="' + esc(o) + '"' + (o === (current || '') ? ' data-on="1"' : '') + '>' +
-      esc(o || 'No degree') + '</button>';
+    var v = Array.isArray(o) ? o[0] : o, lab = Array.isArray(o) ? o[1] : (o || 'No degree');
+    return '<button data-pick="' + esc(v) + '"' + (v === (current || '') ? ' data-on="1"' : '') + '>' +
+      esc(lab) + '</button>';
   }).join('');
   document.body.appendChild(box);
   var r = anchor.getBoundingClientRect();
@@ -1284,13 +1331,21 @@ function paintSlip(force) {
   $('#arc-slipcount', root).textContent = n ? n + (n === 1 ? ' note' : ' notes') : '';
   var box = $('#arc-sliplist', root);
   if (!slipOpen || (!force && box.querySelector('textarea'))) return;   // never redrawn under a cursor
-  box.innerHTML = list.length ? list.map(function (x, i) {
+  // what you said you would do, from every summarised chat, above the notes
+  var owed = window.RootworkDocs ? window.RootworkDocs.followUps() : [];
+  var follow = owed.length ? '<div class="slip-follow"><h4>Follow-ups <b>' + owed.length + '</b></h4>' + owed.slice(0, 12).map(function (f) {
+    return '<div class="slip-fu"><button class="tp-tick" data-dact="tick" data-for="' + f.p.id + '" data-id="' + esc(f.e.id) +
+      '" data-a="' + esc(f.a.id) + '" role="checkbox" aria-checked="false" aria-label="Done"></button>' +
+      '<p>' + esc(f.a.t) + (f.a.who === 'them' ? ' <i>them</i>' : '') + '</p>' +
+      '<button class="slip-who" data-fuwho="' + f.p.id + '">' + esc(f.p.name) + ' \u00b7 ' + esc(L.ago(f.e.at)) + '</button></div>';
+  }).join('') + '</div>' : '';
+  box.innerHTML = follow + (list.length ? list.map(function (x, i) {
     return '<div class="slip-note" data-n="' + String(i + 1).padStart(2, '0') + '">' +
       '<p class="slip-t" data-padnote="' + esc(x.id) + '" tabindex="0" role="button" title="Click to edit">' + esc(x.t) + '</p>' +
       '<span class="slip-when">' + esc(L.ago(x.at)) + '</span>' +
       '<button class="slip-del" data-delpad="' + esc(x.id) + '" aria-label="Delete note">\u00d7</button>' +
     '</div>';
-  }).join('') : '<p class="slip-empty">Nothing jotted yet.</p>';
+  }).join('') : '<p class="slip-empty">Nothing jotted yet.</p>');
 }
 
 function setSlip(on) {
@@ -1334,6 +1389,8 @@ function wireSlip() {
   });
   slip.addEventListener('click', function (e) {
     if (e.target.closest('[data-slipclose]')) return setSlip(false);
+    var who = e.target.closest('[data-fuwho]');
+    if (who) { var fp = personById(who.dataset.fuwho); if (fp) jumpTo(fp); return; }
     var d = e.target.closest('[data-delpad]');
     if (d) { L.dropPadNote(d.dataset.delpad); return paintSlip(); }
     var v = e.target.closest('[data-padnote]');
@@ -1564,10 +1621,10 @@ function fileSheets(p, d) {
   if (p.log.length) {
     p.log.forEach(function (e, i) {
       out.push('<div class="sheet entry" style="--d:' + (d++) + ';--r:' + (i % 2 ? '.3' : '-.25') + 'deg">' +
-        '<div class="margin">' + esc(L.channelLabel(e.channel)) + '<br>' + dateChip(p, e) + '</div>' +
+        '<div class="margin">' + chanChip(p, e) + '<br>' + dateChip(p, e) + '</div>' +
         '<div><p class="ed-text" data-act="log" data-for="' + p.id + '" data-id="' + esc(e.id) + '" tabindex="0" role="button"' +
           ' title="Click to edit">' + esc(e.text) + '</p>' +
-          (e.learned ? '<div class="learned">' + esc(e.learned) + '</div>' : '') +
+          learnedLine(p, e, 'learned') + docExtras(p, e) +
         '</div>' + x('dellog', e.id, 'touchpoint') + '</div>');
     });
   } else {
@@ -1575,23 +1632,26 @@ function fileSheets(p, d) {
   }
   out.push('<div class="sheet-adds" style="--d:' + d + '">' +
     '<button class="ed-add" data-act="addnote" data-for="' + p.id + '">+ note</button>' +
-    '<button class="ed-add" data-act="addlog" data-for="' + p.id + '">+ touchpoint</button></div>');
+    '<button class="ed-add" data-act="addlog" data-for="' + p.id + '">+ touchpoint</button>' +
+    (window.RootworkDocs ? window.RootworkDocs.newChatButton(p) : '') + '</div>');
   return out.join('');
 }
 
 /* ==========================================================================
    Design 5 — Cabinet
-   The drawer again, built in depth. Circles hang as files on rails in an
-   open cabinet drawer, tabs staggered across it, each one rising when you
-   point at it. Pull one and it lifts out; it opens on the desk into ruled
-   index cards, dealt from its tab. Pick a card and it grows into the file.
+   A mid-century steel cabinet under a desk lamp. Circles hang in its drawer
+   as kraft files, each with a coloured plastic tab over a typed insert, and
+   they sway on their rails when the drawer opens. Pull one and it lands on
+   the desk blotter and opens on its spine: a routing slip clipped inside the
+   cover, the index cards on the other side. A card grows into the person's
+   file, their card clipped on the left and the history on the right.
    ========================================================================== */
 
 var cabFrom = null;          // the card a file was opened from, to grow out of
 var cabPulled = null;        // the folder just lifted out, to open from
 
 function cabLight(rig) {
-  // a desk lamp that leans after the pointer; cheap, one write a frame
+  // the lamp leans after the pointer; one write a frame at most
   var raf = 0, lx = 50, ly = 20;
   rig.addEventListener('pointermove', function (e) {
     var r = rig.getBoundingClientRect();
@@ -1604,6 +1664,13 @@ function cabLight(rig) {
       rig.style.setProperty('--ly', ly.toFixed(1) + '%');
     });
   });
+}
+
+/* A coloured plastic tab with a typed paper insert, the way hanging files
+   are labelled. */
+function cabTab(name, n, cls) {
+  return '<span class="' + (cls || 'hf-tab') + '"><span class="tab-ins"><b>' + esc(name) + '</b>' +
+    (n !== undefined ? '<i>' + n + '</i>' : '') + '</span></span>';
 }
 
 function drawCabinet(host) {
@@ -1622,10 +1689,9 @@ function drawCabinet(host) {
     var folk = peopleIn(c.name);
     var peek = folk.slice(0, 3);
     return '<button class="hf' + (searching() && !folk.length ? ' dim' : '') + '" data-pull="' + esc(c.name) + '"' +
-      ' style="--z:' + i + ';--hue:' + hueVar(c.name) + ';--tx:' + ((i * 23) % 70) + '%"' +
+      ' style="--z:' + i + ';--hue:' + hueVar(c.name) + ';--tx:' + ((i * 27) % 72) + '%"' +
       ' aria-label="' + esc(c.name) + ', ' + folk.length + ' filed">' +
-      '<span class="hf-back"><span class="hf-tab"><b>' + esc(c.name) + '</b><i>' + folk.length + '</i></span></span>' +
-      // the top sheet inside shows who is filed there, a couple of names deep
+      '<span class="hf-back">' + cabTab(c.name, folk.length) + '<i class="hf-rod" aria-hidden="true"></i></span>' +
       '<span class="hf-papers"><span class="hf-paper back"></span>' +
         (folk.length ? '<span class="hf-paper">' + peek.map(function (p) { return '<span>' + nameHtml(p) + '</span>'; }).join('') +
           (folk.length > peek.length ? '<em>+' + (folk.length - peek.length) + '</em>' : '') + '</span>' : '') +
@@ -1636,14 +1702,17 @@ function drawCabinet(host) {
   rig.innerHTML =
     '<div class="cab-scene">' +
       '<div class="cab-files">' +
-        '<div class="cab-well" aria-hidden="true"><i class="cab-rail l"></i><i class="cab-rail r"></i></div>' +
+        '<div class="cab-well" aria-hidden="true">' +
+          '<i class="cab-wall l"></i><i class="cab-wall r"></i><i class="cab-floor"></i><i class="cab-backwall"></i>' +
+          '<i class="cab-rail l"></i><i class="cab-rail r"></i>' +
+        '</div>' +
         files.reverse().join('') +
       '</div>' +
-      '<div class="cab-front" aria-hidden="true">' +
-        '<span class="cab-holder"><span class="cab-label">' +
-          '<b>' + list.length + ' ' + esc(grouper().name.toLowerCase()) + (list.length === 1 ? '' : 's') + '</b>' +
-          '<i>' + total + ' filed</i></span></span>' +
-        '<i class="cab-pull"></i>' +
+      '<div class="cab-face" aria-hidden="true">' +
+        '<span class="cab-holder"><span class="cab-label"><b>' + list.length + ' ' + esc(grouper().name.toLowerCase()) +
+          (list.length === 1 ? '' : 's') + '</b><i>' + total + ' filed</i></span></span>' +
+        '<span class="cab-pull"><i></i></span>' +
+        '<span class="cab-lock"></span>' +
       '</div>' +
       '<i class="cab-lamp" aria-hidden="true"></i>' +
     '</div>';
@@ -1664,15 +1733,39 @@ function drawCabinet(host) {
       writeRoute();
     };
     if (reduced()) return go();
-    // it lifts up and out of the drawer, the rest settle back down
+    // it lifts up and out of the drawer, the rest settle back into the dark
     f.classList.add('pull');
     rig.classList.add('pulling');
-    setTimeout(go, 420);
+    setTimeout(go, 440);
   });
 }
 
-/* A folder out on the desk: the cover swings open and the cards come out of
-   it, dealt from the tab, ruled like the ones in a recipe box. */
+/* The routing slip clipped inside a folder's cover: who has gone quiet the
+   longest, and what is still owed. */
+function routingSlip(name, folk) {
+  var quiet = folk.slice().sort(function (a, b) { return L.lastTouch(a) - L.lastTouch(b); }).slice(0, 5);
+  var owed = (window.RootworkDocs ? window.RootworkDocs.followUps() : []).filter(function (f) {
+    return folk.indexOf(f.p) >= 0;
+  });
+  var row = function (p) {
+    return '<li><button data-person="' + p.id + '"><span>' + nameHtml(p) + '</span>' +
+      '<i>' + esc(p.log.length ? L.ago(L.lastTouch(p)) : 'never') + '</i></button></li>';
+  };
+  return '<div class="cab-slip">' +
+    '<i class="cab-clip" aria-hidden="true"></i>' +
+    '<h3>' + esc(name) + '</h3>' +
+    '<p class="cab-slip-n"><b>' + folk.length + '</b> filed' +
+      (folk.length ? ' · last touched ' + esc(L.ago(L.lastTouch(folk.slice().sort(function (a, b) { return L.lastTouch(b) - L.lastTouch(a); })[0]))) : '') + '</p>' +
+    (quiet.length ? '<h4>Quiet the longest</h4><ol class="cab-quiet">' + quiet.map(row).join('') + '</ol>' : '') +
+    (owed.length ? '<h4>Still owed</h4><ul class="cab-owed">' + owed.slice(0, 5).map(function (f) {
+      return '<li><button class="tp-tick" data-dact="tick" data-for="' + f.p.id + '" data-id="' + esc(f.e.id) + '" data-a="' + esc(f.a.id) +
+        '" role="checkbox" aria-checked="false" aria-label="Done"></button><span>' + esc(f.a.t) + '<em>' + esc(f.p.name) + '</em></span></li>';
+    }).join('') + '</ul>' : '') +
+  '</div>';
+}
+
+/* A folder out on the blotter: it lands closed, and its cover swings open on
+   the spine. The cards are dealt from the stack. */
 function drawCabFolder(host) {
   var name = view.circle;
   var folk = peopleIn(name);
@@ -1683,39 +1776,45 @@ function drawCabFolder(host) {
   var rig = el('div', 'cab-open' + (fresh ? ' fresh' : ''));
   rig.style.setProperty('--hue', hue);
   rig.innerHTML =
-    '<div class="cab-spread">' +
-      '<div class="cab-ftab"><b>' + esc(name) + '</b><i>' + folk.length + ' filed</i></div>' +
-      '<div class="cab-inside">' +
-        '<div class="cab-cards">' + (folk.length ? folk.map(function (p, i) {
-          var extra = groupsOf(p).filter(function (x) { return x !== name; });
-          var tilt = ((i * 37) % 7 - 3) * 0.35;
-          return '<button class="icard" data-person="' + p.id + '" style="--i:' + i + ';--t:' + tilt.toFixed(2) + 'deg">' +
-            '<span class="ic-in">' +
-              '<span class="ic-name">' + nameHtml(p) + '</span>' +
-              '<span class="ic-role">' + (hitLine(p) || esc(roleOf(p) || ' ')) + '</span>' +
-              '<span class="ic-foot">' +
-                '<span class="ic-pips">' + extra.map(function (x) {
-                  return '<i style="background:' + hueVar(x) + '" title="' + esc(x) + '"></i>'; }).join('') + '</span>' +
-                '<span class="ic-when">' + esc(p.log.length ? L.ago(L.lastTouch(p)) : 'never logged') + '</span>' +
+    '<div class="cab-blotter">' +
+      '<i class="cab-lamp" aria-hidden="true"></i>' +
+      '<div class="cab-folder">' +
+        '<div class="cab-panel l">' + routingSlip(name, folk) + '</div>' +
+        '<div class="cab-panel r">' +
+          cabTab(name, folk.length, 'cab-ftab') +
+          '<div class="cab-cards">' + (folk.length ? folk.map(function (p, i) {
+            var extra = groupsOf(p).filter(function (x) { return x !== name; });
+            var tilt = ((i * 37) % 7 - 3) * 0.4;
+            var owes = (p.log || []).some(function (e) { return (e.actions || []).some(function (a) { return !a.done; }); });
+            return '<button class="icard" data-person="' + p.id + '" style="--i:' + i + ';--t:' + tilt.toFixed(2) + 'deg">' +
+              '<span class="ic-in">' +
+                '<span class="ic-name">' + nameHtml(p) + '</span>' +
+                '<span class="ic-role">' + (hitLine(p) || esc(roleOf(p) || ' ')) + '</span>' +
+                '<span class="ic-foot">' +
+                  '<span class="ic-pips">' + extra.map(function (x) {
+                    return '<i style="background:' + hueVar(x) + '" title="' + esc(x) + '"></i>'; }).join('') +
+                    (owes ? '<b class="ic-owed" title="A follow-up is still open">owed</b>' : '') + '</span>' +
+                  '<span class="ic-when">' + esc(p.log.length ? L.ago(L.lastTouch(p)) : 'never logged') + '</span>' +
+                '</span>' +
+                '<i class="ic-glare" aria-hidden="true"></i>' +
               '</span>' +
-              '<i class="ic-glare" aria-hidden="true"></i>' +
-            '</span>' +
-          '</button>';
-        }).join('') : '<p class="cab-none">Nobody filed here yet.</p>') + '</div>' +
+            '</button>';
+          }).join('') : '<p class="cab-none">Nobody filed here yet.</p>') + '</div>' +
+        '</div>' +
+        '<div class="cab-cover" aria-hidden="true"><span class="cab-cover-in">' + cabTab(name, undefined, 'cab-ctab') + '</span></div>' +
       '</div>' +
-      '<div class="cab-cover" aria-hidden="true"><span>' + esc(name) + '</span></div>' +
     '</div>' +
     '<button class="cab-back" data-back>‹ Back to the cabinet</button>';
   host.appendChild(rig);
   cabLight(rig);
 
-  // every card is dealt from the folder's tab: measure where each one lands
-  // and start it from there
-  var tab = rig.querySelector('.cab-ftab').getBoundingClientRect();
+  // every card is dealt from the top of the stack by the tab: measure where
+  // each one lands and start it from there
+  var from = rig.querySelector('.cab-ftab').getBoundingClientRect();
   Array.prototype.forEach.call(rig.querySelectorAll('.icard'), function (c) {
     var r = c.getBoundingClientRect();
-    c.style.setProperty('--fx', (tab.left + 40 - r.left) + 'px');
-    c.style.setProperty('--fy', (tab.top + 10 - r.top) + 'px');
+    c.style.setProperty('--fx', (from.left + 30 - r.left) + 'px');
+    c.style.setProperty('--fy', (from.bottom + 6 - r.top) + 'px');
   });
 
   // the card under the pointer tilts toward it, with a sheen across the paper
@@ -1731,8 +1830,8 @@ function drawCabFolder(host) {
       if (!c || reduced()) return;
       var r = c.getBoundingClientRect();
       var x = (ev.clientX - r.left) / r.width, y = (ev.clientY - r.top) / r.height;
-      c.style.setProperty('--rx', ((0.5 - y) * 10).toFixed(2) + 'deg');
-      c.style.setProperty('--ry', ((x - 0.5) * 12).toFixed(2) + 'deg');
+      c.style.setProperty('--rx', ((0.5 - y) * 12).toFixed(2) + 'deg');
+      c.style.setProperty('--ry', ((x - 0.5) * 14).toFixed(2) + 'deg');
       c.style.setProperty('--gx', (x * 100).toFixed(0) + '%');
       c.style.setProperty('--gy', (y * 100).toFixed(0) + '%');
     });
@@ -1743,10 +1842,13 @@ function drawCabFolder(host) {
 
   rig.addEventListener('click', function (e) {
     if (e.target.closest('[data-back]')) return back();
-    var c = e.target.closest('.icard[data-person]');
+    var c = e.target.closest('[data-person]');
     if (!c) return;
-    var r = c.getBoundingClientRect();
-    cabFrom = { left: r.left, top: r.top, width: r.width, height: r.height };
+    var card = c.classList.contains('icard') ? c : null;
+    if (card) {
+      var r = card.getBoundingClientRect();
+      cabFrom = { left: r.left, top: r.top, width: r.width, height: r.height };
+    }
     view.person = c.dataset.person;
     render();
     writeRoute();
@@ -1754,8 +1856,8 @@ function drawCabFolder(host) {
   });
 }
 
-/* One person, the card grown to a full file: the facts on the left, the
-   history fanned out beside it, all still editable where it sits. */
+/* One person: the folder open on the blotter, their card clipped inside the
+   cover, the history on the other side. Everything edits where it sits. */
 function drawCabFile(host) {
   var p = personById(view.person);
   if (!p) return emptyState(host, 'That entry is gone.');
@@ -1767,40 +1869,47 @@ function drawCabFile(host) {
   var rig = el('div', 'cab-file');
   rig.style.setProperty('--hue', hueVar(home));
   rig.innerHTML =
-    '<div class="cab-desk">' +
-      '<div class="cab-ftab"><b>' + esc(home) + '</b>' +
-        (extra.length ? '<span class="cab-also">' + extra.map(function (c) {
-          return '<i style="--c:' + hueVar(c) + '">' + esc(c) + '</i>'; }).join('') + '</span>' : '') +
-      '</div>' +
-      '<div class="cab-cols">' +
-        '<div class="cab-lead">' + factsCard(p, 0) + '</div>' +
-        '<div class="cab-hist sheets-live" data-sheets="' + p.id + '">' + fileSheets(p, 1) + '</div>' +
+    '<div class="cab-blotter">' +
+      '<i class="cab-lamp" aria-hidden="true"></i>' +
+      '<div class="cab-folder">' +
+        '<div class="cab-panel l">' +
+          '<div class="cab-lead"><i class="cab-clip" aria-hidden="true"></i>' + factsCard(p, 0) + '</div>' +
+          (extra.length ? '<div class="cab-also">' + extra.map(function (c) {
+            return cabTab(c, undefined, 'cab-mtab" style="--hue:' + hueVar(c));
+          }).join('') + '</div>' : '') +
+        '</div>' +
+        '<div class="cab-panel r">' +
+          cabTab(home, undefined, 'cab-ftab') +
+          '<div class="cab-hist sheets-live" data-sheets="' + p.id + '">' + fileSheets(p, 1) + '</div>' +
+        '</div>' +
       '</div>' +
     '</div>' +
     '<button class="cab-back" data-back>‹ Back to ' + esc(home) + '</button>';
   host.appendChild(rig);
+  cabLight(rig);
 
   rig.addEventListener('click', function (e) {
     if (e.target.closest('[data-back]')) back();
   });
 
-  // grow out of the card that was clicked: start the facts card where that
-  // card sat, at its size, and let it settle into place
+  // grow out of the card that was clicked: start the card where that one
+  // sat, at its size, and let it settle under the clip
   var card = rig.querySelector('.cab-lead .sheet.card');
   var from = cabFrom;
   cabFrom = null;
   if (!from || !card || reduced()) return;
   var to = card.getBoundingClientRect();
   if (!to.width) return;
+  rig.classList.add('grown');
   card.classList.add('grow');
   card.style.transformOrigin = '0 0';
   card.style.transition = 'none';
   card.style.transform = 'translate(' + (from.left - to.left) + 'px,' + (from.top - to.top) + 'px) scale(' +
-    (from.width / to.width).toFixed(4) + ',' + (from.height / to.height).toFixed(4) + ')';
+    (from.width / to.width).toFixed(4) + ',' + (from.height / to.height).toFixed(4) + ') rotate(2deg)';
   void card.offsetWidth;
   card.style.transition = '';
   card.style.transform = '';
-  setTimeout(function () { card.classList.remove('grow'); card.style.transformOrigin = ''; }, 700);
+  setTimeout(function () { card.classList.remove('grow'); card.style.transformOrigin = ''; }, 760);
 }
 
 function emptyState(host, text) {
@@ -2466,7 +2575,18 @@ window.RootworkArchive = {
   group: function (id) { if (id) setGroup(id); return groupMode; },
   close: close,
   isOpen: function () { return open; },
-  design: function (id) { if (id) setDesign(id); return view.design; }
+  design: function (id) { if (id) setDesign(id); return view.design; },
+  // the map's card borrows the archive's own pickers so the two match
+  pick: function (anchor, options, current, take) { pickMenu(anchor, options, current, take); },
+  calendar: function (anchor, at, take) { calendar(anchor, at, take); },
+  // a change made outside the archive (a summary landing, a doc linked):
+  // saved and patched in place when the archive is up
+  touched: function (p) {
+    if (!open) return false;
+    commitPerson(p); refreshBlocks(p);
+    paintSlip(true);                          // a follow-up may have been ticked off
+    return true;
+  }
 };
 
 document.addEventListener('DOMContentLoaded', wire);

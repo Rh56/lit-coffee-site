@@ -15,6 +15,7 @@ is on `main` (GitHub Pages already serves the repo root).
 | `app.js` | state, the sentence parser, the spring layout, the canvas plate, the interface |
 | `archive.css`, `archive.js` | the archive: seven ways to read the same map as filed paper |
 | `sync.js` | optional end-to-end encrypted sync across devices |
+| `docs.js`, `ai-worker.js` | Google Docs on touchpoints, and summaries written on this computer |
 | `sw.js`, `manifest.webmanifest`, `icons/` | what makes it installable |
 | `build-artifact.mjs` | inlines the above into one file for previewing as a Claude Artifact |
 
@@ -102,6 +103,35 @@ merge is newest-wins per person rather than last-write-wins over the whole file.
 A phone edited offline merges cleanly instead of clobbering the laptop. Changes
 push about a second after you stop typing; other devices hear about it over a
 websocket, with a five-second poll behind it in case the socket is unavailable.
+
+## Coffee chat docs and summaries
+
+A touchpoint can be linked to a Google Doc. **+ coffee chat doc** on a person
+makes one in a "Rootwork coffee chats" folder in your Drive, with what you
+already know about them at the top, and opens it. **+ doc** on any
+touchpoint links one you already have, through Google's own picker. The
+docs button in the top bar (the page icon) has the one-time setup and a way to
+link many existing docs at once, matched to people by the names in their
+titles.
+
+**Summarize** reads the doc and writes a short summary, the takeaways, and
+the follow-ups, each with a checkbox. Open follow-ups gather at the top of the
+archive's notes slip.
+
+How it stays private:
+
+- Google access is the `drive.file` scope only: the docs you pick and the
+  ones Rootwork makes. Nothing else in your Drive is visible to it, and a
+  token offering wider access is refused.
+- The sign-in token lives in memory for the tab. It is never stored or
+  synced, and Disconnect revokes it.
+- The summary is written by a model running on your computer: Chrome's
+  built-in Gemini Nano where there is one; otherwise Qwen 2.5 3B in a separate
+  worker with no access to the page or its storage, loaded from a pinned file
+  whose SHA-384 is checked before it runs. Doc text never leaves the browser.
+  Only the summary and follow-ups are kept, and they sync encrypted.
+- A Content Security Policy limits what the page may load and where it may
+  send anything: your Supabase project and Google's APIs.
 
 ## What is public, and what is not
 

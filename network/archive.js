@@ -27,8 +27,7 @@ var DESIGNS = [
   { id: 'drawer', name: 'Drawer', hint: 'A filing drawer, seen from above' },
   { id: 'index', name: 'Index', hint: 'Everyone at once, set tight' },
   { id: 'chroma', name: 'Chroma', hint: 'Light and type, no paper at all' },
-  { id: 'finder', name: 'Desktop', hint: 'Folders and files, the way a computer keeps them' },
-  { id: 'cabinet', name: 'Cabinet', hint: 'The drawer in depth: hanging files, index cards' }
+  { id: 'finder', name: 'Desktop', hint: 'Folders and files, the way a computer keeps them' }
 ];
 var view = { design: 'drawer', circle: null, person: null };
 var DESIGN_KEY = 'rootwork.archive.design';
@@ -1170,7 +1169,6 @@ function render(quiet, keepHead) {
   var fn = view.design === 'index' ? drawIndex
     : view.design === 'chroma' ? drawChroma
     : view.design === 'finder' ? drawFinder
-    : view.design === 'cabinet' ? drawCabinet
     : drawDrawer;
   teardown = fn(body) || null;
 }
@@ -1224,7 +1222,7 @@ function setDesign(id) {
   view.design = id;
   // the drawer and the index open a person; elsewhere the name in the header
   // would be describing something not on screen
-  if (id !== 'drawer' && id !== 'index' && id !== 'cabinet') view.person = null;
+  if (id !== 'drawer' && id !== 'index') view.person = null;
   try { localStorage.setItem(DESIGN_KEY, id); } catch (e) { }
   if (reduced()) { scroll.scrollTop = 0; render(); return writeRoute(); }
 
@@ -1441,12 +1439,6 @@ function jumpTo(p) {
     view.circle = home;
     return openPerson(p.id, home ? hueVar(home) : null);
   }
-  if (view.design === 'cabinet') {
-    view.circle = home; view.person = p.id;
-    render();
-    scroll.scrollTop = 0;
-    return writeRoute();
-  }
   if (view.design === 'index' || view.design === 'finder') {
     // the index only lists one folder at a time when one is open, so go
     // wide if they are not in it
@@ -1574,7 +1566,7 @@ function drawFile(host) {
 }
 
 /* The typed card at the front of a file: the facts, each editable where it
-   sits. The drawer and the cabinet both lead with it. */
+   sits. The drawer leads with it. */
 function factsCard(p, d) {
   var facts = [
     ['Email', p.email, 'email'],
@@ -1635,281 +1627,6 @@ function fileSheets(p, d) {
     '<button class="ed-add" data-act="addlog" data-for="' + p.id + '">+ touchpoint</button>' +
     (window.RootworkDocs ? window.RootworkDocs.newChatButton(p) : '') + '</div>');
   return out.join('');
-}
-
-/* ==========================================================================
-   Design 5 — Cabinet
-   A mid-century steel cabinet under a desk lamp. Circles hang in its drawer
-   as kraft files, each with a coloured plastic tab over a typed insert, and
-   they sway on their rails when the drawer opens. Pull one and it lands on
-   the desk blotter and opens on its spine: a routing slip clipped inside the
-   cover, the index cards on the other side. A card grows into the person's
-   file, their card clipped on the left and the history on the right.
-   ========================================================================== */
-
-var cabFrom = null;          // the card a file was opened from, to grow out of
-var cabPulled = null;        // the folder just lifted out, to open from
-
-function cabLight(rig) {
-  // the lamp leans after the pointer; one write a frame at most
-  var raf = 0, lx = 50, ly = 20;
-  rig.addEventListener('pointermove', function (e) {
-    var r = rig.getBoundingClientRect();
-    lx = ((e.clientX - r.left) / r.width) * 100;
-    ly = ((e.clientY - r.top) / r.height) * 100;
-    if (raf) return;
-    raf = requestAnimationFrame(function () {
-      raf = 0;
-      rig.style.setProperty('--lx', lx.toFixed(1) + '%');
-      rig.style.setProperty('--ly', ly.toFixed(1) + '%');
-    });
-  });
-}
-
-/* A coloured plastic tab with a typed paper insert, the way hanging files
-   are labelled. */
-function cabTab(name, n, cls) {
-  return '<span class="' + (cls || 'hf-tab') + '"><span class="tab-ins"><b>' + esc(name) + '</b>' +
-    (n !== undefined ? '<i>' + n + '</i>' : '') + '</span></span>';
-}
-
-function drawCabinet(host) {
-  if (view.person) return drawCabFile(host);
-  if (view.circle) return drawCabFolder(host);
-
-  var list = circles();
-  if (!list.length) return emptyState(host, 'Nothing filed yet.');
-  var total = st().people.length;
-
-  var rig = el('div', 'cab');
-  rig.style.setProperty('--n', list.length);
-  // the first circle hangs at the front; the rest go back into the drawer,
-  // tabs walking across it the way hanging files are cut
-  var files = list.map(function (c, i) {
-    var folk = peopleIn(c.name);
-    var peek = folk.slice(0, 3);
-    return '<button class="hf' + (searching() && !folk.length ? ' dim' : '') + '" data-pull="' + esc(c.name) + '"' +
-      ' style="--z:' + i + ';--hue:' + hueVar(c.name) + ';--tx:' + ((i * 27) % 72) + '%"' +
-      ' aria-label="' + esc(c.name) + ', ' + folk.length + ' filed">' +
-      '<span class="hf-back">' + cabTab(c.name, folk.length) + '<i class="hf-rod" aria-hidden="true"></i></span>' +
-      '<span class="hf-papers"><span class="hf-paper back"></span>' +
-        (folk.length ? '<span class="hf-paper">' + peek.map(function (p) { return '<span>' + nameHtml(p) + '</span>'; }).join('') +
-          (folk.length > peek.length ? '<em>+' + (folk.length - peek.length) + '</em>' : '') + '</span>' : '') +
-      '</span>' +
-      '<span class="hf-front"></span>' +
-    '</button>';
-  });
-  rig.innerHTML =
-    '<div class="cab-scene">' +
-      '<div class="cab-files">' +
-        '<div class="cab-well" aria-hidden="true">' +
-          '<i class="cab-wall l"></i><i class="cab-wall r"></i><i class="cab-floor"></i><i class="cab-backwall"></i>' +
-          '<i class="cab-rail l"></i><i class="cab-rail r"></i>' +
-        '</div>' +
-        files.reverse().join('') +
-      '</div>' +
-      '<div class="cab-face" aria-hidden="true">' +
-        '<span class="cab-holder"><span class="cab-label"><b>' + list.length + ' ' + esc(grouper().name.toLowerCase()) +
-          (list.length === 1 ? '' : 's') + '</b><i>' + total + ' filed</i></span></span>' +
-        '<span class="cab-pull"><i></i></span>' +
-        '<span class="cab-lock"></span>' +
-      '</div>' +
-      '<i class="cab-lamp" aria-hidden="true"></i>' +
-    '</div>';
-  host.appendChild(rig);
-  cabLight(rig);
-
-  var busy = false;
-  rig.addEventListener('click', function (e) {
-    var f = e.target.closest('[data-pull]');
-    if (!f || busy) return;
-    busy = true;
-    var name = f.dataset.pull;
-    var go = function () {
-      cabPulled = name;
-      view.circle = name;
-      scroll.scrollTop = 0;
-      render();
-      writeRoute();
-    };
-    if (reduced()) return go();
-    // it lifts up and out of the drawer, the rest settle back into the dark
-    f.classList.add('pull');
-    rig.classList.add('pulling');
-    setTimeout(go, 440);
-  });
-}
-
-/* The routing slip clipped inside a folder's cover: who has gone quiet the
-   longest, and what is still owed. */
-function routingSlip(name, folk) {
-  var quiet = folk.slice().sort(function (a, b) { return L.lastTouch(a) - L.lastTouch(b); }).slice(0, 5);
-  var owed = (window.RootworkDocs ? window.RootworkDocs.followUps() : []).filter(function (f) {
-    return folk.indexOf(f.p) >= 0;
-  });
-  var row = function (p) {
-    return '<li><button data-person="' + p.id + '"><span>' + nameHtml(p) + '</span>' +
-      '<i>' + esc(p.log.length ? L.ago(L.lastTouch(p)) : 'never') + '</i></button></li>';
-  };
-  return '<div class="cab-slip">' +
-    '<i class="cab-clip" aria-hidden="true"></i>' +
-    '<h3>' + esc(name) + '</h3>' +
-    '<p class="cab-slip-n"><b>' + folk.length + '</b> filed' +
-      (folk.length ? ' · last touched ' + esc(L.ago(L.lastTouch(folk.slice().sort(function (a, b) { return L.lastTouch(b) - L.lastTouch(a); })[0]))) : '') + '</p>' +
-    (quiet.length ? '<h4>Quiet the longest</h4><ol class="cab-quiet">' + quiet.map(row).join('') + '</ol>' : '') +
-    (owed.length ? '<h4>Still owed</h4><ul class="cab-owed">' + owed.slice(0, 5).map(function (f) {
-      return '<li><button class="tp-tick" data-dact="tick" data-for="' + f.p.id + '" data-id="' + esc(f.e.id) + '" data-a="' + esc(f.a.id) +
-        '" role="checkbox" aria-checked="false" aria-label="Done"></button><span>' + esc(f.a.t) + '<em>' + esc(f.p.name) + '</em></span></li>';
-    }).join('') + '</ul>' : '') +
-  '</div>';
-}
-
-/* A folder out on the blotter: it lands closed, and its cover swings open on
-   the spine. The cards are dealt from the stack. */
-function drawCabFolder(host) {
-  var name = view.circle;
-  var folk = peopleIn(name);
-  var hue = hueVar(name);
-  var fresh = cabPulled === name;
-  cabPulled = null;
-
-  var rig = el('div', 'cab-open' + (fresh ? ' fresh' : ''));
-  rig.style.setProperty('--hue', hue);
-  rig.innerHTML =
-    '<div class="cab-blotter">' +
-      '<i class="cab-lamp" aria-hidden="true"></i>' +
-      '<div class="cab-folder">' +
-        '<div class="cab-panel l">' + routingSlip(name, folk) + '</div>' +
-        '<div class="cab-panel r">' +
-          cabTab(name, folk.length, 'cab-ftab') +
-          '<div class="cab-cards">' + (folk.length ? folk.map(function (p, i) {
-            var extra = groupsOf(p).filter(function (x) { return x !== name; });
-            var tilt = ((i * 37) % 7 - 3) * 0.4;
-            var owes = (p.log || []).some(function (e) { return (e.actions || []).some(function (a) { return !a.done; }); });
-            return '<button class="icard" data-person="' + p.id + '" style="--i:' + i + ';--t:' + tilt.toFixed(2) + 'deg">' +
-              '<span class="ic-in">' +
-                '<span class="ic-name">' + nameHtml(p) + '</span>' +
-                '<span class="ic-role">' + (hitLine(p) || esc(roleOf(p) || ' ')) + '</span>' +
-                '<span class="ic-foot">' +
-                  '<span class="ic-pips">' + extra.map(function (x) {
-                    return '<i style="background:' + hueVar(x) + '" title="' + esc(x) + '"></i>'; }).join('') +
-                    (owes ? '<b class="ic-owed" title="A follow-up is still open">owed</b>' : '') + '</span>' +
-                  '<span class="ic-when">' + esc(p.log.length ? L.ago(L.lastTouch(p)) : 'never logged') + '</span>' +
-                '</span>' +
-                '<i class="ic-glare" aria-hidden="true"></i>' +
-              '</span>' +
-            '</button>';
-          }).join('') : '<p class="cab-none">Nobody filed here yet.</p>') + '</div>' +
-        '</div>' +
-        '<div class="cab-cover" aria-hidden="true"><span class="cab-cover-in">' + cabTab(name, undefined, 'cab-ctab') + '</span></div>' +
-      '</div>' +
-    '</div>' +
-    '<button class="cab-back" data-back>‹ Back to the cabinet</button>';
-  host.appendChild(rig);
-  cabLight(rig);
-
-  // every card is dealt from the top of the stack by the tab: measure where
-  // each one lands and start it from there
-  var from = rig.querySelector('.cab-ftab').getBoundingClientRect();
-  Array.prototype.forEach.call(rig.querySelectorAll('.icard'), function (c) {
-    var r = c.getBoundingClientRect();
-    c.style.setProperty('--fx', (from.left + 30 - r.left) + 'px');
-    c.style.setProperty('--fy', (from.bottom + 6 - r.top) + 'px');
-  });
-
-  // the card under the pointer tilts toward it, with a sheen across the paper
-  var raf = 0, at = null, ev = null;
-  rig.addEventListener('pointermove', function (e) {
-    ev = e;
-    if (raf) return;
-    raf = requestAnimationFrame(function () {
-      raf = 0;
-      var c = ev.target.closest && ev.target.closest('.icard');
-      if (at && at !== c) { at.style.removeProperty('--rx'); at.style.removeProperty('--ry'); }
-      at = c;
-      if (!c || reduced()) return;
-      var r = c.getBoundingClientRect();
-      var x = (ev.clientX - r.left) / r.width, y = (ev.clientY - r.top) / r.height;
-      c.style.setProperty('--rx', ((0.5 - y) * 12).toFixed(2) + 'deg');
-      c.style.setProperty('--ry', ((x - 0.5) * 14).toFixed(2) + 'deg');
-      c.style.setProperty('--gx', (x * 100).toFixed(0) + '%');
-      c.style.setProperty('--gy', (y * 100).toFixed(0) + '%');
-    });
-  });
-  rig.addEventListener('pointerleave', function () {
-    if (at) { at.style.removeProperty('--rx'); at.style.removeProperty('--ry'); at = null; }
-  });
-
-  rig.addEventListener('click', function (e) {
-    if (e.target.closest('[data-back]')) return back();
-    var c = e.target.closest('[data-person]');
-    if (!c) return;
-    var card = c.classList.contains('icard') ? c : null;
-    if (card) {
-      var r = card.getBoundingClientRect();
-      cabFrom = { left: r.left, top: r.top, width: r.width, height: r.height };
-    }
-    view.person = c.dataset.person;
-    render();
-    writeRoute();
-    scroll.scrollTop = 0;
-  });
-}
-
-/* One person: the folder open on the blotter, their card clipped inside the
-   cover, the history on the other side. Everything edits where it sits. */
-function drawCabFile(host) {
-  var p = personById(view.person);
-  if (!p) return emptyState(host, 'That entry is gone.');
-  var home = view.circle || homeGroup(p);
-  var extra = groupsOf(p).concat(L.circlesOf(p)).filter(function (x, i, a) {
-    return x !== home && a.indexOf(x) === i;
-  });
-
-  var rig = el('div', 'cab-file');
-  rig.style.setProperty('--hue', hueVar(home));
-  rig.innerHTML =
-    '<div class="cab-blotter">' +
-      '<i class="cab-lamp" aria-hidden="true"></i>' +
-      '<div class="cab-folder">' +
-        '<div class="cab-panel l">' +
-          '<div class="cab-lead"><i class="cab-clip" aria-hidden="true"></i>' + factsCard(p, 0) + '</div>' +
-          (extra.length ? '<div class="cab-also">' + extra.map(function (c) {
-            return cabTab(c, undefined, 'cab-mtab" style="--hue:' + hueVar(c));
-          }).join('') + '</div>' : '') +
-        '</div>' +
-        '<div class="cab-panel r">' +
-          cabTab(home, undefined, 'cab-ftab') +
-          '<div class="cab-hist sheets-live" data-sheets="' + p.id + '">' + fileSheets(p, 1) + '</div>' +
-        '</div>' +
-      '</div>' +
-    '</div>' +
-    '<button class="cab-back" data-back>‹ Back to ' + esc(home) + '</button>';
-  host.appendChild(rig);
-  cabLight(rig);
-
-  rig.addEventListener('click', function (e) {
-    if (e.target.closest('[data-back]')) back();
-  });
-
-  // grow out of the card that was clicked: start the card where that one
-  // sat, at its size, and let it settle under the clip
-  var card = rig.querySelector('.cab-lead .sheet.card');
-  var from = cabFrom;
-  cabFrom = null;
-  if (!from || !card || reduced()) return;
-  var to = card.getBoundingClientRect();
-  if (!to.width) return;
-  rig.classList.add('grown');
-  card.classList.add('grow');
-  card.style.transformOrigin = '0 0';
-  card.style.transition = 'none';
-  card.style.transform = 'translate(' + (from.left - to.left) + 'px,' + (from.top - to.top) + 'px) scale(' +
-    (from.width / to.width).toFixed(4) + ',' + (from.height / to.height).toFixed(4) + ') rotate(2deg)';
-  void card.offsetWidth;
-  card.style.transition = '';
-  card.style.transform = '';
-  setTimeout(function () { card.classList.remove('grow'); card.style.transformOrigin = ''; }, 760);
 }
 
 function emptyState(host, text) {

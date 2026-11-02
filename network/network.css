@@ -1232,3 +1232,11 @@ dd:hover .jump, .jump:focus-visible{ opacity:1; }
   .gdocs .gd-row select, .gdocs .gd-row input[type=date]{ grid-column:2; }
 }
 @media (prefers-reduced-motion:reduce){ .tp-sum{ animation:none; } .tp-status::before{ animation:none; } }
+
+/* reordering circles in the person form: chosen chips lead and can be dragged */
+.pf-chips.sortable .pf-chip[data-on]{ cursor:grab; touch-action:none; }
+.pf-chips.sorting, .pf-chips.sorting .pf-chip{ cursor:grabbing; user-select:none; -webkit-user-select:none; }
+.pf-chip.dragging{
+  transform:scale(1.06); box-shadow:0 6px 18px -8px color-mix(in srgb, var(--hue) 70%, transparent);
+  border-style:dashed;
+}

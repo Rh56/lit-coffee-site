@@ -2311,26 +2311,87 @@ function personForm(p, opts) {
   nameBox.focus();
 
   var chips = m.querySelector('#pf-chips');
+  /* Chosen circles lead, in their order, and can be dragged (or moved with
+     Alt+arrows) to reorder; the rest wait behind them in the usual order. */
   function paintChips() {
-    chips.innerHTML = known.map(function (c) {
+    var rest = known.filter(function (c) { return chosen.indexOf(c) < 0; });
+    chips.innerHTML = chosen.concat(rest).map(function (c) {
       var at = chosen.indexOf(c);
-      return '<button type="button" class="pf-chip" data-c="' + esc(c) + '"' + (at >= 0 ? ' data-on' : '') +
+      return '<button type="button" class="pf-chip" data-c="' + esc(c) + '"' +
+        (at >= 0 ? ' data-on' + (chosen.length > 1 ? ' title="Drag to reorder"' : '') : '') +
         ' style="--hue:var(--h' + hueIndex(c) + ')">' +
         '<i></i>' + esc(c) + (at === 0 ? '<b>primary</b>' : '') + '</button>';
     }).join('') +
     '<input class="pf-newc" placeholder="+ new circle" aria-label="New circle" spellcheck="false">';
+    chips.classList.toggle('sortable', chosen.length > 1);
+  }
+  function focusChip(c) {
+    return chips.querySelector('.pf-chip[data-c="' + (window.CSS && CSS.escape ? CSS.escape(c) : c) + '"]');
   }
   paintChips();
+
+  // dragging is done by hand so it also works with a finger
+  var drag = null, justDragged = false;
+  chips.addEventListener('pointerdown', function (e) {
+    var b = e.target.closest('.pf-chip[data-on]');
+    if (!b || chosen.length < 2 || e.button > 0) return;
+    drag = { el: b, x: e.clientX, y: e.clientY, live: false };
+    window.addEventListener('pointermove', dragMove, { passive: false });
+    window.addEventListener('pointerup', endDrag);
+    window.addEventListener('pointercancel', endDrag);
+  });
+  function dragMove(e) {
+    if (!drag) return;
+    if (!drag.live) {
+      if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < 6) return;
+      drag.live = true;
+      drag.el.classList.add('dragging');
+      chips.classList.add('sorting');
+    }
+    e.preventDefault();
+    var over = document.elementFromPoint(e.clientX, e.clientY);
+    over = over && over.closest('.pf-chip[data-on]');
+    if (!over || over === drag.el || !chips.contains(over)) return;
+    var r = over.getBoundingClientRect();
+    var after = e.clientX > r.left + r.width / 2;
+    chips.insertBefore(drag.el, after ? over.nextSibling : over);
+  }
+  function endDrag() {
+    window.removeEventListener('pointermove', dragMove);
+    window.removeEventListener('pointerup', endDrag);
+    window.removeEventListener('pointercancel', endDrag);
+    if (!drag) return;
+    var was = drag;
+    drag = null;
+    if (!was.live) return;
+    justDragged = true;
+    setTimeout(function () { justDragged = false; }, 0);
+    chosen = Array.prototype.map.call(chips.querySelectorAll('.pf-chip[data-on]'), function (b) { return b.dataset.c; });
+    chips.classList.remove('sorting');
+    paintChips();
+  }
+
   chips.addEventListener('click', function (e) {
     var b = e.target.closest('.pf-chip');
     if (!b) return;
+    if (justDragged) { e.preventDefault(); return; }
     var c = b.dataset.c, at = chosen.indexOf(c);
     if (at >= 0) chosen.splice(at, 1); else chosen.push(c);
     paintChips();
-    var again = chips.querySelector('.pf-chip[data-c="' + (window.CSS && CSS.escape ? CSS.escape(c) : c) + '"]');
+    var again = focusChip(c);
     if (again) { again.focus(); if (at < 0) again.classList.add('pop'); }
   });
   chips.addEventListener('keydown', function (e) {
+    var chip = e.target.closest('.pf-chip[data-on]');
+    if (chip && e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      e.preventDefault();
+      var c = chip.dataset.c, at = chosen.indexOf(c), to = at + (e.key === 'ArrowLeft' ? -1 : 1);
+      if (to < 0 || to >= chosen.length) return;
+      chosen.splice(to, 0, chosen.splice(at, 1)[0]);
+      paintChips();
+      focusChip(c).focus();
+      return;
+    }
     var inp = e.target.closest('.pf-newc');
     if (!inp || e.key !== 'Enter') return;
     e.preventDefault(); e.stopPropagation();
